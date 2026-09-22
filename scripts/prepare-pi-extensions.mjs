@@ -7,9 +7,10 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const extensionsDir = join(root, "src-tauri/runtime/extensions");
 const npmCacheDir = join(root, ".agentcabin-build-cache/npm");
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 execFileSync(
-  "npm",
+  npmCommand,
   ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps"],
   {
     cwd: extensionsDir,
