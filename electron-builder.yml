@@ -11,8 +11,11 @@ files:
   - "package.json"
 
 extraResources:
-  - from: "src-tauri/target/release/AgentCabin"
-    to: "bin/AgentCabin"
+  - from: "src-tauri/target/release"
+    to: "bin"
+    filter:
+      - "AgentCabin"
+      - "AgentCabin.exe"
   - from: "src-tauri/browser-worker"
     to: "browser-worker"
   - from: "src-tauri/resources/agentcabin-computer-use"
@@ -39,14 +42,28 @@ mac:
     - target: dmg
       arch:
         - arm64
+        - x64
     - target: zip
       arch:
         - arm64
+        - x64
   minimumSystemVersion: "13.0"
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: src-tauri/entitlements.plist
   entitlementsInherit: src-tauri/entitlements.plist
+
+win:
+  icon: src-tauri/icons/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: "${productName}-${version}-win-${arch}.${ext}"
 
 dmg:
   title: "${productName} ${version}"

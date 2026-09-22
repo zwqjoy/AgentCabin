@@ -3,6 +3,16 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to receive the packages
+        required: true
+        default: v0.1.0
+      source_ref:
+        description: Branch or ref to build from
+        required: true
+        default: dev
 
 concurrency:
   group: release-${{ github.ref }}
@@ -16,12 +26,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-14
             target: aarch64-apple-darwin
+            package_args: --mac --arm64
             asset_glob: dist-electron/*.dmg
+            asset_name: mac-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            package_args: --mac --x64
+            asset_glob: dist-electron/*.dmg
+            asset_name: mac-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            package_args: --win --x64
+            asset_glob: dist-electron/*.exe
+            asset_name: windows-x64
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -45,18 +69,33 @@ jobs:
       - name: Prepare AgentCabin Computer Use resources
         run: npm run prepare:agentcabin-computer-use
 
-      - name: Build Core Server Binary
-        run: npm run build:core:release
-
       - name: Package Electron app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npm run package
+        run: npm run package -- ${{ matrix.package_args }}
+
+      - name: Normalize release artifact name
+        shell: bash
+        env:
+          ASSET_GLOB: ${{ matrix.asset_glob }}
+          ASSET_NAME: ${{ matrix.asset_name }}
+        run: |
+          set -euo pipefail
+          version="$(node -p 'require("./package.json").version')"
+          shopt -s nullglob
+          files=( $ASSET_GLOB )
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "Expected exactly one release asset, found ${#files[@]}" >&2
+            printf '%s\n' "${files[@]}" >&2
+            exit 1
+          fi
+          ext="${files[0]##*.}"
+          mv "${files[0]}" "dist-electron/AgentCabin-${version}-${ASSET_NAME}.${ext}"
 
       - name: Upload DMG artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.target }}
+          name: release-${{ matrix.asset_name }}
           path: ${{ matrix.asset_glob }}
           if-no-files-found: error
 
@@ -80,5 +119,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          generate_release_notes: false
+          fail_on_unmatched_files: true
