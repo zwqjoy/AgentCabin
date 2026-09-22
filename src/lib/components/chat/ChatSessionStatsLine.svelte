@@ -1,12 +1,7 @@
 <script lang="ts">
   import type { TurnUsage } from "$lib/stores/types";
   import type { TimelineEntry } from "$lib/types";
-  import {
-    formatTokens,
-    formatCacheHitPercent,
-    formatRunDuration,
-    formatTokensPerSecond,
-  } from "$lib/utils/dsh-format";
+  import { formatTokens, formatCacheHitPercent, formatRunDuration } from "$lib/utils/dsh-format";
   import { currentLocale } from "$lib/i18n/index.svelte";
 
   let {
@@ -31,7 +26,6 @@
     let totalInput = 0;
     let totalOutput = 0;
     let totalCacheRead = 0;
-    let totalCacheWrite = 0;
     let totalLlmMs = 0;
     let totalWallMs = 0;
 
@@ -39,7 +33,6 @@
       totalInput += tu.inputTokens || 0;
       totalOutput += tu.outputTokens || 0;
       totalCacheRead += tu.cacheReadTokens || 0;
-      totalCacheWrite += tu.cacheWriteTokens || 0;
       if (tu.durationApiMs && tu.durationApiMs > 0) {
         totalLlmMs += tu.durationApiMs;
       }

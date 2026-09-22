@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SETTINGS_SEARCH_INDEX, searchSettings, type SearchIndexItem } from "./search-index";
+  import { searchSettings, type SearchIndexItem } from "./search-index";
 
   interface Props {
     searchQuery: string;

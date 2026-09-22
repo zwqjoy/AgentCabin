@@ -1,6 +1,5 @@
 <script lang="ts">
   import { getTransport } from "$lib/transport";
-  import { t } from "$lib/i18n/index.svelte";
   import { dbg, dbgWarn } from "$lib/utils/debug";
   import { fmtRelative } from "$lib/i18n/format";
   import { cwdDisplayLabel } from "$lib/utils/format";

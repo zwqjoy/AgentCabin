@@ -120,8 +120,8 @@
       </div>
 
       <div class="space-y-1.5">
-        {#each criteria as criterion, idx (criterion.id)}
-          <WorkAcceptanceItem {criterion} index={idx} />
+        {#each criteria as criterion (criterion.id)}
+          <WorkAcceptanceItem {criterion} />
         {/each}
       </div>
     </div>

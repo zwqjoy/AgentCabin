@@ -210,7 +210,7 @@
   class="context-menu"
   style="position:fixed; left:{pos.x}px; top:{pos.y}px; z-index:9999;"
 >
-  {#each entries as entry, i}
+  {#each entries as entry}
     {#if entry.kind === "separator"}
       <div class="ctx-sep"></div>
     {:else}

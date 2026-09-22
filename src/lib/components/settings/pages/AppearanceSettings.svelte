@@ -7,7 +7,6 @@
     CODE_FONT_SIZE_LIMITS,
     importThemeJson,
     exportThemeJson,
-    type ThemeMode,
     type ColorScheme,
     type ReduceMotion,
     type DiffMarkerStyle,

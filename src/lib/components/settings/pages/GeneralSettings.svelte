@@ -3,7 +3,7 @@
   import * as api from "$lib/api";
   import { platform } from "$lib/platform";
   import { getTransport } from "$lib/transport";
-  import { t, LOCALE_REGISTRY, currentLocale, switchLocale } from "$lib/i18n/index.svelte";
+  import { LOCALE_REGISTRY, currentLocale, switchLocale } from "$lib/i18n/index.svelte";
   import type { UserSettings, RemoteHost, RemoteTestResult } from "$lib/types";
   import SettingsCard from "../SettingsCard.svelte";
   import SettingsRow from "../SettingsRow.svelte";
@@ -17,7 +17,6 @@
     copyDebugLogs,
     getDebugLogCount,
     clearDebugLogs,
-    dbg,
     dbgWarn,
   } from "$lib/utils/debug";
 

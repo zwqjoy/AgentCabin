@@ -13,9 +13,6 @@
     isRuntimeProviderReady,
     type RuntimeProviderStatus,
   } from "$lib/utils/runtime-status";
-  import SettingsCard from "../SettingsCard.svelte";
-  import SettingsRow from "../SettingsRow.svelte";
-  import SettingsSection from "../SettingsSection.svelte";
   import SettingsStatusBadge from "../SettingsStatusBadge.svelte";
 
   interface Props {

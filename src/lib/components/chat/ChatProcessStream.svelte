@@ -9,7 +9,6 @@
   import DshTurnErrorCard from "$lib/dsh-ui/DshTurnErrorCard.svelte";
   import DshMaxTokensCard from "$lib/dsh-ui/DshMaxTokensCard.svelte";
   import DshRetryCard from "$lib/dsh-ui/DshRetryCard.svelte";
-  import { t } from "$lib/i18n/index.svelte";
 
   let {
     turn,

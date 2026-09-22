@@ -54,7 +54,6 @@
   let petAddMode = $state<"image" | "zip">("image");
   let petImageBase64 = $state("");
   let petImageName = $state("");
-  let petImageUrl = $state("");
   let petZipBase64 = $state("");
   let petZipName = $state("");
   let petForm = $state({ slug: "", displayName: "", description: "" });
@@ -79,7 +78,6 @@
     petAddMode = "image";
     petImageBase64 = "";
     petImageName = "";
-    petImageUrl = "";
     petZipBase64 = "";
     petZipName = "";
     petForm = { slug: "", displayName: "", description: "" };
@@ -125,7 +123,7 @@
         "apng",
       ]);
       if (!file) return;
-      petImageUrl = await inspectCustomPetImage(file.base64, file.name);
+      await inspectCustomPetImage(file.base64, file.name);
       petImageBase64 = file.base64;
       petImageName = file.name;
       petZipBase64 = "";
@@ -145,7 +143,6 @@
       petZipName = file.name;
       petImageBase64 = "";
       petImageName = "";
-      petImageUrl = "";
       petCreateError = "";
     } catch (error) {
       petCreateError = formatPetError(error, t("settings_pet_createFailed"));

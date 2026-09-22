@@ -5,7 +5,6 @@
   import HighlightedCode from "$lib/components/HighlightedCode.svelte";
   import VscodeIcon from "$lib/components/VscodeIcon.svelte";
   import type { DirEntry } from "$lib/types";
-  import { t } from "$lib/i18n/index.svelte";
 
   interface Props {
     cwd: string;
@@ -157,12 +156,6 @@
       void loadFile(currentPath);
     }
   });
-
-  function copyPath() {
-    if (currentPath) {
-      void navigator.clipboard.writeText(currentPath);
-    }
-  }
 
   async function openInEditor() {
     if (cwd) {

@@ -70,7 +70,7 @@
     return "claude";
   }
 
-  function getFileDescription(agent: AgentType, label: string): string {
+  function getFileDescription(agent: AgentType): string {
     if (agent === "claude") {
       return "Claude Code 全局通用系统指令与编码规范";
     }
@@ -100,7 +100,7 @@
           label: f.label,
           agent,
           exists: f.exists,
-          description: getFileDescription(agent, f.label),
+          description: getFileDescription(agent),
         };
       })
       .filter((item) => !nativeOnly || (item.agent !== "pi" && item.agent !== "pi-code"));

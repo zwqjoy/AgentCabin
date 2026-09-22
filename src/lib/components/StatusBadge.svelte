@@ -31,17 +31,6 @@
     cancelled: "bg-foreground/20",
     stopped: "bg-foreground/20",
   };
-
-  const labels: Record<DisplayStatus, string> = {
-    pending: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    running: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-    done: "",
-    waiting: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    completed: "",
-    failed: "bg-red-500/10 text-red-600 dark:text-red-300",
-    cancelled: "",
-    stopped: "",
-  };
 </script>
 
 {#if displayStatus === "running"}

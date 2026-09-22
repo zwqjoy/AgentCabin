@@ -4,10 +4,9 @@
 
   interface Props {
     criterion: AcceptanceCriterion;
-    index: number;
   }
 
-  let { criterion, index }: Props = $props();
+  let { criterion }: Props = $props();
 
   const statusMeta = $derived(formatCriterionStatus(criterion.status));
   const verifierMeta = $derived(formatVerifierType(criterion.verifierType));

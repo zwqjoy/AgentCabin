@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onDestroy } from "svelte";
   import XTerminal from "$lib/components/XTerminal.svelte";
   import * as api from "$lib/api";
   import { getTransport } from "$lib/transport";

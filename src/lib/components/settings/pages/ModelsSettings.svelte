@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { UserSettings, CodexAuthResult } from "$lib/types";
   import GlobalProviderSettings from "$lib/components/GlobalProviderSettings.svelte";
-  import SettingsSection from "../SettingsSection.svelte";
 
   interface Props {
     settings: UserSettings;
