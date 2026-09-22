@@ -39,6 +39,7 @@
   let selectedId = $derived(route.workspaceId ?? "");
   let selectedRunId = $derived(route.runId ?? "");
   let activePanel = $derived(route.panel);
+  let isArchivedView = $derived($page.url.searchParams.get("view") === "archived");
   let newConversation = $derived(route.newConversation);
   let createOpen = $derived(route.createWorkspace);
   let freshWorkspace = $derived(route.fresh);
@@ -470,6 +471,10 @@
           </div>
         </div>
       </section>
+    {:else if isArchivedView}
+      <div class="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
+        <ArchivedChatsView realm="work" />
+      </div>
     {:else}
       {#if error}
         <div

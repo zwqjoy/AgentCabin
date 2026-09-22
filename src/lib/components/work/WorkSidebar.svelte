@@ -30,17 +30,7 @@
   // Work uses the shared Code shell; this state only controls workspace search.
   let conversationSearch = $state("");
   let workspaceSearchOpen = $state(false);
-  let showArchived = $state(false);
-  let lastArchiveQuery = $state<boolean | null>(null);
   let normalizedSearch = $derived(conversationSearch.trim().toLocaleLowerCase());
-
-  $effect(() => {
-    const archiveQuery = pageUrl.searchParams.get("view") === "archived";
-    if (archiveQuery !== lastArchiveQuery) {
-      lastArchiveQuery = archiveQuery;
-      showArchived = archiveQuery;
-    }
-  });
 
   function matchesConversation(session: TaskRun): boolean {
     const query = normalizedSearch;
@@ -50,15 +40,11 @@
       .some((value) => value.toLocaleLowerCase().includes(query));
   }
 
-  let recentConversations = $derived(
-    showArchived
-      ? sidebar.getArchivedConversations(matchesConversation)
-      : sidebar.getRecentConversations(matchesConversation),
-  );
+  let recentConversations = $derived(sidebar.getRecentConversations(matchesConversation));
 
   $effect(() => {
     // Searching should reveal matching conversations in collapsed workspaces.
-    if (!normalizedSearch || showArchived) return;
+    if (!normalizedSearch) return;
     const next = new Set(sidebar.expandedWorkspaces);
     for (const workspace of sidebar.workspaces) {
       if (sidebar.getSortedSessions(workspace.id).some(matchesConversation)) {
@@ -245,7 +231,7 @@
       </div>
     {:else}
       <div class="px-2.5 py-2 text-xs text-sidebar-foreground/45">
-        {normalizedSearch ? "没有匹配的对话" : showArchived ? "暂无已归档对话" : "暂无最近对话"}
+        {normalizedSearch ? "没有匹配的对话" : "暂无最近对话"}
       </div>
     {/if}
 
@@ -525,7 +511,7 @@
       {/if}
 
       <!-- Archived workspaces are management-only and stay out of the Code-like primary tree. -->
-      {#if !showArchived && !sidebar.loading && sidebar.archivedWorkspaces.length > 0}
+      {#if !sidebar.loading && sidebar.archivedWorkspaces.length > 0}
         <div class="mt-3 border-t border-sidebar-border/40 pt-2">
           <button
             type="button"
