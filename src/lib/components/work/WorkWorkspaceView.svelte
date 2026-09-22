@@ -307,12 +307,12 @@
               role="status"
             >
               <span class="text-amber-700 dark:text-amber-300">
-                Inbox 中有 {workspacePendingCount} 项需要你处理。
+                有 {workspacePendingCount} 项需要你处理。
               </span>
               <a
-                href="/chat/work?view=inbox"
+                href="/chat/work?panel=pending"
                 class="shrink-0 font-semibold text-amber-700 underline underline-offset-2 dark:text-amber-300"
-                >打开 Inbox →</a
+                >查看待处理 →</a
               >
             </div>
           {/if}

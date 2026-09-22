@@ -31,7 +31,6 @@ export interface WorkRouteScopeInput {
   workspaceId: string;
   runId: string;
   newConversation: boolean;
-  legacyView: string;
 }
 
 /** Live session context supplied by the mounted conversation surface. */
@@ -78,7 +77,6 @@ export class WorkPageController {
     workspaceId: "",
     runId: "",
     newConversation: false,
-    legacyView: "",
     conversationRunId: "",
   };
 
@@ -95,13 +93,11 @@ export class WorkPageController {
   // ── Scope helpers ──────────────────────────────────────────────────────────
 
   isStandalone(): boolean {
-    return !this.input.workspaceId && !this.input.legacyView;
+    return !this.input.workspaceId;
   }
 
   hasActiveConversation(): boolean {
-    return this.input.workspaceId
-      ? Boolean(this.input.runId || this.input.newConversation)
-      : !this.input.legacyView;
+    return this.input.workspaceId ? Boolean(this.input.runId || this.input.newConversation) : true;
   }
 
   scope(): WorkScope {
@@ -190,9 +186,9 @@ export class WorkPageController {
     }
     try {
       const conversationActive = Boolean(
-        input.runId || input.newConversation || (!input.workspaceId && !input.legacyView),
+        input.runId || input.newConversation || !input.workspaceId,
       );
-      const standalone = !input.workspaceId && !input.legacyView;
+      const standalone = !input.workspaceId;
       const scope = standalone ? standaloneScope() : workspaceScope(input.workspaceId);
       const [, nextProfile, nextArtifacts, nextInputFiles, nextAccessRoots] = await Promise.all([
         workWorkspaceStore.fetchWorkspaces(),

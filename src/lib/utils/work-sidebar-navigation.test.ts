@@ -4,7 +4,6 @@ import {
   getWorkConversationSurfaceKey,
   getWorkConversationSurfaceKeyAfterRouteChange,
   getWorkspaceRowAction,
-  isWorkHomeSelected,
 } from "$lib/utils/work-sidebar-navigation";
 
 describe("Work conversation surface identity", () => {
@@ -76,46 +75,23 @@ describe("Work conversation surface identity", () => {
 
 describe("Work sidebar workspace navigation", () => {
   it("keeps the workspace configuration visible when clicking its name again", () => {
-    expect(getWorkspaceRowAction("workspace-1", "", "", false, "workspace-1")).toEqual({
+    expect(getWorkspaceRowAction("workspace-1", "", false, "workspace-1")).toEqual({
       kind: "stay",
     });
   });
 
   it("returns to configuration when clicking the active workspace from a conversation", () => {
-    expect(getWorkspaceRowAction("workspace-1", "run-1", "", false, "workspace-1")).toEqual({
+    expect(getWorkspaceRowAction("workspace-1", "run-1", false, "workspace-1")).toEqual({
       kind: "navigate",
       href: "/chat/work?workspace=workspace-1",
     });
   });
 
   it("selects another workspace and opens its configuration", () => {
-    expect(getWorkspaceRowAction("workspace-1", "", "", false, "workspace-2")).toEqual({
+    expect(getWorkspaceRowAction("workspace-1", "", false, "workspace-2")).toEqual({
       kind: "navigate",
       href: "/chat/work?workspace=workspace-2",
     });
-  });
-});
-
-describe("Work sidebar conversation home selection", () => {
-  it("selects conversation home when there is no workspace, run, view, or started run", () => {
-    expect(isWorkHomeSelected("", "", "", false, "")).toBe(true);
-  });
-
-  it("unselects conversation home as soon as a new run starts", () => {
-    expect(isWorkHomeSelected("", "", "", false, "run-123")).toBe(false);
-  });
-
-  it("unselects conversation home when a route run is present", () => {
-    expect(isWorkHomeSelected("", "run-123", "", false, "")).toBe(false);
-  });
-
-  it("unselects conversation home when inside a workspace", () => {
-    expect(isWorkHomeSelected("workspace-1", "", "", false, "")).toBe(false);
-  });
-
-  it("unselects conversation home when in inbox or tasks view", () => {
-    expect(isWorkHomeSelected("", "", "inbox", false, "")).toBe(false);
-    expect(isWorkHomeSelected("", "", "tasks", false, "")).toBe(false);
   });
 });
 

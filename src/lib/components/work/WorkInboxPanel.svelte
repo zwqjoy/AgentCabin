@@ -198,7 +198,7 @@
   <!-- Header -->
   <div class="flex items-center justify-between border-b border-border/40 px-4 py-3">
     <div class="flex items-center gap-2">
-      <h2 class="text-sm font-semibold tracking-wide">Inbox</h2>
+      <h2 class="text-sm font-semibold tracking-wide">待处理</h2>
       {#if scopedPendingCount > 0}
         <span
           class="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-bold text-amber-600 dark:text-amber-400"

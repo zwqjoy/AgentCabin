@@ -40,39 +40,17 @@ export function getWorkConversationSurfaceKeyAfterRouteChange(
 export function getWorkspaceRowAction(
   selectedWorkspaceId: string,
   selectedRunId: string,
-  selectedView: string,
   hasNewConversation: boolean,
   targetWorkspaceId: string,
 ): WorkspaceRowAction {
   const isAlreadyShowingConfiguration =
-    selectedWorkspaceId === targetWorkspaceId &&
-    !selectedRunId &&
-    !selectedView &&
-    !hasNewConversation;
+    selectedWorkspaceId === targetWorkspaceId && !selectedRunId && !hasNewConversation;
 
   if (isAlreadyShowingConfiguration) return { kind: "stay" };
   return {
     kind: "navigate",
     href: `/chat/work?workspace=${encodeURIComponent(targetWorkspaceId)}`,
   };
-}
-
-/**
- * Determine whether the top-level "对话" (Work conversation home) entry is active.
- *
- * It should only be active when there is no workspace, no active/selected run,
- * no just-started run, and no secondary view open.
- */
-export function isWorkHomeSelected(
-  selectedWorkspaceId: string,
-  selectedRunId: string,
-  selectedView: string,
-  hasNewConversation: boolean,
-  startedRunId = "",
-): boolean {
-  return (
-    !selectedWorkspaceId && !selectedRunId && !selectedView && !hasNewConversation && !startedRunId
-  );
 }
 
 /**

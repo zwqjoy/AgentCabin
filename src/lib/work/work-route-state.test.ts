@@ -17,7 +17,6 @@ describe("parseWorkRouteState", () => {
     expect(state.runId).toBeNull();
     expect(state.newConversation).toBe(false);
     expect(state.panel).toBeNull();
-    expect(state.legacyView).toBeNull();
     expect(isStandaloneRoute(state)).toBe(true);
     expect(showsConversation(state, true)).toBe(true);
   });
@@ -45,6 +44,9 @@ describe("parseWorkRouteState", () => {
     expect(parseWorkRouteState(url("?view=automation")).panel).toBe("automation");
     // Unknown legacy views degrade to no panel instead of a broken page.
     expect(parseWorkRouteState(url("?view=unknown")).panel).toBeNull();
+    // Legacy views only open panels on top of the conversation — never a
+    // blank page or a different product mode.
+    expect(showsConversation(parseWorkRouteState(url("?view=inbox")), true)).toBe(true);
   });
 
   it("prefers an explicit panel param", () => {

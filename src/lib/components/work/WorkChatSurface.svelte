@@ -39,6 +39,7 @@
   import DshContextInjectionRow from "$lib/dsh-ui/DshContextInjectionRow.svelte";
   import ChatInteractionBlock from "$lib/components/chat/ChatInteractionBlock.svelte";
   import WorkPendingActionItem from "$lib/components/work/WorkPendingActionItem.svelte";
+  import WorkInlineInteraction from "$lib/components/work/WorkInlineInteraction.svelte";
   import {
     buildChatPresentationTurns,
     type ChatPresentationTurn,
@@ -2709,7 +2710,7 @@
     agent={effectiveWorkAgent}
     model={session.model}
     running={session.sessionAlive}
-    cwd={isStandalone ? "独立任务" : workspace?.name || session.sessionCwd || workspace?.root || ""}
+    cwd={isStandalone ? "" : workspace?.name || session.sessionCwd || workspace?.root || ""}
     mode={session.run ? "Stream" : ""}
     {modelOptions}
     onModelChange={(model) => void handleModelChange(model)}
@@ -3247,9 +3248,7 @@
         {@const resolved = findResolvedInteractionForTool(dummyToolEntry)}
         {#if pending}
           {#if isQuestionInteraction(pending)}
-            <div class="chat-content-width py-2">
-              <WorkPendingActionItem item={pending} onResolve={resolveInlineInteraction} />
-            </div>
+            <WorkInlineInteraction item={pending} onResolve={resolveInlineInteraction} />
           {:else}
             <WorkToolCall
               entry={dummyToolEntry}

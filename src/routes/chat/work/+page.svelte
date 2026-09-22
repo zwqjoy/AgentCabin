@@ -389,9 +389,6 @@
       workspaceId: selectedId,
       runId: selectedRunId,
       newConversation,
-      // Legacy `?view=` values now open auxiliary panels; they never change
-      // the product mode, so the controller always sees a conversation route.
-      legacyView: "",
     };
     untrack(() => {
       const adopted = controller.syncRoute(

@@ -42,8 +42,6 @@ export interface WorkRouteState {
    * are mapped onto panels here (e.g. `?view=inbox` → `pending`).
    */
   panel: WorkPanel | null;
-  /** Raw legacy `?view=` value, kept for compatibility decisions. */
-  legacyView: string | null;
 }
 
 export function parseWorkRouteState(url: URL | { searchParams: URLSearchParams }): WorkRouteState {
@@ -66,7 +64,6 @@ export function parseWorkRouteState(url: URL | { searchParams: URLSearchParams }
     prompt: params.get("prompt"),
     preset: params.get("preset"),
     panel,
-    legacyView: legacyView?.trim() ? legacyView : null,
   };
 }
 
@@ -92,6 +89,7 @@ export function showsConversation(state: WorkRouteState, workspaceExists: boolea
   if (state.workspaceId) {
     return workspaceExists && Boolean(state.runId || state.newConversation);
   }
-  // Standalone: any non-legacy URL is the conversation surface.
-  return !state.legacyView;
+  // Standalone: every URL is the conversation surface. Legacy views only open
+  // auxiliary panels on top of it, never a different product mode.
+  return true;
 }
