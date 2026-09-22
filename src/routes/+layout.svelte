@@ -2191,7 +2191,7 @@
                 {/if}
               </div>
             {/if}
-          {:else if !isWorkPage && !isExplorerPage}
+          {:else if !isExplorerPage}
             <div class="border-b border-sidebar-border/50 p-2 shrink-0 space-y-0.5">
               <!-- New conversation for the current Native / Pi Code mode -->
               <SidebarNavItem label={t("sidebar_newChat")} onclick={newChat}>

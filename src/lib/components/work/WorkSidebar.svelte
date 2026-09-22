@@ -27,8 +27,9 @@
   let activeRunId = $derived(getWorkActiveRunId(selectedRunId, sidebar.startedRunId));
   let activePanel = $derived(pageUrl.searchParams.get("panel") ?? "");
 
-  // Search + archive filter (archive is a filter, never a top-level page).
+  // Work uses the shared Code shell; this state only controls workspace search.
   let conversationSearch = $state("");
+  let workspaceSearchOpen = $state(false);
   let showArchived = $state(false);
   let lastArchiveQuery = $state<boolean | null>(null);
   let normalizedSearch = $derived(conversationSearch.trim().toLocaleLowerCase());
@@ -54,8 +55,6 @@
       ? sidebar.getArchivedConversations(matchesConversation)
       : sidebar.getRecentConversations(matchesConversation),
   );
-  let recentCount = $derived(sidebar.getRecentConversations(() => true).length);
-  let archivedCount = $derived(sidebar.getArchivedConversations(() => true).length);
 
   $effect(() => {
     // Searching should reveal matching conversations in collapsed workspaces.
@@ -225,51 +224,6 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
   <div class="work-sidebar-body flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">
-    <!-- Primary action: one new-conversation button -->
-    <button
-      type="button"
-      class="work-sidebar-new-chat mx-0.5 mb-1 flex w-[calc(100%-0.25rem)] shrink-0 items-center justify-center gap-2 rounded-lg border border-sidebar-border/60 bg-sidebar-accent/30 px-3 py-2 text-xs font-semibold text-sidebar-foreground/85 transition-colors hover:border-sidebar-foreground/30 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-      onclick={() => sidebar.newConversationForWorkspace()}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        class="h-3.5 w-3.5"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-      >
-        <path d="M12 5v14M5 12h14" />
-      </svg>
-      新对话
-    </button>
-
-    <!-- Search + recent/archive switch -->
-    <div class="mb-1 shrink-0 space-y-1">
-      <input
-        type="search"
-        class="min-h-8 w-full rounded-lg border border-transparent bg-sidebar-accent/40 px-2.5 py-1 text-xs text-sidebar-foreground outline-none transition-colors placeholder:text-sidebar-foreground/40 focus:border-sidebar-border focus:bg-background"
-        placeholder="搜索对话"
-        bind:value={conversationSearch}
-      />
-      <div class="flex items-center gap-1 px-0.5">
-        <button
-          type="button"
-          class="flex-1 rounded-md px-2 py-0.5 text-left text-[11px] transition-colors {!showArchived
-            ? 'bg-sidebar-accent text-sidebar-foreground'
-            : 'text-sidebar-foreground/45 hover:text-sidebar-foreground/75'}"
-          onclick={() => (showArchived = false)}>最近 {recentCount}</button
-        >
-        <button
-          type="button"
-          class="flex-1 rounded-md px-2 py-0.5 text-left text-[11px] transition-colors {showArchived
-            ? 'bg-sidebar-accent text-sidebar-foreground'
-            : 'text-sidebar-foreground/45 hover:text-sidebar-foreground/75'}"
-          onclick={() => (showArchived = true)}>已归档 {archivedCount}</button
-        >
-      </div>
-    </div>
-
     <!-- Recent conversations -->
     {#if recentConversations.length > 0}
       <div class="mb-2 shrink-0">
@@ -295,290 +249,339 @@
       </div>
     {/if}
 
-    {#if !showArchived}
-      <!-- Workspaces -->
-      <div class="shrink-0">
-        <SidebarSectionLabel label="工作区" count={sidebar.workspaces.length} class="mb-0.5" />
-
-        {#if sidebar.loading}
-          <div class="flex items-center gap-2 px-2 py-3 text-xs text-sidebar-foreground/50">
-            <span
-              class="h-3 w-3 animate-spin rounded-full border-2 border-sidebar-foreground/20 border-t-sidebar-foreground/70"
-            ></span>
-            正在读取工作区…
-          </div>
-        {:else if !workTransportSupported}
-          <div
-            class="mt-1 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-2 text-xs leading-5 text-sidebar-foreground/70"
-          >
-            <span class="block font-medium text-sidebar-foreground/85">桌面 App 才能执行 Work</span>
-            <span class="mt-0.5 block text-[11px] text-sidebar-foreground/55"
-              >本地文件和任务运行只在桌面 App 中可用。</span
-            >
-          </div>
-        {:else if sidebar.error}
-          <div
-            class="flex items-center justify-between gap-2 rounded-lg border border-red-400/20 bg-red-400/5 px-2.5 py-2 text-xs leading-5 text-red-300"
-            role="alert"
-          >
-            <span class="min-w-0 flex-1">{sidebar.error}</span>
-            <button
-              type="button"
-              class="shrink-0 rounded-md border border-red-400/30 px-2 py-1 text-[11px] font-semibold hover:bg-red-400/10"
-              onclick={() => void sidebar.loadWorkspaces(true)}
-            >
-              重试
-            </button>
-          </div>
-        {:else if sidebar.workspaces.length === 0}
+    <!-- Workspaces: same section header/actions as Code. -->
+    <div class="shrink-0">
+      <SidebarSectionLabel label="工作区" count={sidebar.workspaces.length} class="mb-0.5">
+        {#snippet actions()}
           <button
             type="button"
-            class="mt-1 w-full rounded-lg border border-dashed border-sidebar-border/70 px-3 py-3 text-left text-xs leading-5 text-sidebar-foreground/55 transition-colors hover:border-sidebar-foreground/30 hover:bg-sidebar-accent/35"
-            onclick={newWorkspace}
+            class="flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/45 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            class:bg-sidebar-accent={workspaceSearchOpen}
+            onclick={() => (workspaceSearchOpen = !workspaceSearchOpen)}
+            title="搜索 Work 对话"
+            aria-label="搜索 Work 对话"
           >
-            <span class="block font-medium text-sidebar-foreground/75">创建第一个工作区</span>
-            <span class="mt-0.5 block text-[11px]">关联本地文件夹，开始协作。</span>
+            <svg
+              class="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" />
+            </svg>
           </button>
-        {:else}
-          <div class="space-y-0.5">
-            {#each sidebar.workspaces as workspace (workspace.id)}
-              {@const isExpanded = sidebar.expandedWorkspaces.has(workspace.id)}
-              {@const wsSessions = sidebar.getVisibleSessions(workspace.id, matchesConversation)}
-              {@const isLoadingSessions = sidebar.sessionsLoadingByWorkspace[workspace.id] ?? false}
-              <SidebarFolderRow
-                label={workspace.name}
-                title={workspace.primaryWorkRoot || workspace.root}
-                expanded={isExpanded}
-                selected={selectedId === workspace.id}
-                hasMenu={true}
-                menuOpen={workspaceMenuId === workspace.id}
-                onToggle={() => sidebar.toggleWorkspaceExpanded(workspace.id)}
-                onClick={() => handleWorkspaceRowClick(workspace.id)}
-              >
-                {#snippet menu()}
-                  <div data-workspace-menu>
-                    <button
-                      type="button"
-                      class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/55 transition-[opacity,background-color,color] hover:bg-sidebar-accent/80 hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 {selectedId ===
-                      workspace.id
-                        ? 'opacity-100'
-                        : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}"
-                      title="工作区操作"
-                      aria-label={`管理工作区 ${workspace.name}`}
-                      aria-expanded={workspaceMenuId === workspace.id}
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        workspaceMenuId = workspaceMenuId === workspace.id ? "" : workspace.id;
-                      }}
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        class="h-3.5 w-3.5"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2.2"
-                        stroke-linecap="round"
-                      >
-                        <path d="M5 12h.01M12 12h.01M19 12h.01" />
-                      </svg>
-                    </button>
-                    {#if workspaceMenuId === workspace.id}
-                      <div
-                        class="absolute right-1 top-8 z-20 min-w-32 overflow-hidden rounded-lg border border-sidebar-border bg-sidebar shadow-xl"
-                        role="menu"
-                      >
-                        <button
-                          type="button"
-                          class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-                          role="menuitem"
-                          onclick={() => openRenameWorkspace(workspace)}
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            class="h-3.5 w-3.5"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M12 20h9" /><path
-                              d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"
-                            />
-                          </svg>
-                          重命名
-                        </button>
-                        <button
-                          type="button"
-                          class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-                          role="menuitem"
-                          onclick={() => requestArchiveWorkspace(workspace)}
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            class="h-3.5 w-3.5"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M3 7h18M5 7v13h14V7M9 7V4h6v3" /><path d="M10 11v5M14 11v5" />
-                          </svg>
-                          归档
-                        </button>
-                        <button
-                          type="button"
-                          class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-400 transition-colors hover:bg-red-400/10"
-                          role="menuitem"
-                          onclick={() => requestDeleteWorkspace(workspace)}
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            class="h-3.5 w-3.5"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5" />
-                          </svg>
-                          删除
-                        </button>
-                      </div>
-                    {/if}
-                  </div>
-                {/snippet}
+          <button
+            type="button"
+            class="flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/45 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            onclick={newWorkspace}
+            title="新建工作区"
+            aria-label="新建工作区"
+          >
+            <svg
+              class="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        {/snippet}
+      </SidebarSectionLabel>
 
-                {#snippet children()}
+      {#if workspaceSearchOpen}
+        <input
+          type="search"
+          class="mb-1 min-h-8 w-full rounded-lg border border-transparent bg-sidebar-accent/40 px-2.5 py-1 text-xs text-sidebar-foreground outline-none transition-colors placeholder:text-sidebar-foreground/40 focus:border-sidebar-border focus:bg-background"
+          placeholder="搜索 Work 对话"
+          bind:value={conversationSearch}
+        />
+      {/if}
+
+      {#if sidebar.loading}
+        <div class="flex items-center gap-2 px-2 py-3 text-xs text-sidebar-foreground/50">
+          <span
+            class="h-3 w-3 animate-spin rounded-full border-2 border-sidebar-foreground/20 border-t-sidebar-foreground/70"
+          ></span>
+          正在读取工作区…
+        </div>
+      {:else if !workTransportSupported}
+        <div
+          class="mt-1 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-2 text-xs leading-5 text-sidebar-foreground/70"
+        >
+          <span class="block font-medium text-sidebar-foreground/85">桌面 App 才能执行 Work</span>
+          <span class="mt-0.5 block text-[11px] text-sidebar-foreground/55"
+            >本地文件和任务运行只在桌面 App 中可用。</span
+          >
+        </div>
+      {:else if sidebar.error}
+        <div
+          class="flex items-center justify-between gap-2 rounded-lg border border-red-400/20 bg-red-400/5 px-2.5 py-2 text-xs leading-5 text-red-300"
+          role="alert"
+        >
+          <span class="min-w-0 flex-1">{sidebar.error}</span>
+          <button
+            type="button"
+            class="shrink-0 rounded-md border border-red-400/30 px-2 py-1 text-[11px] font-semibold hover:bg-red-400/10"
+            onclick={() => void sidebar.loadWorkspaces(true)}
+          >
+            重试
+          </button>
+        </div>
+      {:else if sidebar.workspaces.length === 0}
+        <button
+          type="button"
+          class="mt-1 w-full rounded-lg border border-dashed border-sidebar-border/70 px-3 py-3 text-left text-xs leading-5 text-sidebar-foreground/55 transition-colors hover:border-sidebar-foreground/30 hover:bg-sidebar-accent/35"
+          onclick={newWorkspace}
+        >
+          <span class="block font-medium text-sidebar-foreground/75">创建第一个工作区</span>
+          <span class="mt-0.5 block text-[11px]">关联本地文件夹，开始协作。</span>
+        </button>
+      {:else}
+        <div class="space-y-0.5">
+          {#each sidebar.workspaces as workspace (workspace.id)}
+            {@const isExpanded = sidebar.expandedWorkspaces.has(workspace.id)}
+            {@const wsSessions = sidebar.getVisibleSessions(workspace.id, matchesConversation)}
+            {@const isLoadingSessions = sidebar.sessionsLoadingByWorkspace[workspace.id] ?? false}
+            <SidebarFolderRow
+              label={workspace.name}
+              title={workspace.primaryWorkRoot || workspace.root}
+              expanded={isExpanded}
+              selected={selectedId === workspace.id}
+              hasMenu={true}
+              menuOpen={workspaceMenuId === workspace.id}
+              onToggle={() => sidebar.toggleWorkspaceExpanded(workspace.id)}
+              onClick={() => handleWorkspaceRowClick(workspace.id)}
+            >
+              {#snippet menu()}
+                <div data-workspace-menu>
                   <button
                     type="button"
-                    class="work-sidebar-conversation-action chat-project-new-chat flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                    class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/55 transition-[opacity,background-color,color] hover:bg-sidebar-accent/80 hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 {selectedId ===
+                    workspace.id
+                      ? 'opacity-100'
+                      : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}"
+                    title="工作区操作"
+                    aria-label={`管理工作区 ${workspace.name}`}
+                    aria-expanded={workspaceMenuId === workspace.id}
                     onclick={(e) => {
                       e.stopPropagation();
-                      sidebar.newConversationForWorkspace(workspace.id);
+                      workspaceMenuId = workspaceMenuId === workspace.id ? "" : workspace.id;
                     }}
                   >
                     <svg
                       viewBox="0 0 24 24"
-                      class="h-3.5 w-3.5 text-sidebar-foreground/45"
+                      class="h-3.5 w-3.5"
                       fill="none"
                       stroke="currentColor"
-                      stroke-width="2"
+                      stroke-width="2.2"
                       stroke-linecap="round"
                     >
-                      <path d="M12 5v14M5 12h14" />
+                      <path d="M5 12h.01M12 12h.01M19 12h.01" />
                     </svg>
-                    <span>新对话</span>
                   </button>
-
-                  {#if isLoadingSessions && wsSessions.length === 0}
+                  {#if workspaceMenuId === workspace.id}
                     <div
-                      class="flex items-center gap-2 px-2.5 py-2 text-xs text-sidebar-foreground/50"
+                      class="absolute right-1 top-8 z-20 min-w-32 overflow-hidden rounded-lg border border-sidebar-border bg-sidebar shadow-xl"
+                      role="menu"
                     >
-                      <span
-                        class="h-3 w-3 animate-spin rounded-full border-2 border-sidebar-foreground/20 border-t-sidebar-foreground/70"
-                      ></span>
-                      正在读取对话…
+                      <button
+                        type="button"
+                        class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                        role="menuitem"
+                        onclick={() => openRenameWorkspace(workspace)}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          class="h-3.5 w-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M12 20h9" /><path
+                            d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"
+                          />
+                        </svg>
+                        重命名
+                      </button>
+                      <button
+                        type="button"
+                        class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                        role="menuitem"
+                        onclick={() => requestArchiveWorkspace(workspace)}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          class="h-3.5 w-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M3 7h18M5 7v13h14V7M9 7V4h6v3" /><path d="M10 11v5M14 11v5" />
+                        </svg>
+                        归档
+                      </button>
+                      <button
+                        type="button"
+                        class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-400 transition-colors hover:bg-red-400/10"
+                        role="menuitem"
+                        onclick={() => requestDeleteWorkspace(workspace)}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          class="h-3.5 w-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5" />
+                        </svg>
+                        删除
+                      </button>
                     </div>
-                  {:else if wsSessions.length === 0}
-                    <div class="px-2.5 py-2 text-xs text-sidebar-foreground/45">暂无对话</div>
-                  {:else}
-                    {#each wsSessions as session (session.id)}
-                      <ConversationItem
-                        conversation={sessionConversation(session)}
-                        selected={activeRunId === session.id}
-                        statusLabel={sessionAttentionLabel(session)}
-                        onclick={() => sidebar.selectSession(workspace.id, session.id)}
-                        ondelete={requestDeleteConversation}
-                        onend={endConversation}
-                      />
-                    {/each}
                   {/if}
-                {/snippet}
-              </SidebarFolderRow>
-            {/each}
+                </div>
+              {/snippet}
 
-            <button
-              type="button"
-              class="work-sidebar-add-workspace mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-sidebar-border/60 px-2.5 py-1.5 text-xs text-sidebar-foreground/50 transition-colors hover:border-sidebar-border hover:bg-sidebar-accent/40 hover:text-sidebar-foreground"
-              onclick={newWorkspace}
+              {#snippet children()}
+                <button
+                  type="button"
+                  class="work-sidebar-conversation-action chat-project-new-chat flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    sidebar.newConversationForWorkspace(workspace.id);
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    class="h-3.5 w-3.5 text-sidebar-foreground/45"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  >
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  <span>新对话</span>
+                </button>
+
+                {#if isLoadingSessions && wsSessions.length === 0}
+                  <div
+                    class="flex items-center gap-2 px-2.5 py-2 text-xs text-sidebar-foreground/50"
+                  >
+                    <span
+                      class="h-3 w-3 animate-spin rounded-full border-2 border-sidebar-foreground/20 border-t-sidebar-foreground/70"
+                    ></span>
+                    正在读取对话…
+                  </div>
+                {:else if wsSessions.length === 0}
+                  <div class="px-2.5 py-2 text-xs text-sidebar-foreground/45">暂无对话</div>
+                {:else}
+                  {#each wsSessions as session (session.id)}
+                    <ConversationItem
+                      conversation={sessionConversation(session)}
+                      selected={activeRunId === session.id}
+                      statusLabel={sessionAttentionLabel(session)}
+                      onclick={() => sidebar.selectSession(workspace.id, session.id)}
+                      ondelete={requestDeleteConversation}
+                      onend={endConversation}
+                    />
+                  {/each}
+                {/if}
+              {/snippet}
+            </SidebarFolderRow>
+          {/each}
+
+          <button
+            type="button"
+            class="work-sidebar-add-workspace mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-sidebar-border/60 px-2.5 py-1.5 text-xs text-sidebar-foreground/50 transition-colors hover:border-sidebar-border hover:bg-sidebar-accent/40 hover:text-sidebar-foreground"
+            onclick={newWorkspace}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              class="h-3.5 w-3.5 text-sidebar-foreground/40"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
             >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span>新建工作区</span>
+          </button>
+        </div>
+      {/if}
+
+      <!-- Archived workspaces are management-only and stay out of the Code-like primary tree. -->
+      {#if !showArchived && !sidebar.loading && sidebar.archivedWorkspaces.length > 0}
+        <div class="mt-3 border-t border-sidebar-border/40 pt-2">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between px-2.5 py-1 font-semibold text-sidebar-foreground/40 transition-colors hover:text-sidebar-foreground/70"
+            aria-expanded={archivedWorkspacesExpanded}
+            onclick={() => (archivedWorkspacesExpanded = !archivedWorkspacesExpanded)}
+          >
+            <div class="flex items-center gap-1.5">
               <svg
                 viewBox="0 0 24 24"
-                class="h-3.5 w-3.5 text-sidebar-foreground/40"
+                class="h-3 w-3 transition-transform duration-150 {archivedWorkspacesExpanded
+                  ? 'rotate-90'
+                  : ''}"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="2"
                 stroke-linecap="round"
+                stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg
               >
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              <span>新建工作区</span>
-            </button>
-          </div>
-        {/if}
-
-        <!-- Archived workspaces: collapsible, out of the primary flow -->
-        {#if !sidebar.loading && sidebar.archivedWorkspaces.length > 0}
-          <div class="mt-3 border-t border-sidebar-border/40 pt-2">
-            <button
-              type="button"
-              class="flex w-full items-center justify-between px-2.5 py-1 font-semibold text-sidebar-foreground/40 transition-colors hover:text-sidebar-foreground/70"
-              aria-expanded={archivedWorkspacesExpanded}
-              onclick={() => (archivedWorkspacesExpanded = !archivedWorkspacesExpanded)}
-            >
-              <div class="flex items-center gap-1.5">
-                <svg
-                  viewBox="0 0 24 24"
-                  class="h-3 w-3 transition-transform duration-150 {archivedWorkspacesExpanded
-                    ? 'rotate-90'
-                    : ''}"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg
+              <span>已归档工作区</span>
+            </div>
+            <span>{sidebar.archivedWorkspaces.length}</span>
+          </button>
+          {#if archivedWorkspacesExpanded}
+            <div class="mt-1 space-y-0.5 opacity-80">
+              {#each sidebar.archivedWorkspaces as workspace (workspace.id)}
+                <div
+                  class="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sidebar-foreground/55"
                 >
-                <span>已归档工作区</span>
-              </div>
-              <span>{sidebar.archivedWorkspaces.length}</span>
-            </button>
-            {#if archivedWorkspacesExpanded}
-              <div class="mt-1 space-y-0.5 opacity-80">
-                {#each sidebar.archivedWorkspaces as workspace (workspace.id)}
-                  <div
-                    class="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sidebar-foreground/55"
+                  <span class="min-w-0 flex-1 truncate text-xs" title={workspace.root}
+                    >{workspace.name}</span
                   >
-                    <span class="min-w-0 flex-1 truncate text-xs" title={workspace.root}
-                      >{workspace.name}</span
-                    >
-                    <button
-                      type="button"
-                      class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-primary hover:bg-sidebar-accent"
-                      disabled={sidebar.workspaceActionBusyId === workspace.id}
-                      onclick={() => void sidebar.restoreArchivedWorkspace(workspace)}
-                    >
-                      {sidebar.workspaceActionBusyId === workspace.id ? "…" : "恢复"}
-                    </button>
-                    <button
-                      type="button"
-                      class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-red-400 transition-colors hover:bg-red-400/10 disabled:opacity-50"
-                      disabled={sidebar.workspaceActionBusyId === workspace.id}
-                      title="永久删除数据目录"
-                      onclick={() => requestDeleteWorkspace(workspace)}
-                    >
-                      删除
-                    </button>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    {/if}
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-primary hover:bg-sidebar-accent"
+                    disabled={sidebar.workspaceActionBusyId === workspace.id}
+                    onclick={() => void sidebar.restoreArchivedWorkspace(workspace)}
+                  >
+                    {sidebar.workspaceActionBusyId === workspace.id ? "…" : "恢复"}
+                  </button>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-red-400 transition-colors hover:bg-red-400/10 disabled:opacity-50"
+                    disabled={sidebar.workspaceActionBusyId === workspace.id}
+                    title="永久删除数据目录"
+                    onclick={() => requestDeleteWorkspace(workspace)}
+                  >
+                    删除
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
 
     {#if workTransportSupported}
       <footer class="mt-auto shrink-0 border-t border-sidebar-border/40 px-0.5 pt-2">
