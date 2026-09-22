@@ -11,41 +11,16 @@
     getWorkConversationSurfaceKey,
     getWorkConversationSurfaceKeyAfterRouteChange,
   } from "$lib/utils/work-sidebar-navigation";
-  import { normalizeWorkIdentity } from "$lib/utils/work-identity";
   import {
     createWorkspace,
     createWorkspaceFromFolder,
     relinkWorkspaceFolder,
-    addWorkAccessRoot,
-    deleteStandaloneWorkArtifact,
-    deleteWorkArtifact,
-    copyWorkArtifactToPrimary,
-    exportStandaloneWorkArtifact,
-    exportWorkArtifact,
     getWorkProfile,
-    getWorkRunRecovery,
-    getWorkRunReceipt,
-    getStandaloneWorkRunReceipt,
-    importWorkFile,
-    listStandaloneWorkArtifacts,
-    listWorkArtifacts,
-    listWorkAccessRoots,
-    listWorkFiles,
-    openWorkDirectory,
-    openWorkFile,
-    removeWorkFile,
-    removeWorkAccessRoot,
-    recoverWorkRun,
-    setWorkAccessRootWritable,
-    setWorkArtifactStorageMode,
     renameWorkspace,
-    updateStandaloneWorkOfficeArtifact,
-    updateWorkOfficeArtifact,
-    validateStandaloneWorkArtifact,
-    validateWorkArtifact,
-    deliverStandaloneWorkArtifact,
-    deliverWorkArtifact,
+    setWorkArtifactStorageMode,
   } from "$lib/api/work";
+  import * as workResources from "$lib/work/work-resource-service";
+  import { workspaceScope, standaloneScope, type WorkScope } from "$lib/work/work-scope";
   import { workWorkspaceStore } from "$lib/stores/work-workspace-store.svelte";
   import WorkChatSurface from "$lib/components/work/WorkChatSurface.svelte";
   import WorkConversationInspectorAside from "$lib/components/work/WorkConversationInspectorAside.svelte";
@@ -169,22 +144,19 @@
         runId || newConversation || (!workspaceId && !selectedView),
       );
       const standalone = !workspaceId && !selectedView;
+      const scope = standalone ? standaloneScope() : workspaceScope(workspaceId);
       const [, nextProfile, nextArtifacts, nextInputFiles, nextAccessRoots] = await Promise.all([
         workWorkspaceStore.fetchWorkspaces(),
         withTimeout(getWorkProfile(), 15_000, "读取 Work 配置超时"),
-        standalone
+        conversationActive
           ? runId
-            ? listStandaloneWorkArtifacts(runId)
-            : Promise.resolve([])
+            ? workResources.listArtifacts(scope, runId)
+            : Promise.resolve<WorkArtifactSummary[]>([])
           : workspaceId
-            ? conversationActive
-              ? runId
-                ? listWorkArtifacts(workspaceId, runId)
-                : Promise.resolve([])
-              : listWorkArtifacts(workspaceId, null)
-            : Promise.resolve([]),
-        workspaceId ? listWorkFiles(workspaceId, "input") : Promise.resolve([]),
-        workspaceId ? listWorkAccessRoots(workspaceId) : Promise.resolve([]),
+            ? workResources.listArtifacts(scope, null)
+            : Promise.resolve<WorkArtifactSummary[]>([]),
+        workResources.listInputFiles(scope),
+        workResources.listAccessRoots(scope),
       ]);
       if (version !== loadVersion) return;
       profile = nextProfile;
@@ -199,11 +171,6 @@
     }
   }
 
-  function isMissingArtifactError(cause: unknown): boolean {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    return /work artifact\b.*\bnot found\b/i.test(message);
-  }
-
   function removeArtifactFromState(artifactId: string): void {
     // Invalidate an in-flight refresh before removing the card locally. A
     // refresh triggered by the task stream must not put the old card back.
@@ -211,19 +178,25 @@
     artifacts = artifacts.filter((item) => item.id !== artifactId);
   }
 
+  function currentScope(): WorkScope {
+    return isStandalone ? standaloneScope() : workspaceScope(selectedId);
+  }
+
   async function refreshArtifacts() {
     const version = ++artifactRefreshVersion;
     let nextArtifacts: WorkArtifactSummary[];
     if (isStandalone) {
-      nextArtifacts = conversationRunId ? await listStandaloneWorkArtifacts(conversationRunId) : [];
+      nextArtifacts = conversationRunId
+        ? await workResources.listArtifacts(standaloneScope(), conversationRunId)
+        : [];
     } else if (!selectedId) {
       return;
     } else if (hasActiveConversation) {
       nextArtifacts = conversationRunId
-        ? await listWorkArtifacts(selectedId, conversationRunId)
+        ? await workResources.listArtifacts(workspaceScope(selectedId), conversationRunId)
         : [];
     } else {
-      nextArtifacts = await listWorkArtifacts(selectedId, null);
+      nextArtifacts = await workResources.listArtifacts(workspaceScope(selectedId), null);
     }
     // A terminal/tool event can refresh while the user is deleting an artifact.
     // Do not let an older response overwrite the newer local state.
@@ -235,24 +208,19 @@
       recovery = null;
       return;
     }
-    const identity = normalizeWorkIdentity({
-      run: sessionInfo?.runId
-        ? {
-            id: sessionInfo.runId,
-            work_task_id: progressView?.taskId,
-            work_run_id: progressView?.workRunId,
-          }
-        : null,
-      progressView,
-      workspaceId: selectedId,
-      conversationRunId,
-    });
-    if (!identity.canLoadWorkspaceReceipt || !identity.taskId || !identity.workRunId) {
-      recovery = null;
-      return;
-    }
     try {
-      recovery = await getWorkRunRecovery(selectedId, identity.taskId, identity.workRunId);
+      recovery = await workResources.getRecovery({
+        scope: workspaceScope(selectedId),
+        conversationRunId,
+        run: sessionInfo?.runId
+          ? {
+              id: sessionInfo.runId,
+              work_task_id: progressView?.taskId,
+              work_run_id: progressView?.workRunId,
+            }
+          : null,
+        progressView,
+      });
     } catch (cause) {
       // A transient projection race while a new session is attaching should
       // not replace the conversation with a global error banner.
@@ -268,29 +236,34 @@
 
   async function handleRecoveryAction(action: WorkRecoveryAction, subagentId?: string) {
     if (isStandalone || !selectedId) return;
-    const identity = normalizeWorkIdentity({
-      run: sessionInfo?.runId
-        ? {
-            id: sessionInfo.runId,
-            work_task_id: progressView?.taskId,
-            work_run_id: progressView?.workRunId,
-          }
-        : null,
-      progressView,
-      workspaceId: selectedId,
-      conversationRunId,
-    });
-    if (!identity.canLoadWorkspaceReceipt || !identity.taskId || !identity.workRunId) return;
-    const nextRun = await recoverWorkRun(
-      selectedId,
-      identity.taskId,
-      identity.workRunId,
+    const nextRun = await workResources.recoverRun(
+      {
+        scope: workspaceScope(selectedId),
+        conversationRunId,
+        run: sessionInfo?.runId
+          ? {
+              id: sessionInfo.runId,
+              work_task_id: progressView?.taskId,
+              work_run_id: progressView?.workRunId,
+            }
+          : null,
+        progressView,
+      },
       action,
       subagentId,
     );
+    if (!nextRun) return;
     const nextRecovery =
       nextRun.status === "recoverable" || nextRun.status === "waiting_delivery"
-        ? getWorkRunRecovery(selectedId, nextRun.taskId, nextRun.id)
+        ? workResources.getRecovery({
+            scope: workspaceScope(selectedId),
+            conversationRunId,
+            run: {
+              id: nextRun.sessionId || conversationRunId,
+              work_task_id: nextRun.taskId,
+              work_run_id: nextRun.id,
+            },
+          })
         : Promise.resolve(null);
     await Promise.allSettled([
       workProjectionStore.fetch(nextRun.id),
@@ -316,21 +289,10 @@
         kind: "warning",
       });
       if (!ok) return;
-      // Standalone artifacts are registered against the task that produced
-      // them. The current conversation can already have moved to a newer task
-      // while the inspector still holds the previous card.
-      const artifactRunId = artifact.runId || artifact.workspaceId || conversationRunId;
-      if (!artifactRunId) {
-        removeArtifactFromState(artifactId);
-        return;
-      }
-      try {
-        await deleteStandaloneWorkArtifact(artifactRunId, artifactId);
-      } catch (cause) {
-        // The registry may already have reconciled this card away. Removing
-        // the stale UI entry is safe; we never delete an unknown file here.
-        if (!isMissingArtifactError(cause)) throw cause;
-      }
+      await workResources.deleteArtifact(
+        { scope: standaloneScope(), runId: conversationRunId, artifactId },
+        artifact,
+      );
       removeArtifactFromState(artifactId);
       return;
     }
@@ -345,43 +307,35 @@
       kind: "warning",
     });
     if (!ok) return;
-    try {
-      await deleteWorkArtifact(artifact.workspaceId || selectedId, artifactId);
-    } catch (cause) {
-      // Treat an already-reconciled registry entry as an idempotent delete so
-      // an orphaned card cannot remain permanently undeletable.
-      if (!isMissingArtifactError(cause)) throw cause;
-    }
+    await workResources.deleteArtifact({
+      scope: workspaceScope(selectedId),
+      runId: conversationRunId,
+      artifactId,
+    });
     removeArtifactFromState(artifactId);
   }
 
   async function validateArtifact(artifactId: string) {
     const artifact = artifacts.find((item) => item.id === artifactId);
     if (!artifact) throw new Error("成果不存在或已被移除。");
-
-    let updated: WorkArtifactSummary;
-    if (isStandalone) {
-      if (!conversationRunId) throw new Error("当前对话尚未建立可验证的任务记录。");
-      updated = await validateStandaloneWorkArtifact(conversationRunId, artifactId);
-    } else {
-      if (!selectedId) throw new Error("请先选择工作空间再验证成果。");
-      updated = await validateWorkArtifact(selectedId, artifactId, artifact.runId || null);
-    }
+    const updated = await workResources.validateArtifact({
+      scope: currentScope(),
+      runId: conversationRunId,
+      artifactId,
+      artifactRunId: artifact.runId || null,
+    });
     artifacts = artifacts.map((item) => (item.id === artifactId ? updated : item));
   }
 
   async function deliverArtifact(artifactId: string) {
     const artifact = artifacts.find((item) => item.id === artifactId);
     if (!artifact) throw new Error("成果不存在或已被移除。");
-
-    let updated: WorkArtifactSummary;
-    if (isStandalone) {
-      if (!conversationRunId) throw new Error("当前对话尚未建立可交付的任务记录。");
-      updated = await deliverStandaloneWorkArtifact(conversationRunId, artifactId);
-    } else {
-      if (!selectedId) throw new Error("请先选择工作空间再交付成果。");
-      updated = await deliverWorkArtifact(selectedId, artifactId, artifact.runId || null);
-    }
+    const updated = await workResources.deliverArtifact({
+      scope: currentScope(),
+      runId: conversationRunId,
+      artifactId,
+      artifactRunId: artifact.runId || null,
+    });
     artifacts = artifacts.map((item) => (item.id === artifactId ? updated : item));
 
     // WaitingDelivery is a durable run state. Once the user explicitly
@@ -407,12 +361,13 @@
         : undefined,
     });
     if (!destination) return;
-    if (isStandalone) {
-      await exportStandaloneWorkArtifact(conversationRunId, artifactId, destination);
-      return;
-    }
-    if (!selectedId) return;
-    await exportWorkArtifact(selectedId, artifactId, destination, artifact?.runId || null);
+    await workResources.exportArtifact(
+      currentScope(),
+      conversationRunId,
+      artifactId,
+      destination,
+      artifact?.runId || null,
+    );
   }
 
   async function copyArtifactToPrimary(artifactId: string): Promise<string> {
@@ -421,7 +376,11 @@
     if (!selectedId || selectedWorkspace?.rootKind !== "local_folder") {
       throw new Error("当前 Workspace 没有关联可复制的本地工作目录。");
     }
-    return await copyWorkArtifactToPrimary(selectedId, artifactId, artifact.runId || null);
+    return await workResources.copyArtifactToPrimary(
+      workspaceScope(selectedId),
+      artifactId,
+      artifact.runId || null,
+    );
   }
 
   async function updateArtifactStorageMode(mode: WorkArtifactStorageMode): Promise<void> {
@@ -446,18 +405,19 @@
 
   async function importInputFile(sourcePath: string) {
     if (!selectedId) return;
-    const imported = await importWorkFile(selectedId, sourcePath);
+    const imported = await workResources.importInputFile(workspaceScope(selectedId), sourcePath);
+    if (!imported) return;
     inputFiles = [imported, ...inputFiles.filter((file) => file.path !== imported.path)];
   }
 
   async function openWorkspaceFile(relativePath: string) {
     if (!selectedId) return;
-    await openWorkFile(selectedId, relativePath);
+    await workResources.openFile(workspaceScope(selectedId), conversationRunId, relativePath);
   }
 
   async function removeInputFile(relativePath: string) {
     if (!selectedId) return;
-    await removeWorkFile(selectedId, relativePath);
+    await workResources.removeInputFile(workspaceScope(selectedId), relativePath);
     inputFiles = inputFiles.filter((file) => file.path !== relativePath);
   }
 
@@ -472,7 +432,7 @@
     if (typeof selected !== "string") return;
     accessBusyPath = selected;
     try {
-      accessRoots = await addWorkAccessRoot(selectedId, selected, false);
+      accessRoots = await workResources.addAccessRoot(workspaceScope(selectedId), selected, false);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -484,7 +444,11 @@
     if (!selectedId || accessBusyPath) return;
     accessBusyPath = root.path;
     try {
-      accessRoots = await setWorkAccessRootWritable(selectedId, root.path, !root.writable);
+      accessRoots = await workResources.setAccessRootWritable(
+        workspaceScope(selectedId),
+        root.path,
+        !root.writable,
+      );
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -502,7 +466,7 @@
     if (!ok) return;
     accessBusyPath = root.path;
     try {
-      accessRoots = await removeWorkAccessRoot(selectedId, root.path);
+      accessRoots = await workResources.removeAccessRoot(workspaceScope(selectedId), root.path);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -513,32 +477,20 @@
   async function openArtifact(artifactId: string) {
     const artifact = artifacts.find((item) => item.id === artifactId);
     if (!artifact) return;
-    if (isStandalone && conversationRunId) {
-      await openWorkFile(conversationRunId, artifact.path);
-      return;
-    }
-    if (selectedId) {
-      await openWorkFile(selectedId, artifact.path);
-    }
+    if (isStandalone && !conversationRunId) return;
+    await workResources.openFile(currentScope(), conversationRunId, artifact.path);
   }
 
   async function openArtifactDirectory() {
-    if (isStandalone && conversationRunId) {
-      await openWorkDirectory(conversationRunId, "output");
-      return;
-    }
-    if (selectedId) {
-      await openWorkDirectory(selectedId, "output");
-    }
+    if (isStandalone && !conversationRunId) return;
+    await workResources.openDirectory(currentScope(), conversationRunId, "output");
   }
 
   /** 任务回执（Ledger 投影）：Workspace run 用 task/run id，standalone 用会话 run id。 */
   async function loadRunReceipt() {
-    if (isStandalone) {
-      if (!conversationRunId) return null;
-      return await getStandaloneWorkRunReceipt(conversationRunId);
-    }
-    const identity = normalizeWorkIdentity({
+    return await workResources.getReceipt({
+      scope: currentScope(),
+      conversationRunId,
       run: sessionInfo?.runId
         ? {
             id: sessionInfo.runId,
@@ -547,28 +499,16 @@
           }
         : null,
       progressView,
-      workspaceId: selectedId,
-      conversationRunId,
     });
-    if (!identity.canLoadWorkspaceReceipt || !identity.taskId || !identity.workRunId) {
-      return null;
-    }
-    return await getWorkRunReceipt(identity.taskId, identity.workRunId);
   }
 
   async function saveOfficeArtifact(artifactId: string, contentBase64: string): Promise<void> {
-    if (isStandalone) {
-      if (!conversationRunId) throw new Error("当前对话尚未建立可保存的任务记录。");
-      await updateStandaloneWorkOfficeArtifact(conversationRunId, artifactId, contentBase64);
-    } else {
-      if (!selectedId) throw new Error("请先选择工作空间再保存 Office 成果。");
-      await updateWorkOfficeArtifact(
-        selectedId,
-        artifactId,
-        contentBase64,
-        conversationRunId || null,
-      );
-    }
+    await workResources.saveOfficeArtifact(
+      currentScope(),
+      conversationRunId,
+      artifactId,
+      contentBase64,
+    );
     await refreshArtifacts();
   }
 
@@ -645,7 +585,7 @@
   async function openPrimaryFolder(folderPath: string) {
     if (!selectedId) return;
     try {
-      await openWorkDirectory(selectedId, folderPath);
+      await workResources.openDirectory(workspaceScope(selectedId), conversationRunId, folderPath);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     }

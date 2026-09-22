@@ -55,8 +55,9 @@
     listWorkResources,
     listWorkSessions,
     listWorkSubagents,
-    openWorkFile,
   } from "$lib/api/work";
+  import * as workResources from "$lib/work/work-resource-service";
+  import { workspaceScope, standaloneScope } from "$lib/work/work-scope";
   import { inboxStore } from "$lib/stores/inbox-store.svelte";
   import {
     filterCurrentRunInteractions,
@@ -1790,13 +1791,15 @@
         : undefined,
     });
     if (!destination) return;
-    const { exportWorkArtifact, exportStandaloneWorkArtifact } = await import("$lib/api/work");
-    const isStandaloneWork = !workspace && Boolean(session.run?.id);
-    if (isStandaloneWork && session.run?.id) {
-      await exportStandaloneWorkArtifact(session.run.id, artifactId, destination);
-    } else if (workspace?.id) {
-      await exportWorkArtifact(workspace.id, artifactId, destination, session.run?.id || null);
-    }
+    if (!workspace && !session.run?.id) return;
+    const scope = !workspace ? standaloneScope() : workspaceScope(workspace.id);
+    await workResources.exportArtifact(
+      scope,
+      session.run?.id ?? "",
+      artifactId,
+      destination,
+      artifact?.runId || null,
+    );
   }
 
   async function handleExportHtml() {
@@ -1846,12 +1849,12 @@
     const artifact = artifacts.find((item) => item.id === artifactId);
     if (!artifact) return;
     // 独立会话下以 session run id 作为 workspaceId 打开；否则用当前 workspace。
-    const scopeId = !workspace && session.run?.id ? session.run.id : workspace?.id;
-    if (!scopeId) {
+    if (!workspace && !session.run?.id) {
       showChatToast("当前会话还没有关联工作区，无法用系统应用打开。", "error");
       return;
     }
-    await openWorkFile(scopeId, artifact.path);
+    const scope = !workspace ? standaloneScope() : workspaceScope(workspace.id);
+    await workResources.openFile(scope, session.run?.id ?? "", artifact.path);
   }
 
   function handleOpenAllArtifacts() {
