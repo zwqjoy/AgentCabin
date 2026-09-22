@@ -114,6 +114,7 @@ function runSync(cmd, args, options = {}) {
   const res = spawnSync(cmd, args, {
     ...options,
     encoding: "utf8",
+    shell: isWin,
     env: {
       ...process.env,
       PATH: augmentedPath,
@@ -133,6 +134,7 @@ async function runPiRpcSmoke(label, extraArgs = [], extraEnv = {}) {
   console.log(`\n=== 2. Testing Pi RPC: ${label} ===`);
   const tempHome = createTempDir("pi-rpc");
   const child = spawn(piBin, ["--mode", "rpc", ...extraArgs], {
+    shell: isWin,
     env: {
       ...process.env,
       PATH: augmentedPath,
@@ -240,6 +242,7 @@ async function testPiExtensionInstall() {
 
 async function testDshAcpProtocol(dshHome) {
   const child = spawn(dshBin, ["--profile", "acp"], {
+    shell: isWin,
     env: {
       ...process.env,
       PATH: augmentedPath,

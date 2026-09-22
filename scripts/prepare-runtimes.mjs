@@ -14,7 +14,12 @@ const nodePlatform =
   process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "win" : "linux";
 const nodeArch = process.arch === "arm64" ? "arm64" : "x64";
 const nodeDir = join(out, "node");
-const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: "inherit" });
+const run = (cmd, args) =>
+  execFileSync(cmd, args, {
+    cwd: root,
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  });
 const mkdir = (dir) => mkdirSync(dir, { recursive: true });
 
 rmSync(out, { recursive: true, force: true });
