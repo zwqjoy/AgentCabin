@@ -16,6 +16,7 @@ execFileSync(
     cwd: extensionsDir,
     env: { ...process.env, npm_config_cache: npmCacheDir },
     stdio: "inherit",
+    shell: process.platform === "win32",
   },
 );
 
