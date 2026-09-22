@@ -2192,7 +2192,9 @@
               </div>
             {/if}
           {:else if !isExplorerPage}
-            <div class="border-b border-sidebar-border/50 p-2 shrink-0 space-y-0.5">
+            <div
+              class="app-shell-sidebar-nav border-b border-sidebar-border/50 p-2 shrink-0 space-y-0.5"
+            >
               <!-- New conversation for the current Native / Pi Code mode -->
               <SidebarNavItem label={t("sidebar_newChat")} onclick={newChat}>
                 {#snippet icon()}
@@ -2836,9 +2838,9 @@
 
   :global(
     .app-shell-sidebar-panel.work-mode
-      > :not(.app-shell-sidebar-header):not(.work-mode-sidebar):not(.app-shell-sidebar-footer):not(
-        .work-mode-resize
-      )
+      > :not(.app-shell-sidebar-header):not(.app-shell-sidebar-nav):not(.work-mode-sidebar):not(
+        .app-shell-sidebar-footer
+      ):not(.work-mode-resize)
   ) {
     display: none;
   }
