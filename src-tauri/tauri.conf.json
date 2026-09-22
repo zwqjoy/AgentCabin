@@ -62,10 +62,7 @@
     "category": "DeveloperTool",
     "resources": [
       "browser-worker/**/*",
-      "resources/agentcabin-computer-use/macos/agentcabin-computer-use.app",
-      "resources/agentcabin-computer-use/macos/ocr-helper",
-      "resources/agentcabin-computer-use/LICENSE",
-      "resources/agentcabin-computer-use/UPSTREAM.md"
+      "resources/agentcabin-computer-use"
     ],
     "shortDescription": "AI-assisted vibe coding desktop app",
     "longDescription": "AgentCabin wraps AI coding CLIs (Claude Code, Codex) with a visual chat interface, run management, and activity monitoring. Local-first, no cloud required.",
