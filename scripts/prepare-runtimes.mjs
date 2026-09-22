@@ -22,10 +22,22 @@ mkdir(nodeDir);
 run("tar", ["-xzf", archive, "--strip-components=1", "-C", nodeDir]);
 rmSync(archive, { force: true });
 const npm = process.platform === "win32" ? join(nodeDir, "npm.cmd") : join(nodeDir, "bin/npm");
-for (const [name, spec] of [["pi", `${manifest.runtimes.pi.package}@${manifest.runtimes.pi.version}`], ["dsh", `${manifest.runtimes.dsh.package}@${manifest.runtimes.dsh.version}`], ["pnpm", `pnpm@${manifest.pnpm.version}`]]) {
-  mkdir(join(out, name));
-  run(npm, ["install", "--prefix", join(out, name), "--omit=dev", "--no-audit", "--no-fund", spec]);
-}
+const installRuntime = (name, spec, overrides = undefined) => {
+  const prefix = join(out, name);
+  mkdir(prefix);
+  if (overrides) {
+    writeFileSync(
+      join(prefix, "package.json"),
+      `${JSON.stringify({ private: true, overrides }, null, 2)}\n`,
+    );
+  }
+  run(npm, ["install", "--prefix", prefix, "--omit=dev", "--no-audit", "--no-fund", spec]);
+};
+installRuntime("pi", `${manifest.runtimes.pi.package}@${manifest.runtimes.pi.version}`);
+installRuntime("dsh", `${manifest.runtimes.dsh.package}@${manifest.runtimes.dsh.version}`, {
+  "@deepseek-ai/dsh-client-ui-sidebar-documentpreview": "0.1.5-rc.2",
+});
+installRuntime("pnpm", `pnpm@${manifest.pnpm.version}`);
 if (process.platform !== "win32") {
   for (const name of ["pi", "dsh", "pnpm"]) mkdir(join(out, name, "bin"));
   const node = `$(CDPATH= cd -- "$(dirname -- "$0")/../../node/bin" && pwd)/node`;
