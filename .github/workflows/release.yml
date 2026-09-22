@@ -69,6 +69,10 @@ jobs:
       - name: Prepare AgentCabin Computer Use resources
         run: npm run prepare:agentcabin-computer-use
 
+      - name: Use Electron-only Tauri build config
+        shell: bash
+        run: echo 'TAURI_CONFIG={"bundle":{"resources":[]}}' >> "$GITHUB_ENV"
+
       - name: Package Electron app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
