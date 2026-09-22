@@ -1,26 +1,19 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
-  import { platform } from "$lib/platform";
   import { getTransport } from "$lib/transport";
-  import { workProjectionStore } from "$lib/stores/work-projection-store.svelte";
   import { onMount, untrack } from "svelte";
   import { trapFocus } from "$lib/utils/focus-trap";
-  import { withTimeout } from "$lib/utils/async-utils";
   import {
     getWorkConversationSurfaceKey,
     getWorkConversationSurfaceKeyAfterRouteChange,
   } from "$lib/utils/work-sidebar-navigation";
+  import { WorkPageController } from "$lib/stores/work-page-controller.svelte";
   import {
-    createWorkspace,
-    createWorkspaceFromFolder,
-    relinkWorkspaceFolder,
-    getWorkProfile,
-    renameWorkspace,
-    setWorkArtifactStorageMode,
-  } from "$lib/api/work";
-  import * as workResources from "$lib/work/work-resource-service";
-  import { workspaceScope, standaloneScope, type WorkScope } from "$lib/work/work-scope";
+    parseWorkRouteState,
+    isStandaloneRoute,
+    showsConversation,
+  } from "$lib/work/work-route-state";
   import { workWorkspaceStore } from "$lib/stores/work-workspace-store.svelte";
   import WorkChatSurface from "$lib/components/work/WorkChatSurface.svelte";
   import WorkConversationInspectorAside from "$lib/components/work/WorkConversationInspectorAside.svelte";
@@ -33,59 +26,41 @@
   import type { SessionInfoData } from "$lib/types";
   import type {
     InboxItem,
-    WorkArtifactSummary,
     WorkArtifactStorageMode,
     WorkAccessRoot,
-    WorkFileSummary,
-    WorkProfile,
     WorkProgressSnapshot,
-    WorkRecoveryAction,
-    WorkRunRecovery,
     WorkRunProgressView,
     WorkWorkspaceSummary,
   } from "$lib/types/work";
 
+  // ── Route state (single URL parser) ────────────────────────────────────────
+  const controller = new WorkPageController();
+  let route = $derived(parseWorkRouteState($page.url));
+  let selectedId = $derived(route.workspaceId ?? "");
+  let selectedRunId = $derived(route.runId ?? "");
+  let selectedView = $derived(route.legacyView ?? "");
+  let newConversation = $derived(route.newConversation);
+  let createOpen = $derived(route.createWorkspace);
+  let freshWorkspace = $derived(route.fresh);
+
   let workspaces = $derived(workWorkspaceStore.workspaces);
-  let artifacts = $state<WorkArtifactSummary[]>([]);
-  let inputFiles = $state<WorkFileSummary[]>([]);
-  let accessRoots = $state<WorkAccessRoot[]>([]);
-  let profile = $state<WorkProfile | null>(null);
+  let selectedWorkspace = $derived(
+    workspaces.find((workspace) => workspace.id === selectedId) ?? null,
+  );
+  let isStandalone = $derived(isStandaloneRoute(route));
+  let hasActiveConversation = $derived(
+    selectedWorkspace ? Boolean(selectedRunId || newConversation) : showsConversation(route, true),
+  );
+  // ── Conversation surface bindables ─────────────────────────────────────────
   let sessionInfo = $state<SessionInfoData | null>(null);
   let progress = $state<WorkProgressSnapshot | null>(null);
   let progressView = $state<WorkRunProgressView | null>(null);
-  let recovery = $state<WorkRunRecovery | null>(null);
   let pendingInteractions = $state<InboxItem[]>([]);
   let conversationArchived = $state(false);
-  let artifactRefreshVersion = 0;
   // The default surface is the goal, approval, and result. Progress, run, and
   // artifact details stay in the adjacent task panel while a run is active.
   let showConversationInspector = $state(false);
 
-  // Pending interactions are rendered inline in the chat surface and highlighted
-  // via badges without intrusively forcing the right sidebar open.
-  let loading = $state(true);
-  let saving = $state(false);
-  let error = $state("");
-  let loadVersion = 0;
-  let workspaceName = $state("");
-  let createError = $state("");
-  let workspaceNameInput = $state<HTMLInputElement>();
-  let createDialog = $state<HTMLDivElement>();
-  let accessBusyPath = $state("");
-  const workTransportSupported = getTransport().isDesktop();
-
-  let selectedId = $derived($page.url.searchParams.get("workspace") ?? "");
-  let selectedRunId = $derived($page.url.searchParams.get("run") ?? "");
-  let selectedView = $derived($page.url.searchParams.get("view") ?? "");
-  let newConversation = $derived($page.url.searchParams.get("newSession") === "1");
-  let createOpen = $derived($page.url.searchParams.get("new") === "1");
-  let selectedWorkspace = $derived(
-    workspaces.find((workspace) => workspace.id === selectedId) ?? null,
-  );
-  let isStandalone = $derived(!selectedId && !selectedView);
-  let hasActiveConversation = $derived(
-    selectedWorkspace ? Boolean(selectedRunId || newConversation) : !selectedView,
-  );
   // Artifacts shown next to an active conversation belong to that conversation's
   // run. A brand-new conversation has no run yet, so it starts with none.
   let conversationRunId = $derived(selectedRunId || sessionInfo?.runId || "");
@@ -125,300 +100,69 @@
   });
   let currentWorkspaceRoot = $derived(selectedWorkspace?.root || sessionInfo?.cwd || "");
 
-  $effect(() => {
-    if (!createOpen) return;
-    requestAnimationFrame(() => workspaceNameInput?.focus());
-  });
-  async function loadWorkspaces(workspaceId = selectedId, runId = selectedRunId) {
-    const version = ++loadVersion;
-    if (workspaces.length === 0 && !workWorkspaceStore.workspacesLoaded) {
-      loading = true;
-    }
-    error = "";
-    if (!workTransportSupported) {
-      loading = false;
-      return;
-    }
-    try {
-      const conversationActive = Boolean(
-        runId || newConversation || (!workspaceId && !selectedView),
-      );
-      const standalone = !workspaceId && !selectedView;
-      const scope = standalone ? standaloneScope() : workspaceScope(workspaceId);
-      const [, nextProfile, nextArtifacts, nextInputFiles, nextAccessRoots] = await Promise.all([
-        workWorkspaceStore.fetchWorkspaces(),
-        withTimeout(getWorkProfile(), 15_000, "读取 Work 配置超时"),
-        conversationActive
-          ? runId
-            ? workResources.listArtifacts(scope, runId)
-            : Promise.resolve<WorkArtifactSummary[]>([])
-          : workspaceId
-            ? workResources.listArtifacts(scope, null)
-            : Promise.resolve<WorkArtifactSummary[]>([]),
-        workResources.listInputFiles(scope),
-        workResources.listAccessRoots(scope),
-      ]);
-      if (version !== loadVersion) return;
-      profile = nextProfile;
-      artifacts = nextArtifacts;
-      inputFiles = nextInputFiles;
-      accessRoots = nextAccessRoots;
-    } catch (cause) {
-      if (version !== loadVersion) return;
-      error = cause instanceof Error ? cause.message : String(cause);
-    } finally {
-      if (version === loadVersion) loading = false;
-    }
-  }
+  // ── Dialog / UI-local state ────────────────────────────────────────────────
+  let saving = $state(false);
+  let workspaceName = $state("");
+  let createError = $state("");
+  let workspaceNameInput = $state<HTMLInputElement>();
+  let createDialog = $state<HTMLDivElement>();
+  let accessBusyPath = $state("");
+  const workTransportSupported = getTransport().isDesktop();
 
-  function removeArtifactFromState(artifactId: string): void {
-    // Invalidate an in-flight refresh before removing the card locally. A
-    // refresh triggered by the task stream must not put the old card back.
-    artifactRefreshVersion += 1;
-    artifacts = artifacts.filter((item) => item.id !== artifactId);
-  }
+  // ── Controller facade aliases (thin wrappers keep the template readable) ──
+  let loading = $derived(controller.loading);
+  let error = $derived(controller.error);
+  let artifacts = $derived(controller.artifacts);
+  let inputFiles = $derived(controller.inputFiles);
+  let accessRoots = $derived(controller.accessRoots);
+  let profile = $derived(controller.profile);
+  let recovery = $derived(controller.recovery);
 
-  function currentScope(): WorkScope {
-    return isStandalone ? standaloneScope() : workspaceScope(selectedId);
-  }
-
-  async function refreshArtifacts() {
-    const version = ++artifactRefreshVersion;
-    let nextArtifacts: WorkArtifactSummary[];
-    if (isStandalone) {
-      nextArtifacts = conversationRunId
-        ? await workResources.listArtifacts(standaloneScope(), conversationRunId)
-        : [];
-    } else if (!selectedId) {
-      return;
-    } else if (hasActiveConversation) {
-      nextArtifacts = conversationRunId
-        ? await workResources.listArtifacts(workspaceScope(selectedId), conversationRunId)
-        : [];
-    } else {
-      nextArtifacts = await workResources.listArtifacts(workspaceScope(selectedId), null);
-    }
-    // A terminal/tool event can refresh while the user is deleting an artifact.
-    // Do not let an older response overwrite the newer local state.
-    if (version === artifactRefreshVersion) artifacts = nextArtifacts;
-  }
-
-  async function refreshRecovery() {
-    if (isStandalone || !selectedId) {
-      recovery = null;
-      return;
-    }
-    try {
-      recovery = await workResources.getRecovery({
-        scope: workspaceScope(selectedId),
-        conversationRunId,
-        run: sessionInfo?.runId
-          ? {
-              id: sessionInfo.runId,
-              work_task_id: progressView?.taskId,
-              work_run_id: progressView?.workRunId,
-            }
-          : null,
-        progressView,
-      });
-    } catch (cause) {
-      // A transient projection race while a new session is attaching should
-      // not replace the conversation with a global error banner.
-      recovery = null;
-      if (
-        progressView?.runStatus === "recoverable" ||
-        progressView?.runStatus === "waiting_delivery"
-      ) {
-        error = cause instanceof Error ? cause.message : String(cause);
-      }
-    }
-  }
-
-  async function handleRecoveryAction(action: WorkRecoveryAction, subagentId?: string) {
-    if (isStandalone || !selectedId) return;
-    const nextRun = await workResources.recoverRun(
-      {
-        scope: workspaceScope(selectedId),
-        conversationRunId,
-        run: sessionInfo?.runId
-          ? {
-              id: sessionInfo.runId,
-              work_task_id: progressView?.taskId,
-              work_run_id: progressView?.workRunId,
-            }
-          : null,
-        progressView,
-      },
-      action,
-      subagentId,
-    );
-    if (!nextRun) return;
-    const nextRecovery =
-      nextRun.status === "recoverable" || nextRun.status === "waiting_delivery"
-        ? workResources.getRecovery({
-            scope: workspaceScope(selectedId),
-            conversationRunId,
-            run: {
-              id: nextRun.sessionId || conversationRunId,
-              work_task_id: nextRun.taskId,
-              work_run_id: nextRun.id,
-            },
-          })
-        : Promise.resolve(null);
-    await Promise.allSettled([
-      workProjectionStore.fetch(nextRun.id),
-      nextRecovery.then((value) => (recovery = value)),
-      refreshArtifacts(),
-      loadWorkspaces(selectedId, selectedRunId),
-    ]);
-    if (action === "from_scratch" && nextRun.sessionId) {
-      void goto(
-        `/chat/work?workspace=${encodeURIComponent(selectedId)}&run=${encodeURIComponent(nextRun.sessionId)}`,
-        { replaceState: true },
-      );
-    }
+  function runtimeContext() {
+    return { sessionRunId: sessionInfo?.runId ?? null, progressView };
   }
 
   async function deleteArtifact(artifactId: string) {
-    const artifact = artifacts.find((item) => item.id === artifactId);
-    if (!artifact) return;
-    if (isStandalone) {
-      const { confirm } = await import("$lib/platform/dialog");
-      const ok = await confirm(`确定删除成果「${artifact.title}」吗？对应文件会一并删除。`, {
-        title: "删除成果",
-        kind: "warning",
-      });
-      if (!ok) return;
-      await workResources.deleteArtifact(
-        { scope: standaloneScope(), runId: conversationRunId, artifactId },
-        artifact,
-      );
-      removeArtifactFromState(artifactId);
-      return;
-    }
-    if (!selectedId) return;
-    const shared = artifacts.some((item) => item.id !== artifactId && item.path === artifact.path);
-    const message = shared
-      ? `确定删除成果「${artifact.title}」吗？output/ 中的文件仍被其他成果引用，将会保留。`
-      : `确定删除成果「${artifact.title}」吗？output/ 中的对应文件会一并删除。`;
-    const { confirm } = await import("$lib/platform/dialog");
-    const ok = await confirm(message, {
-      title: "删除成果",
-      kind: "warning",
-    });
-    if (!ok) return;
-    await workResources.deleteArtifact({
-      scope: workspaceScope(selectedId),
-      runId: conversationRunId,
-      artifactId,
-    });
-    removeArtifactFromState(artifactId);
+    await controller.deleteArtifact(artifactId);
   }
-
   async function validateArtifact(artifactId: string) {
-    const artifact = artifacts.find((item) => item.id === artifactId);
-    if (!artifact) throw new Error("成果不存在或已被移除。");
-    const updated = await workResources.validateArtifact({
-      scope: currentScope(),
-      runId: conversationRunId,
-      artifactId,
-      artifactRunId: artifact.runId || null,
-    });
-    artifacts = artifacts.map((item) => (item.id === artifactId ? updated : item));
+    await controller.validateArtifact(artifactId);
   }
-
   async function deliverArtifact(artifactId: string) {
-    const artifact = artifacts.find((item) => item.id === artifactId);
-    if (!artifact) throw new Error("成果不存在或已被移除。");
-    const updated = await workResources.deliverArtifact({
-      scope: currentScope(),
-      runId: conversationRunId,
-      artifactId,
-      artifactRunId: artifact.runId || null,
-    });
-    artifacts = artifacts.map((item) => (item.id === artifactId ? updated : item));
-
-    // WaitingDelivery is a durable run state. Once the user explicitly
-    // delivers the file, run the existing Verify gate so the WorkRun can move
-    // to Completed only after the full current-run acceptance check passes.
-    if (
-      !isStandalone &&
-      progressView?.runStatus === "waiting_delivery" &&
-      progressView.taskId &&
-      progressView.workRunId
-    ) {
-      await handleRecoveryAction("verify");
-    }
+    await controller.deliverArtifact(artifactId, runtimeContext());
   }
-
   async function exportArtifact(artifactId: string) {
-    const artifact = artifacts.find((item) => item.id === artifactId);
-    const { save } = await import("$lib/platform/dialog");
-    const destination = await save({
-      defaultPath: artifact?.title || "work-artifact",
-      filters: artifact?.artifactType
-        ? [{ name: artifact.artifactType.toUpperCase(), extensions: [artifact.artifactType] }]
-        : undefined,
-    });
-    if (!destination) return;
-    await workResources.exportArtifact(
-      currentScope(),
-      conversationRunId,
-      artifactId,
-      destination,
-      artifact?.runId || null,
-    );
+    await controller.exportArtifact(artifactId);
   }
-
   async function copyArtifactToPrimary(artifactId: string): Promise<string> {
-    const artifact = artifacts.find((item) => item.id === artifactId);
-    if (!artifact) throw new Error("成果不存在或已被移除。");
-    if (!selectedId || selectedWorkspace?.rootKind !== "local_folder") {
-      throw new Error("当前 Workspace 没有关联可复制的本地工作目录。");
-    }
-    return await workResources.copyArtifactToPrimary(
-      workspaceScope(selectedId),
-      artifactId,
-      artifact.runId || null,
-    );
+    return await controller.copyArtifactToPrimary(artifactId, selectedWorkspace?.rootKind ?? null);
   }
-
   async function updateArtifactStorageMode(mode: WorkArtifactStorageMode): Promise<void> {
-    if (!selectedId) return;
-    if (mode === "primary_work_root") {
-      const { confirm } = await import("$lib/platform/dialog");
-      const ok = await confirm(
-        "启用后，新成果会直接写入所选本地文件夹的 output/。已有成果不会迁移。继续吗？",
-        { title: "直接保存成果", kind: "warning" },
-      );
-      if (!ok) return;
-    }
-    try {
-      const updated = await setWorkArtifactStorageMode(selectedId, mode);
-      workWorkspaceStore.updateWorkspace(updated);
-      window.dispatchEvent(new CustomEvent("agentcabin:workspaces-changed"));
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
-      throw cause;
-    }
+    await controller.updateArtifactStorageMode(mode);
   }
-
+  async function openArtifact(artifactId: string) {
+    await controller.openArtifact(artifactId);
+  }
+  async function openArtifactDirectory() {
+    await controller.openArtifactDirectory();
+  }
+  async function loadRunReceipt() {
+    return await controller.loadRunReceipt(runtimeContext());
+  }
+  async function saveOfficeArtifact(artifactId: string, contentBase64: string): Promise<void> {
+    await controller.saveOfficeArtifact(artifactId, contentBase64);
+  }
+  async function refreshArtifacts() {
+    await controller.refreshArtifacts();
+  }
   async function importInputFile(sourcePath: string) {
-    if (!selectedId) return;
-    const imported = await workResources.importInputFile(workspaceScope(selectedId), sourcePath);
-    if (!imported) return;
-    inputFiles = [imported, ...inputFiles.filter((file) => file.path !== imported.path)];
+    await controller.importInputFile(sourcePath);
   }
-
   async function openWorkspaceFile(relativePath: string) {
-    if (!selectedId) return;
-    await workResources.openFile(workspaceScope(selectedId), conversationRunId, relativePath);
+    await controller.openWorkspaceFile(relativePath);
   }
-
   async function removeInputFile(relativePath: string) {
-    if (!selectedId) return;
-    await workResources.removeInputFile(workspaceScope(selectedId), relativePath);
-    inputFiles = inputFiles.filter((file) => file.path !== relativePath);
+    await controller.removeInputFile(relativePath);
   }
 
   async function addAccessRoot() {
@@ -432,9 +176,7 @@
     if (typeof selected !== "string") return;
     accessBusyPath = selected;
     try {
-      accessRoots = await workResources.addAccessRoot(workspaceScope(selectedId), selected, false);
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
+      await controller.addAccessRoot();
     } finally {
       accessBusyPath = "";
     }
@@ -444,13 +186,7 @@
     if (!selectedId || accessBusyPath) return;
     accessBusyPath = root.path;
     try {
-      accessRoots = await workResources.setAccessRootWritable(
-        workspaceScope(selectedId),
-        root.path,
-        !root.writable,
-      );
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
+      await controller.toggleAccessRoot(root);
     } finally {
       accessBusyPath = "";
     }
@@ -466,51 +202,13 @@
     if (!ok) return;
     accessBusyPath = root.path;
     try {
-      accessRoots = await workResources.removeAccessRoot(workspaceScope(selectedId), root.path);
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
+      await controller.removeAccessRoot(root);
     } finally {
       accessBusyPath = "";
     }
   }
 
-  async function openArtifact(artifactId: string) {
-    const artifact = artifacts.find((item) => item.id === artifactId);
-    if (!artifact) return;
-    if (isStandalone && !conversationRunId) return;
-    await workResources.openFile(currentScope(), conversationRunId, artifact.path);
-  }
-
-  async function openArtifactDirectory() {
-    if (isStandalone && !conversationRunId) return;
-    await workResources.openDirectory(currentScope(), conversationRunId, "output");
-  }
-
-  /** 任务回执（Ledger 投影）：Workspace run 用 task/run id，standalone 用会话 run id。 */
-  async function loadRunReceipt() {
-    return await workResources.getReceipt({
-      scope: currentScope(),
-      conversationRunId,
-      run: sessionInfo?.runId
-        ? {
-            id: sessionInfo.runId,
-            work_task_id: progressView?.taskId,
-            work_run_id: progressView?.workRunId,
-          }
-        : null,
-      progressView,
-    });
-  }
-
-  async function saveOfficeArtifact(artifactId: string, contentBase64: string): Promise<void> {
-    await workResources.saveOfficeArtifact(
-      currentScope(),
-      conversationRunId,
-      artifactId,
-      contentBase64,
-    );
-    await refreshArtifacts();
-  }
+  // ── Navigation / dialogs ───────────────────────────────────────────────────
 
   function openCreate() {
     workspaceName = "";
@@ -547,15 +245,13 @@
       });
       if (typeof selected !== "string" || !selected.trim()) return;
       saving = true;
-      error = "";
-      const workspace = await createWorkspaceFromFolder(selected);
-      workWorkspaceStore.addWorkspace(workspace);
-      window.dispatchEvent(new CustomEvent("agentcabin:workspaces-changed"));
+      controller.error = "";
+      const workspace = await controller.createWorkspaceFromFolder(selected);
       await goto(`/chat/work?workspace=${encodeURIComponent(workspace.id)}&newSession=1`, {
         replaceState: true,
       });
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
+      controller.error = cause instanceof Error ? cause.message : String(cause);
     } finally {
       saving = false;
     }
@@ -572,11 +268,9 @@
       });
       if (typeof selected !== "string" || !selected.trim()) return;
       accessBusyPath = selected;
-      const updated = await relinkWorkspaceFolder(selectedId, selected);
-      workWorkspaceStore.updateWorkspace(updated);
-      window.dispatchEvent(new CustomEvent("agentcabin:workspaces-changed"));
+      await controller.relinkWorkspaceFolder(selectedId, selected);
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
+      controller.error = cause instanceof Error ? cause.message : String(cause);
     } finally {
       accessBusyPath = "";
     }
@@ -585,9 +279,10 @@
   async function openPrimaryFolder(folderPath: string) {
     if (!selectedId) return;
     try {
-      await workResources.openDirectory(workspaceScope(selectedId), conversationRunId, folderPath);
+      const { openWorkDirectory } = await import("$lib/api/work");
+      await openWorkDirectory(selectedId, folderPath);
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
+      controller.error = cause instanceof Error ? cause.message : String(cause);
     }
   }
 
@@ -601,9 +296,7 @@
     createError = "";
     error = "";
     try {
-      const workspace = await createWorkspace(name);
-      workWorkspaceStore.addWorkspace(workspace);
-      window.dispatchEvent(new CustomEvent("agentcabin:workspaces-changed"));
+      const workspace = await controller.createWorkspace(name);
       await goto(`/chat/work?workspace=${encodeURIComponent(workspace.id)}`, {
         replaceState: true,
       });
@@ -615,7 +308,6 @@
   }
 
   // ── Fresh-workspace hint (shown once right after a quick-start creation) ──
-  let freshWorkspace = $derived($page.url.searchParams.get("fresh") === "1");
   let freshRenaming = $state(false);
   let freshRenameValue = $state("");
 
@@ -641,16 +333,13 @@
   async function renameWorkspaceInList(name: string) {
     if (!selectedId) return;
     try {
-      const updated = await renameWorkspace(selectedId, name);
-      workWorkspaceStore.updateWorkspace(updated);
-      window.dispatchEvent(new CustomEvent("agentcabin:workspaces-changed"));
+      await controller.renameWorkspace(selectedId, name);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     }
   }
 
   onMount(() => {
-    const onChanged = () => void loadWorkspaces();
     const onSessionStarted = (event: Event) => {
       const detail = (event as CustomEvent<{ workspaceId?: string; run?: { id?: string } }>).detail;
       if (detail?.run?.id) {
@@ -665,71 +354,50 @@
     };
   });
 
-  let lastLoadedScope: string | null = null;
-  let lastArtifactScope: string | null = null;
+  function onChanged() {
+    void controller.reload();
+  }
+
+  // ── Route-driven lifecycle (delegated to the controller) ──────────────────
+
   $effect(() => {
-    const workspaceId = selectedId;
-    const runId = selectedRunId;
-    const scope = `${workspaceId}:${runId || "workspace"}`;
-    const artifactScope = `${workspaceId}:${runId || (newConversation ? "new" : "workspace")}`;
+    const scopeInput = {
+      workspaceId: selectedId,
+      runId: selectedRunId,
+      newConversation,
+      legacyView: selectedView,
+    };
     untrack(() => {
-      // Clear the previous conversation's results as soon as navigation changes.
-      // A newly started run can intentionally skip the metadata fan-out while
-      // its transcript is streaming, so leaving this state in place makes an
-      // older task's artifact appear to belong to the current task.
-      if (artifactScope !== lastArtifactScope) {
-        lastArtifactScope = artifactScope;
-        artifactRefreshVersion += 1;
-        loadVersion += 1;
-        artifacts = [];
-      }
-      // WorkChatSurface adopts a newly started run in-place and shallowly
-      // updates the URL. Its bound sessionInfo already points at that run, so
-      // do not kick off the workspace metadata/files/artifacts fan-out while
-      // the first long response is streaming. Selecting an existing run still
-      // reloads normally because sessionInfo has not caught up yet.
-      if (
-        adoptedRunScope === scope ||
-        (runId &&
-          sessionInfo?.runId === runId &&
-          lastLoadedScope !== null &&
-          lastLoadedScope.startsWith(`${workspaceId}:`))
-      ) {
-        adoptedRunScope = "";
-        lastLoadedScope = scope;
-        if (runId) void refreshArtifacts();
-        return;
-      }
-      if (scope !== lastLoadedScope || workspaces.length === 0) {
-        lastLoadedScope = scope;
-        void loadWorkspaces(workspaceId, runId);
-      }
+      const adopted = controller.syncRoute(
+        scopeInput,
+        adoptedRunScope,
+        conversationRunId,
+        runtimeContext(),
+      );
+      if (adopted) adoptedRunScope = "";
     });
   });
 
-  let lastRecoveryScope = "";
   $effect(() => {
     const scope = `${selectedId}:${progressView?.taskId ?? ""}:${progressView?.workRunId ?? ""}:${progressView?.runStatus ?? ""}`;
     untrack(() => {
       if (scope === lastRecoveryScope) return;
       lastRecoveryScope = scope;
-      void refreshRecovery();
+      void controller.refreshRecovery(runtimeContext());
     });
   });
+  let lastRecoveryScope = "";
 
   // A conversation opened via "新对话" has no run in the URL. Once its run
   // starts, reload Artifacts scoped to that run instead of the whole Workspace.
-  let lastConversationRunId = "";
   $effect(() => {
     const runId = conversationRunId;
-    if (!selectedId || !hasActiveConversation || selectedRunId) {
-      lastConversationRunId = runId;
-      return;
-    }
-    if (runId && runId !== lastConversationRunId) {
-      lastConversationRunId = runId;
-      untrack(() => void refreshArtifacts());
-    }
+    untrack(() => controller.syncConversationRun(runId));
+  });
+
+  $effect(() => {
+    if (!createOpen) return;
+    requestAnimationFrame(() => workspaceNameInput?.focus());
   });
 </script>
 

@@ -8,6 +8,7 @@ import {
   exportStandaloneWorkArtifact,
   exportWorkArtifact,
   getStandaloneWorkRunReceipt,
+  getWorkProfile,
   getWorkRunReceipt,
   getWorkRunRecovery,
   importWorkFile,
@@ -38,6 +39,7 @@ import type {
   WorkAccessRoot,
   WorkArtifactSummary,
   WorkFileSummary,
+  WorkProfile,
   WorkRecoveryAction,
   WorkRun,
   WorkRunReceipt,
@@ -80,6 +82,12 @@ function missingRunError(action: string): Error {
 function isMissingArtifactError(cause: unknown): boolean {
   const message = cause instanceof Error ? cause.message : String(cause);
   return /work artifact\b.*\bnot found\b/i.test(message);
+}
+
+// ── Profile ─────────────────────────────────────────────────────────────────
+
+export async function getProfile(): Promise<WorkProfile> {
+  return getWorkProfile();
 }
 
 // ── Artifacts ───────────────────────────────────────────────────────────────
