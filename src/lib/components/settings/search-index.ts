@@ -343,6 +343,24 @@ export const SETTINGS_SEARCH_INDEX: SearchIndexItem[] = [
 
   // 工具
   {
+    id: "tool-remote-access",
+    tab: "remote-access",
+    section: "main",
+    title: "远程访问与浏览器入口 (Remote Access)",
+    keywords: [
+      "remote",
+      "browser access",
+      "web server",
+      "lan",
+      "tunnel",
+      "远程",
+      "浏览器访问",
+      "局域网",
+      "隧道",
+    ],
+    group: "远程访问",
+  },
+  {
     id: "tool-web",
     tab: "web-access",
     section: "main",

@@ -22,6 +22,7 @@ describe("settings navigation active state", () => {
     expect(shouldUseSettingsMainPanel("settings")).toBe(true);
     expect(shouldUseSettingsMainPanel("plugins")).toBe(false);
     expect(shouldUseWideSettingsMainPanel("settings", "capability-center")).toBe(true);
+    expect(shouldUseWideSettingsMainPanel("settings", "remote-access")).toBe(true);
     expect(shouldUseWideSettingsMainPanel("settings", "web-access")).toBe(true);
     expect(shouldUseWideSettingsMainPanel("settings", "browser-use")).toBe(true);
     expect(shouldUseWideSettingsMainPanel("settings", "desktop-use")).toBe(true);

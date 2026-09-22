@@ -54,6 +54,7 @@
     {
       title: "工具与运行时能力",
       items: [
+        { id: "remote-access", label: "远程访问", icon: "remote-access" },
         { id: "web-access", label: "网络访问", icon: "web-access" },
         { id: "browser-use", label: "浏览器自动化", icon: "browser-use" },
         { id: "desktop-use", label: "电脑控制", icon: "desktop-use" },
@@ -291,6 +292,19 @@
                         ><circle cx="12" cy="12" r="10" /><path
                           d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"
                         /></svg
+                      >
+                    {:else if item.icon === "remote-access"}
+                      <svg
+                        class="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        ><rect x="3" y="4" width="18" height="12" rx="2" /><path
+                          d="M8 20h8M12 16v4"
+                        /><path d="m8 10 2 2 4-4" /></svg
                       >
                     {:else if item.icon === "browser-use"}
                       <svg

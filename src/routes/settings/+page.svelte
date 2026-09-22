@@ -21,7 +21,6 @@
   import { getSavedProjectCwd } from "$lib/utils/project-cwd";
   import {
     PLATFORM_PRESETS,
-    PRESET_CATEGORIES,
     buildPlatformList,
     findCredential,
     expandModelsToTiers,
@@ -37,14 +36,12 @@
     normalizePiCliModel,
     type PiProviderPreset,
   } from "$lib/utils/pi-provider-presets";
-  import { isDebugMode, getDebugLogCount, getDebugFilter } from "$lib/utils/debug";
   import { dbg, dbgWarn, redactSensitive } from "$lib/utils/debug";
   import { ALL_RUNTIME_PROVIDERS, type RuntimeProviderId } from "$lib/utils/agent-metadata";
   import {
     fetchRuntimeProviderStatus,
     type RuntimeProviderStatus,
   } from "$lib/utils/runtime-status";
-  import { splitPath } from "$lib/utils/format";
   import { isProviderCompatible, type ProviderAgent } from "$lib/utils/provider-routing";
   import {
     buildCodexSubscriptionProvider,
@@ -52,7 +49,6 @@
   } from "$lib/utils/codex-subscription";
   import { getSavedRealm, getSavedPiSubMode, getRealmHref } from "$lib/stores/app-mode.svelte";
   import { t, currentLocale } from "$lib/i18n/index.svelte";
-  import { getTransport } from "$lib/transport";
   import DshPluginPanel from "$lib/components/DshPluginPanel.svelte";
   import SettingToggle from "$lib/components/SettingToggle.svelte";
   import AgentCliStatusCard from "$lib/components/AgentCliStatusCard.svelte";
@@ -65,7 +61,6 @@
   import RuntimeProviderUnifiedCards from "$lib/components/RuntimeProviderUnifiedCards.svelte";
   import HarnessRuntimeProviderSection from "$lib/components/HarnessRuntimeProviderSection.svelte";
   import type { InstalledPlugin } from "$lib/types";
-  import { isSettingsTabActive } from "$lib/utils/settings-navigation";
   import pkg from "../../../package.json";
   import type { DesktopUseStatus, WorkBrowserHealth, WorkBrowserSummary } from "$lib/types/work";
 
@@ -94,6 +89,7 @@
   import WorkSettings from "$lib/components/settings/pages/WorkSettings.svelte";
   import ModelsSettings from "$lib/components/settings/pages/ModelsSettings.svelte";
   import DoctorSettings from "$lib/components/settings/pages/DoctorSettings.svelte";
+  import RemoteAccessSettings from "$lib/components/settings/pages/RemoteAccessSettings.svelte";
   import WebAccessSettings from "$lib/components/settings/pages/WebAccessSettings.svelte";
   import BrowserUseSettings from "$lib/components/settings/pages/BrowserUseSettings.svelte";
   import DesktopUseSettings from "$lib/components/settings/pages/DesktopUseSettings.svelte";
@@ -149,6 +145,8 @@
         return "模型与提供商";
       case "doctor":
         return "CLI 引擎检测 (Doctor)";
+      case "remote-access":
+        return "远程访问 (Remote Access)";
       case "web-access":
         return "网络访问 (Web Access)";
       case "browser-use":
@@ -184,6 +182,8 @@
         return "统一配置自定义第三方 API 供应商与 ChatGPT 官方订阅凭据。";
       case "doctor":
         return "深度诊断本地 AI CLI 引擎安装状态、执行路径与运行健康度。";
+      case "remote-access":
+        return "通过局域网或 HTTP 隧道，从浏览器访问 AgentCabin。";
       case "web-access":
         return "配置搜索供应商与网页抓取知识库连接能力。";
       case "browser-use":
@@ -195,11 +195,6 @@
     }
   }
   let activeView = $derived($page.url.searchParams.get("view") ?? "settings");
-  let embeddedAgentSettingsTab = $derived.by<"native-codex" | "native-claude" | null>(() => {
-    if (activeView !== "plugins") return null;
-    const tab = $page.url.searchParams.get("tab");
-    return tab === "native-codex" || tab === "native-claude" ? tab : null;
-  });
   let activeExtensionSection = $derived(
     $page.url.searchParams.get("section") === "plugins"
       ? "claude-plugins"
@@ -244,12 +239,6 @@
     }
     const url = category ? `/settings?tab=${tab}&category=${category}` : `/settings?tab=${tab}`;
     void goto(url, { replaceState: true, noScroll: true });
-  }
-
-  function isActiveSettingsTab(tab: SettingsTab): boolean {
-    return (
-      isSettingsTabActive(activeView, activeTab, tab) || (embeddedAgentSettingsTab as any) === tab
-    );
   }
 
   let settings = $state<UserSettings | null>(null);
@@ -321,8 +310,6 @@
   let authMode = $state("cli");
   let anthropicApiKey = $state("");
   let anthropicBaseUrl = $state("");
-  let showApiKey = $state(false);
-  let generalSaved = $state(false);
   let agentSaveNotice = $state<ProviderAgent | null>(null);
   let modelOpus = $state("");
   let modelSonnet = $state("");
@@ -335,28 +322,9 @@
   let extraEnvTouched = $state<Record<string, boolean>>({});
 
   // CLI Auth state
-  let authOverview = $state<import("$lib/types").AuthOverview | null>(null);
-  let cliLoginLoading = $state(false);
-  let cliLoginError = $state("");
 
   // Derive merged platform list (static presets + dynamic custom endpoints)
   let platformList = $derived(buildPlatformList(platformCredentials));
-
-  // Group platforms by category for the grid; sort alphabetically within each group,
-  // but pin Anthropic first (official default) in the provider group.
-  let groupedPlatforms = $derived.by(() => {
-    const groups: { id: string; label: string; items: PlatformPreset[] }[] = [];
-    for (const cat of PRESET_CATEGORIES) {
-      const items = platformList.filter((p) => p.id !== "custom" && p.category === cat.id);
-      const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
-      if (cat.id === "provider") {
-        const idx = sorted.findIndex((p) => p.id === "anthropic");
-        if (idx > 0) sorted.unshift(sorted.splice(idx, 1)[0]);
-      }
-      groups.push({ id: cat.id, label: cat.label, items: sorted });
-    }
-    return groups;
-  });
 
   // Derive selected platform from id (search merged list, not just static presets)
   let selectedPlatform = $derived<PlatformPreset | null>(
@@ -365,142 +333,8 @@
 
   // Custom endpoint editing state
   // ── Local proxy detection state ──
-  let localProxyStatus = $state<import("$lib/types").LocalProxyStatus | null>(null);
-  let localProxyChecking = $state(false);
   let localProxyRequestId = $state(0);
-  let localAdvancedOpen = $state(false);
   let localProxyStatuses = $state<Record<string, { running: boolean; needsAuth: boolean }>>({});
-
-  // ── API connectivity test state ──
-  let apiTestLoading = $state(false);
-  let apiTestResult = $state<import("$lib/types").ApiTestResult | null>(null);
-  let apiTestRequestId = $state(0);
-  // Derive effective auth env var (tracks platformCredentials + selectedPlatformId)
-  let effectiveAuthEnvVar = $derived(
-    findCredential(platformCredentials, selectedPlatformId ?? "")?.auth_env_var ||
-      selectedPlatform?.auth_env_var ||
-      "ANTHROPIC_API_KEY",
-  );
-  // Clear stale test result AND invalidate in-flight requests when any relevant input changes
-  $effect(() => {
-    void anthropicApiKey;
-    void anthropicBaseUrl;
-    void modelOpus;
-    void modelSonnet;
-    void modelHaiku;
-    void effectiveAuthEnvVar;
-    return () => {
-      apiTestResult = null;
-      apiTestRequestId++; // invalidate in-flight request
-      apiTestLoading = false;
-    };
-  });
-
-  // ── Web Server state (desktop-only) ──
-  let webToken = $state<string | null>(null);
-  let webStatus = $state<{
-    enabled: boolean;
-    running: boolean;
-    port: number;
-    bind: string;
-    warning?: string;
-  } | null>(null);
-  let showWebToken = $state(false);
-  let webTokenCopied = $state(false);
-  let webLinkCopied = $state(false);
-  let webRestarting = $state(false);
-  let webRestartError = $state<string | null>(null);
-  let webRestartWarning = $state<string | null>(null);
-  let webPortInput = $state("9476");
-  let webOriginInput = $state("");
-  let webBindValue = $state("127.0.0.1");
-  let webOrigins = $state<string[]>([]);
-  let webOriginError = $state<string | null>(null);
-  let webAdvancedOpen = $state(false);
-  let webLanIp = $state<string | null>(null);
-  let webTunnelUrl = $state("");
-  let webTunnelError = $state<string | null>(null);
-  let webTunnelLinkCopied = $state(false);
-  let lanIpRequestId = $state(0);
-
-  let debugOn = $state(isDebugMode());
-  let logCopied = $state(false);
-  let debugFilter = $state(getDebugFilter() || "1");
-
-  // ── UI Zoom state (desktop-only) ──
-  let zoomPreview = $state(1.0);
-
-  $effect(() => {
-    if (settings) {
-      zoomPreview = Math.min(1.5, Math.max(0.75, settings.ui_zoom ?? 1.0));
-    }
-  });
-
-  function clampZoom(v: number): number | null {
-    if (!Number.isFinite(v)) return null;
-    return Math.min(1.5, Math.max(0.75, v));
-  }
-
-  let pendingZoom: number | null = null;
-  let zoomFlying = false;
-
-  async function applyZoomQueued(factor: number) {
-    if (zoomFlying) {
-      pendingZoom = factor;
-      return;
-    }
-
-    zoomFlying = true;
-    try {
-      await platform.window.setZoom(factor);
-      dbg("settings", "applyZoomQueued", { factor });
-    } catch (e) {
-      dbgWarn("settings", "applyZoomQueued failed", e);
-    }
-    zoomFlying = false;
-
-    if (pendingZoom !== null) {
-      const next = pendingZoom;
-      pendingZoom = null;
-      void applyZoomQueued(next);
-    }
-  }
-
-  function previewZoom(raw: number) {
-    const factor = clampZoom(raw);
-    if (factor === null) return;
-    zoomPreview = factor;
-  }
-
-  let displaySaved = $state(false);
-
-  async function commitZoom(raw: number) {
-    const factor = clampZoom(raw);
-    if (factor === null) return;
-
-    // Persist
-    try {
-      settings = await api.updateUserSettings({ ui_zoom: factor });
-      dbg("settings", "commitZoom saved", { factor });
-      displaySaved = true;
-      setTimeout(() => (displaySaved = false), 1500);
-    } catch (e) {
-      dbgWarn("settings", "commitZoom save failed", e);
-      // Rollback to last persisted value
-      const fallback = Math.min(1.5, Math.max(0.75, settings?.ui_zoom ?? 1.0));
-      zoomPreview = fallback;
-      pendingZoom = null;
-      void applyZoomQueued(fallback);
-      return;
-    }
-
-    // Apply final value via queue (overrides any stale preview)
-    pendingZoom = null;
-    void applyZoomQueued(factor);
-  }
-  let logCount = $state(getDebugLogCount());
-  let rustCmdCopied = $state(false);
-  let currentUsername = $state("");
 
   // ── Remote host state ──
   let remoteHosts = $state<RemoteHost[]>([]);
@@ -520,7 +354,6 @@
   const keybindingStore = getContext<KeybindingStore>("keybindings");
   let cliSectionOpen = $state(false);
   let codexCliSectionOpen = $state(false);
-  let cliSource = $state<"defaults" | "file">("defaults");
 
   // Keybinding conflict warning for recording editor
   let recordingConflict = $state("");
@@ -1517,15 +1350,6 @@
     }
   });
 
-  // Refresh log count periodically when debug is on
-  $effect(() => {
-    if (!debugOn) return;
-    const timer = setInterval(() => {
-      logCount = getDebugLogCount();
-    }, 2000);
-    return () => clearInterval(timer);
-  });
-
   function detectPlatformFromUrl(url: string, activePlatformId?: string): string | null {
     // If we have a stored active_platform_id, prefer it
     if (activePlatformId) return activePlatformId;
@@ -1536,7 +1360,6 @@
 
   /** Load display fields (key + URL) from credential store for a given platform. */
   function loadFieldsFromCredential(platformId: string | null) {
-    apiTestResult = null;
     if (!platformId) {
       anthropicApiKey = "";
       anthropicBaseUrl = "";
@@ -1699,8 +1522,6 @@
 
   async function checkLocalProxy() {
     if (!selectedPlatform || selectedPlatform.category !== "local" || !selectedPlatformId) return;
-    localProxyChecking = true;
-    localProxyStatus = null;
     const myRequestId = ++localProxyRequestId;
     const myPlatformId = selectedPlatformId;
     const urlToCheck = anthropicBaseUrl;
@@ -1713,7 +1534,6 @@
       const result = await api.detectLocalProxy(myPlatformId, urlToCheck);
       if (myRequestId !== localProxyRequestId) return;
       if (myPlatformId !== selectedPlatformId) return;
-      localProxyStatus = result;
       localProxyStatuses = {
         ...localProxyStatuses,
         [myPlatformId]: { running: result.running, needsAuth: result.needsAuth },
@@ -1721,20 +1541,11 @@
       dbg("settings", "checkLocalProxy result", result);
     } catch (e) {
       if (myRequestId !== localProxyRequestId || myPlatformId !== selectedPlatformId) return;
-      localProxyStatus = {
-        proxyId: myPlatformId,
-        running: false,
-        needsAuth: false,
-        baseUrl: urlToCheck,
-        error: String(e),
-      };
       localProxyStatuses = {
         ...localProxyStatuses,
         [myPlatformId]: { running: false, needsAuth: false },
       };
       dbgWarn("settings", "checkLocalProxy error", e);
-    } finally {
-      if (myRequestId === localProxyRequestId) localProxyChecking = false;
     }
   }
 
@@ -1764,8 +1575,6 @@
     saveCurrentToCredential();
     // 2. Switch to new platform
     selectedPlatformId = preset.id;
-    localAdvancedOpen = false;
-    localProxyStatus = null;
     // 3. Load new platform's data from credentials
     loadFieldsFromCredential(preset.id);
     // 4. Sync global fields + persist
@@ -1852,54 +1661,12 @@
     // Load Codex status, native per-session settings, and the shared subscription catalog.
     void refreshCodexAll();
     void refreshPi();
-    // Load auth overview
-    api
-      .getAuthOverview()
-      .then((ov) => (authOverview = ov))
-      .catch((e) => {
-        dbgWarn("settings", "failed to load auth overview", e);
-      });
-    // Load web server status + token (desktop only)
-    if (getTransport().isDesktop()) {
-      Promise.all([api.getWebServerStatus(), api.getWebServerToken()])
-        .then(async ([status, token]) => {
-          webStatus = status;
-          webToken = token;
-          // Initialize form fields from settings
-          webPortInput = String(settings?.web_server_port ?? 9476);
-          webBindValue = settings?.web_server_bind ?? "127.0.0.1";
-          webOrigins = [...(settings?.web_server_allowed_origins ?? [])];
-          webTunnelUrl = settings?.web_server_tunnel_url ?? "";
-          dbg("settings", "webServer loaded", {
-            enabled: status?.enabled,
-            hasToken: !!token,
-            tunnel: webTunnelUrl,
-          });
-          if (status?.running) await refreshLanIp(status.bind);
-        })
-        .catch((e) => {
-          dbgWarn("settings", "webServer load failed", e);
-        });
-    }
     loadCliInfo();
     // Auto-detect local proxies
     checkAllLocalProxies();
     if (selectedPlatform?.category === "local") {
       checkLocalProxy();
     }
-    // Detect current username + CLI keybindings source
-    void (async () => {
-      try {
-        const home = await platform.path.homeDir();
-        const parts = splitPath(home.replace(/[/\\]+$/, ""));
-        currentUsername = parts[parts.length - 1] || "";
-        const absPath = await platform.path.join(home, ".claude", "keybindings.json");
-        await api.readTextFile(absPath);
-        cliSource = "file";
-      } catch {
-        cliSource = "defaults";
-      }
-    })();
   });
 
   // Cross-page sync: when in-chat /login or /logout finishes, the chat page
@@ -2011,8 +1778,6 @@
     try {
       settings = await api.updateUserSettings(patch as Partial<UserSettings>);
       globalProviders = settings.global_providers ?? globalProviders;
-      generalSaved = true;
-      setTimeout(() => (generalSaved = false), 1500);
     } catch (e) {
       dbgWarn("settings", "saveGeneralPatch error", e);
     }
@@ -2063,138 +1828,16 @@
     }
     saveGeneralPatch({ enabled_agents: orderedNext, default_agent: nextDefault });
   }
-
-  // ── Web Server helpers ──
-
-  async function applyWebServerSettings() {
-    webRestarting = true;
-    webRestartError = null;
-    webRestartWarning = null;
-    webTunnelError = null;
-    try {
-      const portNum = parseInt(webPortInput, 10);
-      if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
-        throw new Error(t("settings_general_webPortInvalid"));
-      }
-      const result = await api.restartWebServer({
-        enabled: true,
-        port: portNum,
-        bind: webBindValue,
-        allowed_origins: webOrigins.length > 0 ? webOrigins : null,
-        tunnel_url: webTunnelUrl.trim() || null,
-      });
-      webStatus = await api.getWebServerStatus();
-      settings = await api.getUserSettings();
-      if (!result.config_saved) {
-        webRestartWarning = t("settings_general_webSaveWarning");
-      }
-      dbg("settings", "webServer apply", { started: result.started, saved: result.config_saved });
-      if (webStatus?.running) await refreshLanIp(webStatus.bind);
-    } catch (e: unknown) {
-      webRestartError = (e as Error)?.message ?? String(e);
-      webStatus = await api.getWebServerStatus();
-      dbgWarn("settings", "webServer apply failed", e);
-    } finally {
-      webRestarting = false;
-    }
-  }
-
-  function addWebOrigin() {
-    const trimmed = webOriginInput.trim().replace(/\/+$/, "");
-    if (!trimmed) return;
-    try {
-      const url = new URL(trimmed);
-      if (url.protocol !== "http:" && url.protocol !== "https:") {
-        webOriginError = t("settings_general_webOriginInvalid");
-        return;
-      }
-      const origin = url.origin;
-      if (!webOrigins.includes(origin)) {
-        webOrigins = [...webOrigins, origin];
-      }
-    } catch {
-      webOriginError = t("settings_general_webOriginInvalid");
-      return;
-    }
-    webOriginInput = "";
-    webOriginError = null;
-  }
-
-  async function refreshLanIp(bind: string): Promise<string | null> {
-    const myId = ++lanIpRequestId;
-    if (bind !== "0.0.0.0" && bind !== "::" && bind !== "[::]") {
-      webLanIp = null;
-      return null;
-    }
-    try {
-      const preferV6 = bind === "::" || bind === "[::]";
-      const ip = await api.getLocalIp(preferV6);
-      if (myId !== lanIpRequestId) return webLanIp;
-      webLanIp = ip;
-      return ip;
-    } catch (e) {
-      dbgWarn("settings", "refreshLanIp failed", e);
-      if (myId !== lanIpRequestId) return webLanIp;
-      webLanIp = null;
-      return null;
-    }
-  }
-
-  function buildLocalAccessUrl(): string | null {
-    if (!webStatus?.running || !webToken) return null;
-    const bind = webStatus.bind;
-    const isAll = bind === "0.0.0.0" || bind === "::" || bind === "[::]";
-    const rawHost = isAll ? webLanIp : bind;
-    if (!rawHost) return null;
-    const host = rawHost.includes(":") ? `[${rawHost}]` : rawHost;
-    return `http://${host}:${webStatus.port}/login#token=${webToken}`;
-  }
-
-  function buildTunnelAccessUrl(): string | null {
-    if (!webStatus?.running || !webToken) return null;
-    // Use saved (applied) tunnel URL, not the draft input value
-    const tunnel = settings?.web_server_tunnel_url?.trim();
-    if (!tunnel) return null;
-    try {
-      const u = new URL(tunnel);
-      // Tunnel links use ?token= (server-side auth) to survive ngrok/cloudflared
-      // interstitial pages. Local links keep #token= (fragment, never sent to server).
-      return `${u.origin}/login?token=${webToken}`;
-    } catch {
-      return null;
-    }
-  }
-
-  function buildAccessUrl(): string | null {
-    return buildTunnelAccessUrl() ?? buildLocalAccessUrl();
-  }
-
-  async function copyAccessLink() {
-    const url = buildAccessUrl();
-    if (!url) return;
-    await navigator.clipboard.writeText(url);
-    webLinkCopied = true;
-    dbg("settings", "webLink copied");
-    setTimeout(() => (webLinkCopied = false), 1500);
-  }
-
-  async function openAccessLink() {
-    const url = buildAccessUrl();
-    if (!url) return;
-    try {
-      await platform.shell.openExternal(url);
-      dbg("settings", "webLink opened in browser");
-    } catch (e) {
-      dbgWarn("settings", "failed to open browser", e);
-    }
-  }
 </script>
 
 {#key currentLocale()}
   <SettingsShell
     pageTitle={getPageTitle(activeTab)}
     pageDescription={getPageDescription(activeTab)}
-    wide={activeTab === "code" || activeTab === "runtimes" || activeTab === "capability-center"}
+    wide={activeTab === "code" ||
+      activeTab === "runtimes" ||
+      activeTab === "capability-center" ||
+      activeTab === "remote-access"}
   >
     {#snippet sidebar()}
       <SettingsSidebar {activeTab} onSelectTab={handleSelectTab} onBack={handleBack} />
@@ -2281,6 +1924,8 @@
           onOpenWizard={openSetupWizard}
         />
       {/if}
+    {:else if activeTab === "remote-access"}
+      <RemoteAccessSettings />
     {:else if activeTab === "web-access"}
       {#if webAccessConfig}
         <WebAccessSettings

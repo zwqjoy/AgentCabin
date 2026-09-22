@@ -22,6 +22,8 @@ export function shouldUseSettingsMainPanel(activeView: string): boolean {
 export function shouldUseWideSettingsMainPanel(activeView: string, activeTab: string): boolean {
   return (
     activeView === "settings" &&
-    ["capability-center", "web-access", "browser-use", "desktop-use"].includes(activeTab)
+    ["capability-center", "remote-access", "web-access", "browser-use", "desktop-use"].includes(
+      activeTab,
+    )
   );
 }

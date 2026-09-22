@@ -13,6 +13,7 @@ export type SettingsTab =
   | "runtimes"
   | "models"
   | "doctor"
+  | "remote-access"
   | "web-access"
   | "browser-use"
   | "desktop-use";
@@ -36,6 +37,7 @@ export const CANONICAL_SETTINGS_TABS: readonly SettingsTab[] = [
   "runtimes",
   "models",
   "doctor",
+  "remote-access",
   "web-access",
   "browser-use",
   "desktop-use",
@@ -104,6 +106,15 @@ export function resolveSettingsRoute(
   }
 
   // Tools & Capability Center mapping
+  if (
+    tab === "remote-access" ||
+    tab === "remote-browser" ||
+    tab === "web-server" ||
+    tab === "remote" ||
+    category === "remote-access"
+  ) {
+    return { tab: "remote-access" };
+  }
   if (tab === "web-access" || tab === "web" || category === "web") {
     return { tab: "web-access" };
   }
