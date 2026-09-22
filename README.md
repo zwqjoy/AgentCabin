@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <strong>AgentCabin Desktop — a local-first workspace for AI coding agents</strong>
+  <strong>AgentCabin Desktop — Pi and DSH desktop for AI coding agents</strong>
 </p>
 
 <p align="center">
-  An open-source Electron + Rust desktop app for <a href="https://github.com/earendil-works/pi">Pi Coding Agent</a>, <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness (DSH)</a>, and other agent runtimes.
+  An open-source Electron + Rust desktop app for <a href="https://github.com/earendil-works/pi">Pi Coding Agent</a> and <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness (DSH)</a> — a local-first AI coding agent workspace for Pi desktop, DSH desktop, and other agent runtimes.
 </p>
 
 <p align="center">
@@ -39,7 +39,11 @@ AgentCabin Desktop brings AI coding agents out of scattered terminal sessions an
 
 It is designed for people who want a visual desktop frontend for Pi, DSH, and compatible AI coding runtimes without moving their repositories into a hosted service. Remote model APIs still require network access; AgentCabin itself has no cloud backend.
 
-Common search terms: `Pi Coding Agent`, `Pi desktop`, `DeepSeek Harness`, `DSH desktop`, `AI coding agent desktop`, and `local-first coding workspace`.
+Common search terms: `AgentCabin`, `Pi`, `Pi Agent`, `Pi Coding Agent`, `Pi desktop`, `DeepSeek`, `DeepSeek Harness`, `DSH`, `DSH desktop`, `AI agent desktop`, `AI coding agent desktop`, `Electron coding agent`, and `local-first coding workspace`.
+
+## Search keywords
+
+AgentCabin is an open-source desktop app for Pi Coding Agent and DeepSeek Harness (DSH). It is also a Pi desktop, DSH desktop, Electron AI coding agent, and local-first developer workspace.
 
 ### At a glance
 

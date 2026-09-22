@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <strong>AgentCabin Desktop —— 面向 AI 编程 Agent 的本地优先工作台</strong>
+  <strong>AgentCabin Desktop —— Pi 与 DSH 的 AI 编程 Agent 桌面端</strong>
 </p>
 
 <p align="center">
-  一个开源的 Electron + Rust 桌面应用，支持 <a href="https://github.com/earendil-works/pi">Pi Coding Agent</a>、<a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness (DSH)</a> 以及其他 Agent 运行时。
+  一个开源的 Electron + Rust 桌面应用，支持 <a href="https://github.com/earendil-works/pi">Pi Coding Agent</a> 和 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness (DSH)</a>，面向 Pi 桌面端、DSH 桌面端和其他 AI 编程 Agent 运行时。
 </p>
 
 <p align="center">
@@ -39,7 +39,11 @@ AgentCabin Desktop 把分散在终端会话中的 AI 编程 Agent 带入一个�
 
 它适合希望在桌面 UI 中使用 Pi、DSH 和兼容 AI 编程运行时，同时又不希望把代码仓库迁移到托管服务中的开发者。调用远程模型 API 仍然需要联网；AgentCabin 本身没有云端后台。
 
-常用检索关键词：`Pi Coding Agent`、`Pi desktop`、`DeepSeek Harness`、`DSH desktop`、`AI coding agent desktop`、`local-first coding workspace`。
+常用检索关键词：`AgentCabin`、`Pi`、`Pi Agent`、`Pi Coding Agent`、`Pi desktop`、`DeepSeek`、`DeepSeek Harness`、`DSH`、`DSH desktop`、`AI agent desktop`、`AI coding agent desktop`、`Electron coding agent`、`local-first coding workspace`。
+
+## 检索关键词
+
+AgentCabin 是一个面向 Pi Coding Agent 和 DeepSeek Harness (DSH) 的开源桌面应用，也可以理解为 Pi 桌面端、DSH 桌面端、Electron AI 编程 Agent 工作台和本地优先开发工作台。
 
 ### 项目概览
 
