@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
@@ -131,6 +132,7 @@ impl DesktopOperatorManager {
         cfg!(target_os = "macos") && self.helper_path.is_file()
     }
 
+    #[cfg(unix)]
     async fn request_once(&self, cmd: &str, args: Value, limit: Duration) -> Result<Value, String> {
         let mut stream = UnixStream::connect(&self.socket_path)
             .await
@@ -202,6 +204,12 @@ impl DesktopOperatorManager {
             .and_then(Value::as_str)
             .unwrap_or("native_error");
         Err(format!("agentcabin-computer-use {code}: {error}"))
+    }
+
+    #[cfg(not(unix))]
+    async fn request_once(&self, cmd: &str, args: Value, limit: Duration) -> Result<Value, String> {
+        let _ = (cmd, args, limit);
+        Err("agentcabin-computer-use native bridge is unavailable on this platform".to_string())
     }
 
     async fn ensure_started(&self) -> Result<(), String> {
@@ -333,12 +341,20 @@ impl DesktopOperatorManager {
             .await;
         // `open -W` is the tracked child for bundles; wait for the helper's
         // asynchronous shutdown before allowing a replacement on this socket.
-        for _ in 0..20 {
-            if UnixStream::connect(&self.socket_path).await.is_err() {
-                break;
+        #[cfg(unix)]
+        {
+            for _ in 0..20 {
+                if UnixStream::connect(&self.socket_path).await.is_err() {
+                    break;
+                }
+                sleep(Duration::from_millis(50)).await;
             }
-            sleep(Duration::from_millis(50)).await;
         }
+        #[cfg(not(unix))]
+        return Err(
+            "agentcabin-computer-use permission refresh is unavailable on this platform"
+                .to_string(),
+        );
         if let Some(mut child) = self.child.lock().await.take() {
             let _ = child.kill().await;
             let _ = child.wait().await;
