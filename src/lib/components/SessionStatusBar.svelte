@@ -1,8 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
   import type { TaskRun, McpServerInfo, CliModelInfo } from "$lib/types";
-  import type { TurnUsage } from "$lib/stores/types";
   import { dbg, dbgWarn } from "$lib/utils/debug";
   import { revealInFinder } from "$lib/api";
   import { getModelsForAgent } from "$lib/stores/cli-info.svelte";
@@ -12,8 +10,6 @@
     type RuntimeProviderId,
   } from "$lib/utils/agent-metadata";
   import { t } from "$lib/i18n/index.svelte";
-  import { fmtNumber } from "$lib/i18n/format";
-  import { truncate, formatTokenCount, formatDuration, formatCostDisplay } from "$lib/utils/format";
   import { stripExpertTag } from "$lib/utils/expert-context";
   import { IS_MAC } from "$lib/utils/platform";
   import { filterPiThinkingLevelsForUi } from "$lib/utils/pi-thinking";
@@ -23,11 +19,6 @@
     run = null,
     agent = "claude",
     model = "",
-    cost = 0,
-    inputTokens = 0,
-    outputTokens = 0,
-    cacheReadTokens = 0,
-    cacheWriteTokens = 0,
     running = false,
     parentRunId,
     onModelChange,
@@ -39,41 +30,21 @@
     onToggleSidebar,
     mcpServers,
     onMcpToggle,
-    cliVersion,
-    permissionMode,
-    fastModeState,
-    numTurns,
-    contextTokens = 0,
-    durationMs,
     persistedFiles,
     onRewind,
-    onCodexRewind,
-    contextUtilization,
-    contextWarningLevel,
-    contextWindow,
     cwd = "",
-    lastCompactedAt = 0,
-    compactCount = 0,
-    microcompactCount = 0,
-    turnUsages = [],
     activeTaskCount = 0,
     mode = "",
     toolsCount = 0,
     onToolsClick,
-    remoteHostName,
     onRename,
     platformModels = [],
-    authSourceLabel,
-    authSourceCategory,
-    verbose = false,
-    apiKeySource,
     effort,
     onEffortChange,
     vscodeAvailable = null,
     onOpenVscode,
     onOpenWorktrees,
     onPreviewToggle,
-    previewOpen = false,
     onStatusClick,
     onToggleBottomPanel,
     bottomPanelOpen = false,
@@ -81,18 +52,12 @@
     rightSidebarOpen = false,
     sidebarOpen = true,
     modelOptions,
-    harness,
     onSearch,
     searchOpen = false,
   }: {
     run?: TaskRun | null;
     agent?: string;
     model?: string;
-    cost?: number;
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheReadTokens?: number;
-    cacheWriteTokens?: number;
     running?: boolean;
     parentRunId?: string;
     onModelChange?: (model: string) => void;
@@ -104,42 +69,21 @@
     onToggleSidebar?: () => void;
     mcpServers?: McpServerInfo[];
     onMcpToggle?: () => void;
-    cliVersion?: string;
-    permissionMode?: string;
-    fastModeState?: string;
-    numTurns?: number;
-    contextTokens?: number;
-    durationMs?: number;
     persistedFiles?: unknown[];
     onRewind?: () => void;
-    /** Codex turn-based rewind (history only). Distinct from snapshot onRewind. */
-    onCodexRewind?: () => void;
-    contextUtilization?: number;
-    contextWarningLevel?: string;
     cwd?: string;
-    contextWindow?: number;
-    lastCompactedAt?: number;
-    compactCount?: number;
-    microcompactCount?: number;
-    turnUsages?: TurnUsage[];
     activeTaskCount?: number;
     mode?: string;
     toolsCount?: number;
     onToolsClick?: () => void;
-    remoteHostName?: string | null;
     onRename?: (name: string) => void;
     platformModels?: CliModelInfo[];
-    authSourceLabel?: string;
-    authSourceCategory?: string;
-    verbose?: boolean;
-    apiKeySource?: string;
     effort?: string;
     onEffortChange?: (effort: string) => void;
     vscodeAvailable?: boolean | null;
     onOpenVscode?: () => void;
     onOpenWorktrees?: () => void;
     onPreviewToggle?: () => void;
-    previewOpen?: boolean;
     onStatusClick?: () => void;
     onToggleBottomPanel?: () => void;
     bottomPanelOpen?: boolean;
@@ -148,7 +92,6 @@
     sidebarOpen?: boolean;
     /** Optional agent-scoped model list (for global Provider multi-model bindings). */
     modelOptions?: CliModelInfo[];
-    harness?: "code" | "work";
     onSearch?: () => void;
     searchOpen?: boolean;
   } = $props();
@@ -157,12 +100,6 @@
   const agentDotClass = $derived(
     RUNTIME_PROVIDERS_CONFIG[agent as RuntimeProviderId]?.dotClass ?? "bg-muted-foreground/60",
   );
-
-  let effectiveHarness = $derived.by<"code" | "work">(() => {
-    if (harness) return harness;
-    if (run && ((run as any).is_work || (run as any).mode === "work")) return "work";
-    return "code";
-  });
 
   // Work may use different providers. Keep the primary status bar honest about
   // the selected runtime instead of baking the current Pi implementation into
@@ -173,38 +110,8 @@
     dbg("status", "state", { agent, model, running, runId: run?.id });
   });
 
-  // ── Compact indicator (fades after 8s) ──
-  let compactVisible = $state(false);
-  let compactTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    if (lastCompactedAt && lastCompactedAt > 0) {
-      compactVisible = true;
-      clearTimeout(compactTimer);
-      compactTimer = setTimeout(() => {
-        compactVisible = false;
-      }, 8000);
-    }
-  });
-
   let moreMenuOpen = $state(false);
 
-  let cwdShort = $derived.by(() => {
-    const val = cwd || run?.cwd || "";
-    if (!val || val === "/") return "";
-    if (
-      effectiveHarness === "work" &&
-      (val === "独立任务" || !run?.workspace_id || val.includes("standalone_tasks"))
-    ) {
-      return "独立任务";
-    }
-    const home = val
-      .replace(/^\/Users\/[^/]+/, "~")
-      .replace(/^\/home\/[^/]+/, "~")
-      .replace(/^[A-Za-z]:[/\\](?:Users|users)[/\\][^/\\]+/, "~");
-    return home.length > 30 ? "..." + home.slice(-27) : home;
-  });
-
-  let sessionIdShort = $derived(run?.session_id ? run.session_id.slice(0, 8) : "");
   let sidCopied = $state(false);
   let pathCopied = $state(false);
 
@@ -266,22 +173,6 @@
     titleEditing = false;
   }
 
-  const formatCost = formatCostDisplay;
-
-  let permissionBadge = $derived.by(() => {
-    if (!permissionMode || permissionMode === "default") return null;
-    const map: Record<string, { label: string; cls: string }> = {
-      acceptEdits: { label: "accept-edits", cls: "bg-muted text-muted-foreground" },
-      bypassPermissions: { label: "bypass", cls: "bg-muted text-muted-foreground" },
-      plan: { label: "plan", cls: "bg-purple-500/15 text-purple-400" },
-      auto: { label: "auto", cls: "bg-teal-500/15 text-teal-400" },
-      dontAsk: { label: "no-ask", cls: "bg-red-500/15 text-red-400" },
-    };
-    return (
-      map[permissionMode] ?? { label: permissionMode, cls: "bg-foreground/10 text-foreground/60" }
-    );
-  });
-
   // ── Model selector dropdown ──
   // Use platform-specific models when a third-party provider is active
   let models = $derived(
@@ -308,17 +199,6 @@
       dropdownOpen = false;
     }
   });
-
-  function toggleModelDropdown() {
-    dropdownOpen = !dropdownOpen;
-    if (dropdownOpen && modelBtnEl) {
-      const rect = modelBtnEl.getBoundingClientRect();
-      dropdownStyle = `position:fixed; bottom:${window.innerHeight - rect.top + 4}px; left:${rect.left}px; z-index:50;`;
-      focusedModelIdx = models.findIndex((m) => m.value === model);
-      if (focusedModelIdx < 0) focusedModelIdx = 0;
-      requestAnimationFrame(() => dropdownEl?.focus());
-    }
-  }
 
   export function openModelDropdown() {
     dropdownOpen = true;
@@ -468,29 +348,6 @@
     const key = labels[level as keyof typeof labels];
     return key ? t(key) : level;
   }
-
-  let modelLabel = $derived.by(() => {
-    const foundInModels = models.find((m) => m.value === model);
-    if (foundInModels) {
-      if (foundInModels.providerName) {
-        return `[${foundInModels.providerName}] ${foundInModels.displayName}`;
-      }
-      return foundInModels.displayName;
-    }
-    // Check agent-specific models first, then platform/CLI models
-    const all = getModelsForAgent(agent, { platformModels, merge: true });
-    const found = all.find((m) => m.value === model);
-    if (found) return found.displayName;
-    const fuzzy = all.find((m) => model.includes(m.value) && m.value !== "default");
-    if (fuzzy) return fuzzy.displayName;
-    if (model.includes("/")) {
-      const slash = model.indexOf("/");
-      const p = model.slice(0, slash);
-      const m = model.slice(slash + 1);
-      return `[${p}] ${m}`;
-    }
-    return model;
-  });
 </script>
 
 <div

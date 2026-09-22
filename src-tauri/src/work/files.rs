@@ -121,8 +121,8 @@ pub fn open_with_paths(
             // If clean has a leading folder component matching primary_root's name, strip it
             // e.g. primary_root is "/.../3人行", clean is "3人行/chapters/001.md"
             if let Some(folder_name) = primary_root.file_name().and_then(|n| n.to_str()) {
-                if clean.starts_with(folder_name) {
-                    let stripped = clean[folder_name.len()..].trim_start_matches(['/', '\\']);
+                if let Some(stripped) = clean.strip_prefix(folder_name) {
+                    let stripped = stripped.trim_start_matches(['/', '\\']);
                     let candidate = primary_root.join(stripped);
                     if let Ok(canon) = fs::canonicalize(&candidate) {
                         if canon.is_file() {

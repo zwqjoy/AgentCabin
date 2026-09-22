@@ -2392,12 +2392,13 @@ export class SessionStore {
    */
   private _restorePendingInitialPrompt(includeTerminal = false): void {
     const run = this.run;
+    const prompt = typeof run?.prompt === "string" ? run.prompt.trim() : "";
     const allowedStatuses = includeTerminal
       ? ["pending", "running", "idle", "completed", "failed", "stopped"]
       : ["pending", "running", "idle"];
     if (
       !run ||
-      !run.prompt.trim() ||
+      !prompt ||
       !allowedStatuses.includes(run.status) ||
       this.timeline.some((entry) => entry.kind === "user")
     ) {

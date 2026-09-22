@@ -828,7 +828,7 @@
 
   let allCommands = $derived(slashEnabled ? nativeCommands : []);
   let quickActions = $derived(getQuickActions(allCommands, agent));
-  let skillNameSet = slashSkillNames;
+  let skillNameSet = $derived(slashSkillNames);
 
   let slashQuery = $derived.by(() => {
     if (!slashMenuOpen || slashPhase !== "commands") return null;

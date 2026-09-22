@@ -366,6 +366,13 @@
   // Standalone task execution mode state (defaults to auto for quick tasks)
   let standaloneExecutionMode = $state<WorkExecutionMode>("auto");
 
+  const CLI_PERMISSION_MODE_BY_WORK_MODE: Record<WorkExecutionMode, string> = {
+    auto: "auto",
+    direct: "default",
+    plan_first: "plan",
+    full_access: "bypassPermissions",
+  };
+
   let currentExecutionMode = $derived.by<WorkExecutionMode>(() => {
     if (isStandalone) {
       const pm = session.run?.permission_mode;
@@ -387,13 +394,6 @@
     return workspace?.defaultPolicy?.executionMode ?? activeTask?.policy.executionMode ?? "auto";
   });
 
-  function canSelectMode(mode: WorkExecutionMode): boolean {
-    // Both standalone tasks and workspaces allow selecting any available mode
-    if (isStandalone || workspace) return true;
-    if (!hasActiveTask) return true;
-    return true;
-  }
-
   function visibleExecutionMode(mode: WorkExecutionMode): WorkExecutionMode {
     return mode === "direct" || mode === "plan_first" ? "auto" : mode;
   }
@@ -402,20 +402,12 @@
 
   async function setExecutionMode(mode: WorkExecutionMode) {
     if (permissionModeBusy || mode === currentExecutionMode) return;
-    if (!canSelectMode(mode)) return;
     permissionModeBusy = true;
     try {
       if (isStandalone) {
         standaloneExecutionMode = mode;
         if (session.run?.id) {
-          const cliPermMode =
-            mode === "plan_first"
-              ? "plan"
-              : mode === "direct"
-                ? "default"
-                : mode === "full_access"
-                  ? "bypassPermissions"
-                  : "auto";
+          const cliPermMode = CLI_PERMISSION_MODE_BY_WORK_MODE[mode];
           await api.updateRunPermissionMode(session.run.id, cliPermMode);
           if (session.run) {
             session.run = { ...session.run, permission_mode: cliPermMode };
@@ -440,14 +432,7 @@
         activeTask = updatedTask;
       }
       if (session.run?.id) {
-        const cliPermMode =
-          mode === "plan_first"
-            ? "plan"
-            : mode === "direct"
-              ? "default"
-              : mode === "full_access"
-                ? "bypassPermissions"
-                : "auto";
+        const cliPermMode = CLI_PERMISSION_MODE_BY_WORK_MODE[mode];
         await api.updateRunPermissionMode(session.run.id, cliPermMode);
         if (session.run) {
           session.run = { ...session.run, permission_mode: cliPermMode };
@@ -555,7 +540,6 @@
         : "选择工作空间权限模式",
       options: WORK_MODE_OPTIONS.map((opt) => ({
         ...opt,
-        disabled: !canSelectMode(opt.value),
       })),
       onSelect: (value: string) => void setExecutionMode(value as WorkExecutionMode),
     };
@@ -2606,7 +2590,7 @@
       );
       for (let offset = 1; offset <= WORK_MODE_OPTIONS.length; offset += 1) {
         const next = WORK_MODE_OPTIONS[(currentIndex + offset) % WORK_MODE_OPTIONS.length];
-        if (next && canSelectMode(next.value)) {
+        if (next) {
           void setExecutionMode(next.value);
           break;
         }
@@ -2718,20 +2702,10 @@
 >
   <SessionStatusBar
     bind:this={statusBarRef}
-    harness="work"
     run={session.run}
     agent={effectiveWorkAgent}
     model={session.model}
     running={session.sessionAlive}
-    inputTokens={session.usage.inputTokens}
-    outputTokens={session.usage.outputTokens}
-    cacheReadTokens={session.usage.cacheReadTokens}
-    cacheWriteTokens={session.usage.cacheWriteTokens}
-    contextTokens={session.contextTokens}
-    contextUtilization={session.contextUtilization}
-    contextWindow={resolvedContextWindow.contextWindow}
-    numTurns={session.userTurnCount}
-    durationMs={session.durationMs}
     cwd={isStandalone ? "独立任务" : workspace?.name || session.sessionCwd || workspace?.root || ""}
     mode={session.run ? "Stream" : ""}
     {modelOptions}

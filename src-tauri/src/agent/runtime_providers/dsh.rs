@@ -390,7 +390,7 @@ impl RuntimeProviderAdapter for DshRuntimeAdapter {
         }
 
         if caps.app_mode == crate::work::models::AppMode::Work {
-            ensure_work_computer_use_modules(&dsh_home)?;
+            ensure_work_computer_use_modules(dsh_home)?;
             let work_adapter_path = dsh_home.join("dsh_work_mcp_adapter.mjs");
             write_managed_file(
                 &work_adapter_path,

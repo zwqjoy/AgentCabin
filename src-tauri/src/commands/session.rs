@@ -1139,7 +1139,7 @@ pub(crate) async fn cancel_session_turn_inner(
             run.agent
         ));
     }
-    let cmd_tx = get_cmd_tx(&sessions, &run_id).await?;
+    let cmd_tx = get_cmd_tx(sessions, &run_id).await?;
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     cmd_tx
         .send(ActorCommand::CancelTurn { reply: reply_tx })

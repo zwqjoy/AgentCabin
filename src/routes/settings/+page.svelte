@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { flushSync, onDestroy, onMount, getContext } from "svelte";
+  import { flushSync, onMount, getContext } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import * as api from "$lib/api";
@@ -11,8 +11,6 @@
     CliModelInfo,
     CliConfigSettingDef,
     RemoteHost,
-    RemoteTestResult,
-    SshKeyInfo,
     CodexAuthResult,
     PiAuthResult,
     CliCheckResult,
@@ -20,21 +18,11 @@
     AgentProviderBindings,
   } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Modal from "$lib/components/Modal.svelte";
-  import Input from "$lib/components/Input.svelte";
-  import KeybindingEditor from "$lib/components/KeybindingEditor.svelte";
-  import ProviderIcon from "$lib/components/ProviderIcon.svelte";
-  import ColorInput from "$lib/components/appearance/ColorInput.svelte";
-  import SegmentedControl from "$lib/components/appearance/SegmentedControl.svelte";
-  import NumberInput from "$lib/components/appearance/NumberInput.svelte";
-  import { formatKeyDisplay } from "$lib/stores/keybindings.svelte";
   import { getSavedProjectCwd } from "$lib/utils/project-cwd";
   import {
     PLATFORM_PRESETS,
     PRESET_CATEGORIES,
     buildPlatformList,
-    isCustomPlatform,
     findCredential,
     expandModelsToTiers,
     compressModelsFromTiers,
@@ -49,25 +37,11 @@
     normalizePiCliModel,
     type PiProviderPreset,
   } from "$lib/utils/pi-provider-presets";
-  import {
-    isDebugMode,
-    setDebugMode,
-    copyDebugLogs,
-    getDebugLogCount,
-    clearDebugLogs,
-    getDebugFilter,
-  } from "$lib/utils/debug";
+  import { isDebugMode, getDebugLogCount, getDebugFilter } from "$lib/utils/debug";
   import { dbg, dbgWarn, redactSensitive } from "$lib/utils/debug";
-  import {
-    ALL_RUNTIME_PROVIDERS,
-    RUNTIME_PROVIDERS_CONFIG,
-    getAgentDisplayName,
-    type RuntimeProviderId,
-  } from "$lib/utils/agent-metadata";
+  import { ALL_RUNTIME_PROVIDERS, type RuntimeProviderId } from "$lib/utils/agent-metadata";
   import {
     fetchRuntimeProviderStatus,
-    runtimeProviderAuthLabel,
-    isRuntimeProviderReady,
     type RuntimeProviderStatus,
   } from "$lib/utils/runtime-status";
   import { splitPath } from "$lib/utils/format";
@@ -77,74 +51,21 @@
     CODEX_SUBSCRIPTION_PROVIDER_ID,
   } from "$lib/utils/codex-subscription";
   import { getSavedRealm, getSavedPiSubMode, getRealmHref } from "$lib/stores/app-mode.svelte";
-  import { IS_WINDOWS, IS_MAC } from "$lib/utils/platform";
-  import { t, LOCALE_REGISTRY, currentLocale, switchLocale } from "$lib/i18n/index.svelte";
-  import {
-    getAppearance,
-    setAppearance,
-    UI_FONT_SIZE_LIMITS,
-    CODE_FONT_SIZE_LIMITS,
-    importThemeJson,
-    exportThemeJson,
-    BUILTIN_THEMES,
-    type BuiltinTheme,
-    type ThemeMode as AppearanceTheme,
-    type ColorScheme as AppearanceScheme,
-    type ReduceMotion,
-    type DiffMarkerStyle,
-  } from "$lib/stores/appearance.svelte";
+  import { t, currentLocale } from "$lib/i18n/index.svelte";
   import { getTransport } from "$lib/transport";
-  import {
-    clampSidebarWidth,
-    persistSidebarWidth,
-    readSidebarWidth,
-  } from "$lib/utils/sidebar-width";
-  import PluginsPage from "$lib/components/PluginsPage.svelte";
   import DshPluginPanel from "$lib/components/DshPluginPanel.svelte";
-  import WebAccessPanel from "$lib/components/WebAccessPanel.svelte";
-  import BrowserUsePanel from "$lib/components/BrowserUsePanel.svelte";
-  import DesktopUsePanel from "$lib/components/DesktopUsePanel.svelte";
-  import CapabilityCenterIcon from "$lib/components/CapabilityCenterIcon.svelte";
   import SettingToggle from "$lib/components/SettingToggle.svelte";
-  import PetPreview from "$lib/pet/PetPreview.svelte";
-  import GrokBotCustomizer from "$lib/pet/GrokBotCustomizer.svelte";
-  import {
-    createCustomPet,
-    inspectCustomPetImage,
-    inspectCustomPetZip,
-    listCustomPets,
-    type CustomPetOption,
-    type PetAnimationUrls,
-  } from "$lib/pet/custom-pets";
-  import { formatPetError } from "$lib/pet/pet-errors";
-  import {
-    BUILTIN_PET_OPTIONS,
-    PET_SCALE_MAX,
-    PET_SCALE_MIN,
-    petSettingsPatch,
-    resolvePetSettings,
-    type PetSettings,
-  } from "$lib/pet/pet-settings";
-  import UsagePage from "../usage/+page.svelte";
   import AgentCliStatusCard from "$lib/components/AgentCliStatusCard.svelte";
   import CodexFeaturesSettings from "$lib/components/CodexFeaturesSettings.svelte";
   import GrokCliConfigCard from "$lib/components/GrokCliConfigCard.svelte";
   import ScopeBanner from "$lib/components/ScopeBanner.svelte";
-  import AgentCapabilityCards from "$lib/components/AgentCapabilityCards.svelte";
-  import WorkGlobalRulesPanel from "$lib/components/work/WorkGlobalRulesPanel.svelte";
   import PiCodeGlobalRulesPanel from "$lib/components/PiCodeGlobalRulesPanel.svelte";
-  import PiSharedExtensionPanel from "$lib/components/PiSharedExtensionPanel.svelte";
   import PiExtensionsManager from "$lib/components/PiExtensionsManager.svelte";
   import PiProfileConfigCard from "$lib/components/PiProfileConfigCard.svelte";
   import RuntimeProviderUnifiedCards from "$lib/components/RuntimeProviderUnifiedCards.svelte";
   import HarnessRuntimeProviderSection from "$lib/components/HarnessRuntimeProviderSection.svelte";
-  import { getWorkProfile } from "$lib/api/work";
   import type { InstalledPlugin } from "$lib/types";
-  import {
-    isSettingsTabActive,
-    shouldUseSettingsMainPanel,
-    shouldUseWideSettingsMainPanel,
-  } from "$lib/utils/settings-navigation";
+  import { isSettingsTabActive } from "$lib/utils/settings-navigation";
   import pkg from "../../../package.json";
   import type { DesktopUseStatus, WorkBrowserHealth, WorkBrowserSummary } from "$lib/types/work";
 
@@ -279,21 +200,6 @@
     const tab = $page.url.searchParams.get("tab");
     return tab === "native-codex" || tab === "native-claude" ? tab : null;
   });
-  let embeddedNativeAgent = $derived<"codex" | "claude" | null>(
-    embeddedAgentSettingsTab === "native-codex"
-      ? "codex"
-      : embeddedAgentSettingsTab === "native-claude"
-        ? "claude"
-        : null,
-  );
-  let isCapabilityCenterActive = $derived(
-    isActiveSettingsTab("capability-center") ||
-      (activeView === "plugins" && $page.url.searchParams.get("section") !== "prompts"),
-  );
-  let piCapabilityCenterActive = $derived(isCapabilityCenterActive);
-  let globalPromptTemplatesActive = $derived(
-    activeView === "plugins" && $page.url.searchParams.get("section") === "prompts",
-  );
   let activeExtensionSection = $derived(
     $page.url.searchParams.get("section") === "plugins"
       ? "claude-plugins"
@@ -344,172 +250,6 @@
     return (
       isSettingsTabActive(activeView, activeTab, tab) || (embeddedAgentSettingsTab as any) === tab
     );
-  }
-
-  // ── Appearance state (delegated to appearance store) ──────────────────────
-  // Keep local reactive copies for the UI to bind to
-  let appearanceTheme = $state<AppearanceTheme>(getAppearance().themeMode);
-  let appearanceScheme = $state<AppearanceScheme>(getAppearance().colorScheme);
-  let accentColor = $state(getAppearance().accentColor);
-  let backgroundColor = $state(getAppearance().backgroundColor);
-  let foregroundColor = $state(getAppearance().foregroundColor);
-  let uiFontFamily = $state(getAppearance().uiFontFamily);
-  let codeFontFamily = $state(getAppearance().codeFontFamily);
-  let translucentSidebar = $state(getAppearance().translucentSidebar);
-  let contrast = $state(getAppearance().contrast);
-  let pointerCursor = $state(getAppearance().pointerCursor);
-  let reduceMotionSetting = $state<ReduceMotion>(getAppearance().reduceMotion);
-  let uiFontSize = $state(getAppearance().uiFontSize);
-  let codeFontSize = $state(getAppearance().codeFontSize);
-  let diffMarkerStyle = $state<DiffMarkerStyle>(getAppearance().diffMarkerStyle);
-  let fontSmoothing = $state(getAppearance().fontSmoothing);
-
-  // Low-contrast warning: show when bg and fg are too close
-  let contrastWarning = $derived.by(() => {
-    if (!backgroundColor || !foregroundColor) return false;
-    const hex2rgb = (h: string) => {
-      const r = parseInt(h.slice(1, 3), 16) / 255;
-      const g = parseInt(h.slice(3, 5), 16) / 255;
-      const b = parseInt(h.slice(5, 7), 16) / 255;
-      return [r, g, b].map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-    };
-    try {
-      const [rr, gr, br] = hex2rgb(backgroundColor);
-      const [rf, gf, bf] = hex2rgb(foregroundColor);
-      const lumBg = 0.2126 * rr + 0.7152 * gr + 0.0722 * br;
-      const lumFg = 0.2126 * rf + 0.7152 * gf + 0.0722 * bf;
-      const L1 = Math.max(lumBg, lumFg);
-      const L2 = Math.min(lumBg, lumFg);
-      const ratio = (L1 + 0.05) / (L2 + 0.05);
-      return ratio < 3.0; // below AA large text threshold
-    } catch {
-      return false;
-    }
-  });
-
-  // Theme import state
-  let themeImportError = $state<string | null>(null);
-  let themeImportSuccess = $state(false);
-
-  let selectedBuiltinThemeId = $state(getAppearance().builtinTheme || "default");
-
-  function applyBuiltinTheme(themeId: string) {
-    selectedBuiltinThemeId = themeId;
-    const item = BUILTIN_THEMES.find((t) => t.id === themeId);
-    if (!item) return;
-    const isDark =
-      appearanceTheme === "dark" ||
-      (appearanceTheme === "system" &&
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches);
-    const colors = isDark ? item.darkSettings : item.settings;
-    accentColor = colors.accentColor;
-    backgroundColor = colors.backgroundColor;
-    foregroundColor = colors.foregroundColor;
-    contrast = colors.contrast;
-    if (colors.translucentSidebar !== undefined) {
-      translucentSidebar = colors.translucentSidebar;
-    }
-    setAppearance({
-      builtinTheme: themeId,
-      accentColor: colors.accentColor,
-      backgroundColor: colors.backgroundColor,
-      foregroundColor: colors.foregroundColor,
-      contrast: colors.contrast,
-      ...(colors.translucentSidebar !== undefined
-        ? { translucentSidebar: colors.translucentSidebar }
-        : {}),
-    });
-  }
-
-  function setAppearanceTheme(value: AppearanceTheme) {
-    appearanceTheme = value;
-    setAppearance({ themeMode: value });
-    const s = getAppearance();
-    accentColor = s.accentColor;
-    backgroundColor = s.backgroundColor;
-    foregroundColor = s.foregroundColor;
-    contrast = s.contrast;
-    translucentSidebar = s.translucentSidebar;
-  }
-
-  function setAppearanceScheme(value: AppearanceScheme) {
-    appearanceScheme = value;
-    setAppearance({ colorScheme: value, accentColor: "" }); // clear custom when picking preset
-    accentColor = "";
-  }
-
-  const appearanceSchemeOptions: Array<{
-    id: AppearanceScheme;
-    label: () => string;
-    swatch: string;
-  }> = [
-    { id: "neutral", label: () => t("settings_appearance_neutral"), swatch: "#7c8490" },
-    { id: "warm", label: () => t("settings_appearance_warm"), swatch: "#e7a63b" },
-    { id: "emerald", label: () => t("settings_appearance_emerald"), swatch: "#18a978" },
-    { id: "violet", label: () => t("settings_appearance_violet"), swatch: "#8859df" },
-    { id: "ocean", label: () => t("settings_appearance_ocean"), swatch: "#3c91ed" },
-    { id: "rose", label: () => t("settings_appearance_rose"), swatch: "#e35b7b" },
-  ];
-
-  function handleThemeImport() {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json,application/json";
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        const raw = await file.text();
-        const err = importThemeJson(raw);
-        if (err) {
-          themeImportError = err;
-          setTimeout(() => (themeImportError = null), 4000);
-        } else {
-          // Sync local reactive state from store
-          const s = getAppearance();
-          accentColor = s.accentColor;
-          backgroundColor = s.backgroundColor;
-          foregroundColor = s.foregroundColor;
-          uiFontFamily = s.uiFontFamily;
-          codeFontFamily = s.codeFontFamily;
-          translucentSidebar = s.translucentSidebar;
-          contrast = s.contrast;
-          themeImportSuccess = true;
-          setTimeout(() => (themeImportSuccess = false), 2000);
-        }
-      } catch {
-        themeImportError = t("settings_appearance_importError");
-        setTimeout(() => (themeImportError = null), 4000);
-      }
-    };
-    input.click();
-  }
-
-  function handleThemeExport() {
-    const json = exportThemeJson(t("settings_appearance_myTheme"));
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "agentcabin-theme.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function resetAccentToPreset() {
-    accentColor = "";
-    setAppearance({ accentColor: "", builtinTheme: "custom" });
-  }
-
-  function resetBackgroundToDefault() {
-    backgroundColor = "";
-    setAppearance({ backgroundColor: "", builtinTheme: "custom" });
-  }
-
-  function resetForegroundToDefault() {
-    foregroundColor = "";
-    setAppearance({ foregroundColor: "", builtinTheme: "custom" });
   }
 
   let settings = $state<UserSettings | null>(null);
@@ -576,41 +316,6 @@
     await api.setDesktopUseBinding(enabled);
     desktopUseStatus = await api.getDesktopUseStatus();
   }
-
-  // (Native agent redirects disabled in Settings V2)
-  let legacyWorkRuntime = $state<string | null>(null);
-  let showWorkPiProfile = $derived(
-    settings === null ||
-      (settings.work_default_runtime ?? legacyWorkRuntime ?? "pi").trim().toLowerCase() === "pi",
-  );
-  let petSettings = $derived(resolvePetSettings(settings));
-  let customPets = $state<CustomPetOption[]>([]);
-  let selectedPet = $derived(
-    customPets.find((pet) => pet.id === petSettings.id) ??
-      BUILTIN_PET_OPTIONS.find((pet) => pet.id === petSettings.id) ??
-      BUILTIN_PET_OPTIONS[0],
-  );
-  let petScaleDraft = $state(1);
-
-  let petAddOpen = $state(false);
-  let petCreateBusy = $state(false);
-  let petCreateError = $state("");
-  let petAddMode = $state<"image" | "zip">("image");
-  let petImageBase64 = $state("");
-  let petImageName = $state("");
-  let petImageUrl = $state("");
-  let petZipBase64 = $state("");
-  let petZipName = $state("");
-  let petAnimationUrls = $state<PetAnimationUrls | null>(null);
-  let petForm = $state({ slug: "", displayName: "", description: "" });
-
-  const petAnimationModes = [
-    { mode: "idle", label: "settings_pet_animationIdle" },
-    { mode: "running", label: "settings_pet_animationRunning" },
-    { mode: "waiting", label: "settings_pet_animationWaiting" },
-    { mode: "failed", label: "settings_pet_animationFailed" },
-    { mode: "review", label: "settings_pet_animationReview" },
-  ] as const;
 
   let globalProviders = $state<GlobalProviderCredential[]>([]);
   let authMode = $state("cli");
@@ -799,261 +504,16 @@
 
   // ── Remote host state ──
   let remoteHosts = $state<RemoteHost[]>([]);
-  let editingRemote = $state<RemoteHost | null>(null);
-  let remoteFormName = $state("");
-  let remoteFormHost = $state("");
-  let remoteFormUser = $state("");
-  let remoteFormPort = $state(22);
-  let remoteFormKeyPath = $state("");
-  let remoteFormRemoteCwd = $state("");
-  let remoteFormClaudePath = $state("");
-  let remoteFormForwardKey = $state(false);
-  let remoteTesting = $state(false);
-  let remoteTestResult = $state<RemoteTestResult | null>(null);
-  let remoteSaving = $state(false);
-  let remoteSaved = $state(false);
-
-  function resetRemoteForm() {
-    editingRemote = null;
-    remoteFormName = "";
-    remoteFormHost = "";
-    remoteFormUser = "";
-    remoteFormPort = 22;
-    remoteFormKeyPath = "";
-    remoteFormRemoteCwd = "";
-    remoteFormClaudePath = "";
-    remoteFormForwardKey = false;
-    remoteTestResult = null;
-    remoteFormTouched = false;
-  }
-
-  function editRemoteHost(host: RemoteHost) {
-    editingRemote = host;
-    remoteFormName = host.name;
-    remoteFormHost = host.host;
-    remoteFormUser = host.user;
-    remoteFormPort = host.port;
-    remoteFormKeyPath = host.key_path ?? "";
-    remoteFormRemoteCwd = host.remote_cwd ?? "";
-    remoteFormClaudePath = host.remote_claude_path ?? "";
-    remoteFormForwardKey = host.forward_api_key;
-    remoteTestResult = null;
-  }
-
-  async function saveRemoteHost(keepForm = false) {
-    if (!remoteFormName.trim() || !remoteFormHost.trim() || !remoteFormUser.trim()) {
-      remoteFormTouched = true;
-      return;
-    }
-    remoteSaving = true;
-    try {
-      const newHost: RemoteHost = {
-        name: remoteFormName.trim(),
-        host: remoteFormHost.trim(),
-        user: remoteFormUser.trim(),
-        port: remoteFormPort || 22,
-        key_path: remoteFormKeyPath.trim() || undefined,
-        remote_cwd: remoteFormRemoteCwd.trim() || undefined,
-        remote_claude_path: remoteFormClaudePath.trim() || undefined,
-        forward_api_key: remoteFormForwardKey,
-      };
-
-      const updated = editingRemote
-        ? remoteHosts.map((h) => (h.name === editingRemote!.name ? newHost : h))
-        : [...remoteHosts, newHost];
-
-      await api.updateUserSettings({ remote_hosts: updated } as Partial<UserSettings>);
-      remoteHosts = updated;
-      if (keepForm) {
-        // Switch to edit mode so subsequent saves update instead of duplicate
-        editingRemote = newHost;
-      } else {
-        resetRemoteForm();
-      }
-      remoteSaved = true;
-      setTimeout(() => (remoteSaved = false), 2000);
-      dbg("settings", "remote host saved", newHost.name);
-    } catch (e) {
-      dbgWarn("settings", "save remote host failed", e);
-    } finally {
-      remoteSaving = false;
-    }
-  }
 
   async function deleteRemoteHost(name: string) {
     const updated = remoteHosts.filter((h) => h.name !== name);
     try {
       await api.updateUserSettings({ remote_hosts: updated } as Partial<UserSettings>);
       remoteHosts = updated;
-      if (editingRemote?.name === name) resetRemoteForm();
       dbg("settings", "remote host deleted", name);
     } catch (e) {
       dbgWarn("settings", "delete remote host failed", e);
     }
-  }
-
-  let remoteFormTouched = $state(false);
-
-  async function testRemoteConnection() {
-    if (!remoteFormHost.trim() || !remoteFormUser.trim()) {
-      remoteFormTouched = true;
-      return;
-    }
-    remoteTesting = true;
-    remoteTestResult = null;
-    try {
-      remoteTestResult = await api.testRemoteHost(
-        remoteFormHost.trim(),
-        remoteFormUser.trim(),
-        remoteFormPort || undefined,
-        remoteFormKeyPath.trim() || undefined,
-        remoteFormClaudePath.trim() || undefined,
-      );
-      dbg("settings", "remote test result", remoteTestResult);
-      // Auto-save on successful SSH connection (keep form visible for user to review)
-      if (remoteTestResult.ssh_ok && remoteFormName && remoteFormHost && remoteFormUser) {
-        await saveRemoteHost(true);
-      }
-    } catch (e) {
-      remoteTestResult = { ssh_ok: false, cli_found: false, error: String(e) };
-      dbgWarn("settings", "remote test error", e);
-    } finally {
-      remoteTesting = false;
-    }
-  }
-
-  // ── SSH Key wizard state ──
-  type SshKeyStep =
-    | "idle"
-    | "checking"
-    | "no_key"
-    | "has_key"
-    | "pub_missing"
-    | "generating"
-    | "done"
-    | "error";
-  let sshKeyStep = $state<SshKeyStep>("idle");
-  let sshKeyInfo = $state<SshKeyInfo | null>(null);
-  let sshKeyError = $state("");
-  let sshCopied = $state(false);
-  let sshVerifying = $state(false);
-  let wizardKeyPath = $derived(sshKeyInfo?.key_path ?? "");
-
-  function shellQuote(s: string): string {
-    return "'" + s.replace(/'/g, "'\\''") + "'";
-  }
-
-  function pwshQuote(s: string): string {
-    return "'" + s.replace(/'/g, "''") + "'";
-  }
-
-  function buildCopyCommand(keyInfo: SshKeyInfo, host: string, user: string, port: number): string {
-    if (IS_WINDOWS) {
-      const pubPath = pwshQuote(keyInfo.key_path_expanded + ".pub");
-      const target = pwshQuote(`${user}@${host}`);
-      const remoteScript = pwshQuote(
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && " +
-          "touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && " +
-          'key=$(cat) && (grep -qxF "$key" ~/.ssh/authorized_keys 2>/dev/null || ' +
-          'echo "$key" >> ~/.ssh/authorized_keys)',
-      );
-      return `Get-Content -LiteralPath ${pubPath} -Raw | ssh -p ${port} ${target} ${remoteScript}`;
-    }
-    const keyArg = shellQuote(keyInfo.key_path_expanded);
-    const pubArg = shellQuote(keyInfo.key_path_expanded + ".pub");
-    const target = `${shellQuote(user)}@${shellQuote(host)}`;
-
-    if (keyInfo.ssh_copy_id_available) {
-      return `ssh-copy-id -i ${keyArg} -p ${port} ${target}`;
-    }
-    const remoteScript =
-      "mkdir -p ~/.ssh && chmod 700 ~/.ssh && " +
-      "touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && " +
-      'key=$(cat) && (grep -qxF "$key" ~/.ssh/authorized_keys 2>/dev/null || ' +
-      'echo "$key" >> ~/.ssh/authorized_keys)';
-    return `cat ${pubArg} | ssh -p ${port} ${target} ${shellQuote(remoteScript)}`;
-  }
-
-  function buildRebuildPubKeyCommand(keyInfo: SshKeyInfo): string {
-    if (IS_WINDOWS) {
-      const keyPath = pwshQuote(keyInfo.key_path_expanded);
-      const pubPath = pwshQuote(keyInfo.key_path_expanded + ".pub");
-      return `ssh-keygen -y -f ${keyPath} | Out-File -Encoding ascii ${pubPath}`;
-    }
-    const keyArg = shellQuote(keyInfo.key_path_expanded);
-    return `ssh-keygen -y -f ${keyArg} > ${shellQuote(keyInfo.key_path_expanded + ".pub")}`;
-  }
-
-  async function startSshKeyWizard() {
-    sshKeyStep = "checking";
-    sshKeyError = "";
-    sshCopied = false;
-    try {
-      const info = await api.checkSshKey();
-      sshKeyInfo = info;
-      dbg("settings", "ssh key check", info);
-      if (info.exists && info.pub_exists) {
-        sshKeyStep = "has_key";
-      } else if (info.exists && !info.pub_exists) {
-        sshKeyStep = "pub_missing";
-      } else {
-        sshKeyStep = "no_key";
-      }
-    } catch (e) {
-      sshKeyError = String(e);
-      sshKeyStep = "error";
-      dbgWarn("settings", "ssh key check failed", e);
-    }
-  }
-
-  async function generateSshKey() {
-    sshKeyStep = "generating";
-    sshKeyError = "";
-    try {
-      const info = await api.generateSshKey();
-      sshKeyInfo = info;
-      sshKeyStep = "has_key";
-      dbg("settings", "ssh key generated", info);
-    } catch (e) {
-      sshKeyError = String(e);
-      sshKeyStep = "error";
-      dbgWarn("settings", "ssh key generation failed", e);
-    }
-  }
-
-  async function verifySshConnection() {
-    if (!sshKeyInfo || !remoteFormHost || !remoteFormUser) return;
-    sshVerifying = true;
-    try {
-      const result = await api.testRemoteHost(
-        remoteFormHost.trim(),
-        remoteFormUser.trim(),
-        remoteFormPort || undefined,
-        wizardKeyPath || undefined,
-        remoteFormClaudePath.trim() || undefined,
-      );
-      dbg("settings", "ssh verify result", result);
-      if (result.ssh_ok) {
-        remoteFormKeyPath = wizardKeyPath;
-        sshKeyStep = "done";
-      } else {
-        sshKeyError = result.error ?? "";
-        sshKeyStep = "has_key"; // stay on has_key so user can retry
-      }
-      remoteTestResult = result;
-    } catch (e) {
-      sshKeyError = String(e);
-      dbgWarn("settings", "ssh verify failed", e);
-    } finally {
-      sshVerifying = false;
-    }
-  }
-
-  function closeSshWizard() {
-    sshKeyStep = "idle";
-    sshKeyError = "";
-    sshCopied = false;
-    sshVerifying = false;
   }
 
   // Keybinding store from layout context
@@ -2392,13 +1852,6 @@
     // Load Codex status, native per-session settings, and the shared subscription catalog.
     void refreshCodexAll();
     void refreshPi();
-    void getWorkProfile()
-      .then((profile) => {
-        legacyWorkRuntime = profile.runtime;
-      })
-      .catch(() => {
-        // The settings value or compatibility default remains usable.
-      });
     // Load auth overview
     api
       .getAuthOverview()
@@ -2459,30 +1912,8 @@
     };
     window.addEventListener("agentcabin:codex-auth-changed", handler);
 
-    const appearanceHandler = () => {
-      const s = getAppearance();
-      appearanceTheme = s.themeMode;
-      appearanceScheme = s.colorScheme;
-      selectedBuiltinThemeId = s.builtinTheme || "default";
-      accentColor = s.accentColor;
-      backgroundColor = s.backgroundColor;
-      foregroundColor = s.foregroundColor;
-      uiFontFamily = s.uiFontFamily;
-      codeFontFamily = s.codeFontFamily;
-      translucentSidebar = s.translucentSidebar;
-      contrast = s.contrast;
-      pointerCursor = s.pointerCursor;
-      reduceMotionSetting = s.reduceMotion;
-      uiFontSize = s.uiFontSize;
-      codeFontSize = s.codeFontSize;
-      diffMarkerStyle = s.diffMarkerStyle;
-      fontSmoothing = s.fontSmoothing;
-    };
-    window.addEventListener("agentcabin:appearance-changed", appearanceHandler);
-
     return () => {
       window.removeEventListener("agentcabin:codex-auth-changed", handler);
-      window.removeEventListener("agentcabin:appearance-changed", appearanceHandler);
     };
   });
 
@@ -2587,158 +2018,6 @@
     }
   }
 
-  async function savePetSettings(patch: Partial<PetSettings>) {
-    await saveGeneralPatch(petSettingsPatch({ ...petSettings, ...patch }));
-  }
-
-  async function refreshCustomPets() {
-    try {
-      customPets = await listCustomPets();
-    } catch (error) {
-      dbgWarn("settings", "load custom pets failed", error);
-      customPets = [];
-    }
-  }
-
-  function resetPetCreateForm() {
-    petAddOpen = false;
-    petCreateBusy = false;
-    petCreateError = "";
-    petAddMode = "image";
-    petImageBase64 = "";
-    petImageName = "";
-    petImageUrl = "";
-    petZipBase64 = "";
-    petZipName = "";
-    petAnimationUrls = null;
-    petForm = { slug: "", displayName: "", description: "" };
-  }
-
-  function normalizePetSlug(value: string): string {
-    return value
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .replace(/-{2,}/g, "-")
-      .slice(0, 73);
-  }
-
-  async function readSelectedPetFile(
-    title: string,
-    extensions: string[],
-  ): Promise<{ base64: string; name: string } | null> {
-    const { open } = await import("$lib/platform/dialog");
-    const selected = await open({
-      multiple: false,
-      title,
-      filters: [{ name: "Pet asset", extensions }],
-    });
-    if (!selected || typeof selected !== "string") return null;
-
-    const separator = Math.max(selected.lastIndexOf("/"), selected.lastIndexOf("\\"));
-    const cwd = separator > 0 ? selected.slice(0, separator) : "/";
-    const [base64] = await getTransport().invoke<[string, string]>("read_file_base64", {
-      path: selected,
-      cwd,
-    });
-    return { base64, name: selected.slice(separator + 1) };
-  }
-
-  async function choosePetImage() {
-    try {
-      const file = await readSelectedPetFile(t("settings_pet_pickImage"), [
-        "png",
-        "webp",
-        "gif",
-        "apng",
-      ]);
-      if (!file) return;
-      petImageUrl = await inspectCustomPetImage(file.base64, file.name);
-      petImageBase64 = file.base64;
-      petImageName = file.name;
-      petZipBase64 = "";
-      petZipName = "";
-      petAnimationUrls = null;
-      petCreateError = "";
-    } catch (error) {
-      petCreateError = formatPetError(error, t("settings_pet_createFailed"));
-    }
-  }
-
-  async function choosePetZip() {
-    try {
-      const file = await readSelectedPetFile(t("settings_pet_pickZip"), ["zip"]);
-      if (!file) return;
-      petAnimationUrls = await inspectCustomPetZip(file.base64);
-      petZipBase64 = file.base64;
-      petZipName = file.name;
-      petImageBase64 = "";
-      petImageName = "";
-      petImageUrl = "";
-      petCreateError = "";
-    } catch (error) {
-      petCreateError = formatPetError(error, t("settings_pet_createFailed"));
-    }
-  }
-
-  async function submitCustomPet() {
-    const slug = normalizePetSlug(petForm.slug);
-    const hasSource = petAddMode === "image" ? petImageBase64 : petZipBase64;
-    if (
-      petCreateBusy ||
-      !hasSource ||
-      !slug ||
-      !petForm.displayName.trim() ||
-      !petForm.description.trim()
-    ) {
-      return;
-    }
-    petForm.slug = slug;
-    petCreateBusy = true;
-    petCreateError = "";
-    try {
-      const created = await createCustomPet({
-        slug,
-        displayName: petForm.displayName.trim(),
-        description: petForm.description.trim(),
-        ...(petAddMode === "image"
-          ? { imageBase64: petImageBase64, imageName: petImageName }
-          : { zipBase64: petZipBase64 }),
-      });
-      customPets = [...customPets, created];
-      await savePetSettings({ id: created.id });
-      resetPetCreateForm();
-    } catch (error) {
-      petCreateError = formatPetError(error, t("settings_pet_createFailed"));
-    } finally {
-      petCreateBusy = false;
-    }
-  }
-
-  async function openCustomPetsFolder() {
-    try {
-      await getTransport().invoke("open_custom_pets_folder");
-    } catch (error) {
-      dbgWarn("settings", "open custom pets folder failed", error);
-    }
-  }
-
-  $effect(() => {
-    petScaleDraft = petSettings.scale;
-  });
-
-  function updatePetScaleDraft(event: Event) {
-    const value = Number((event.currentTarget as HTMLInputElement).value);
-    if (Number.isFinite(value)) petScaleDraft = value;
-  }
-
-  function commitPetScale() {
-    if (petScaleDraft !== petSettings.scale) {
-      void savePetSettings({ scale: petScaleDraft });
-    }
-  }
-
   let runtimeStatuses = $state<Record<string, RuntimeProviderStatus>>({
     pi: { installed: true, authenticated: true },
     codex: { installed: true, authenticated: false },
@@ -2806,7 +2085,6 @@
       });
       webStatus = await api.getWebServerStatus();
       settings = await api.getUserSettings();
-      await refreshCustomPets();
       if (!result.config_saved) {
         webRestartWarning = t("settings_general_webSaveWarning");
       }

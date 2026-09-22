@@ -763,7 +763,7 @@
   let bottomPanelOpen = $state(false);
   let ptyTabs = $state<PtyTab[]>([]);
   let activeTabId = $state("");
-  let termRefs: Record<string, XTerminal | undefined> = {};
+  let termRefs = $state<Record<string, XTerminal | undefined>>({});
   let bottomPanelHeight = $state(256);
   let isResizingPanel = $state(false);
 
@@ -6691,7 +6691,6 @@
       <!-- Status bar -->
       <SessionStatusBar
         bind:this={statusBarRef}
-        harness={currentHarness}
         running={store.sessionAlive}
         run={store.run}
         agent={effectiveAgent}
@@ -6702,11 +6701,6 @@
             (activeProviderBinding?.mode === "custom" ? "" : getCodexDefaultModel()) ||
             ""
           : store.model}
-        cost={store.usage.cost}
-        inputTokens={cumulativeTokens.input}
-        outputTokens={cumulativeTokens.output}
-        cacheReadTokens={cumulativeTokens.cacheRead}
-        cacheWriteTokens={cumulativeTokens.cacheWrite}
         parentRunId={store.run?.parent_run_id}
         onModelChange={handleModelChange}
         modelOptions={effectiveModels}
@@ -6727,35 +6721,13 @@
         sidebarOpen={isLayoutSidebarOpen ? isLayoutSidebarOpen() : true}
         mcpServers={store.mcpServers}
         onMcpToggle={() => (mcpPanelOpen = !mcpPanelOpen)}
-        cliVersion={effectiveAgent === "codex" ? (getCodexVersion() ?? "") : store.cliVersion}
-        permissionMode={effectiveAgent === "pi" || !effectiveCapabilities.ui.permissionModeSwitch
-          ? undefined
-          : store.permissionMode}
         {platformModels}
-        fastModeState={store.fastModeState}
-        verbose={verboseEnabled}
-        numTurns={store.userTurnCount}
-        contextTokens={currentSessionInfo?.contextTokens ?? store.contextTokens}
-        durationMs={store.durationMs}
         persistedFiles={store.persistedFiles}
         onRewind={effectiveCapabilities.execution.snapshots &&
         store.sessionAlive &&
         !store.isRunning
           ? handleRewind
           : undefined}
-        onCodexRewind={effectiveAgent === "codex" &&
-        store.sessionAlive &&
-        !store.isRunning &&
-        store.userTurnCount > 0
-          ? openCodexRewind
-          : undefined}
-        contextUtilization={currentSessionInfo?.contextUtilization ?? store.contextUtilization}
-        contextWarningLevel={store.contextWarningLevel}
-        contextWindow={currentSessionInfo?.contextWindow ?? store.contextWindow}
-        lastCompactedAt={store.lastCompactedAt}
-        compactCount={store.compactCount}
-        microcompactCount={store.microcompactCount}
-        turnUsages={store.turnUsages}
         activeTaskCount={store.activeBackgroundTasks.length}
         mode={store.run ? (store.useStreamSession ? "Stream" : "CLI") : ""}
         toolsCount={runEffectiveCapabilities
@@ -6766,12 +6738,7 @@
         onToolsClick={() => {
           capabilityInspectorOpen = true;
         }}
-        remoteHostName={store.remoteHostName}
         onRename={store.run ? handleRename : undefined}
-        authSourceLabel={store.authSourceLabel}
-        authSourceCategory={store.authSourceCategory}
-        apiKeySource={store.apiKeySource}
-        {previewOpen}
         {bottomPanelOpen}
         rightSidebarOpen={codeAsideOpen}
         onToggleRightSidebar={() => {

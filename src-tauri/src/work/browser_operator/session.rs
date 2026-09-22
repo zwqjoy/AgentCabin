@@ -323,14 +323,7 @@ impl BrowserSessionManager {
                 session_id: format!("bsess-{}", run_id),
                 run_id: run_id.to_string(),
                 mode: "code".to_string(),
-                surface: if crate::work::browser_operator::embedded_registry()
-                    .resolve(run_id)
-                    .is_some()
-                {
-                    "embedded".to_string()
-                } else {
-                    "embedded".to_string()
-                },
+                surface: "embedded".to_string(),
                 status: BrowserSessionStatus::Idle,
                 current_url: current_url.clone(),
                 page_title: page_title.clone(),

@@ -26,6 +26,17 @@ struct PendingMessage {
     reply: oneshot::Sender<Result<(), String>>,
 }
 
+struct FlushPendingArgs<'a> {
+    run_id: &'a str,
+    stdin: &'a mut ChildStdin,
+    session_id: Option<&'a str>,
+    session_ready: bool,
+    active_prompt_id: &'a mut Option<u64>,
+    pending_messages: &'a mut VecDeque<PendingMessage>,
+    next_id: &'a mut u64,
+    normalizer: &'a DshEventNormalizer,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn run_actor(
     emitter: Arc<BroadcastEmitter>,
@@ -97,16 +108,16 @@ pub(super) async fn run_actor(
                 match cmd {
                     Some(ActorCommand::SendMessage { text, attachments, work_context_plan, reply, .. }) => {
                         pending_messages.push_back(PendingMessage { text, attachments, work_context_plan, reply });
-                        if let Err(error) = flush_pending(
-                            &run_id,
-                            &mut stdin,
-                            session_id.as_deref(),
+                        if let Err(error) = flush_pending(FlushPendingArgs {
+                            run_id: &run_id,
+                            stdin: &mut stdin,
+                            session_id: session_id.as_deref(),
                             session_ready,
-                            &mut active_prompt_id,
-                            &mut pending_messages,
-                            &mut next_id,
-                            &normalizer,
-                        ).await {
+                            active_prompt_id: &mut active_prompt_id,
+                            pending_messages: &mut pending_messages,
+                            next_id: &mut next_id,
+                            normalizer: &normalizer,
+                        }).await {
                             normalizer.fail_run(error);
                             explicitly_stopped = true;
                         }
@@ -134,16 +145,16 @@ pub(super) async fn run_actor(
                             pending_messages.push_front(pending);
                         } else {
                             pending_messages.push_front(pending);
-                            if let Err(error) = flush_pending(
-                                &run_id,
-                                &mut stdin,
-                                session_id.as_deref(),
+                            if let Err(error) = flush_pending(FlushPendingArgs {
+                                run_id: &run_id,
+                                stdin: &mut stdin,
+                                session_id: session_id.as_deref(),
                                 session_ready,
-                                &mut active_prompt_id,
-                                &mut pending_messages,
-                                &mut next_id,
-                                &normalizer,
-                            ).await {
+                                active_prompt_id: &mut active_prompt_id,
+                                pending_messages: &mut pending_messages,
+                                next_id: &mut next_id,
+                                normalizer: &normalizer,
+                            }).await {
                                 normalizer.fail_run(error);
                                 explicitly_stopped = true;
                             }
@@ -441,16 +452,16 @@ pub(super) async fn run_actor(
                                             log::warn!("[dsh_acp_actor] failed to apply initial effort: {error}");
                                         }
                                     }
-                                    if let Err(error) = flush_pending(
-                                        &run_id,
-                                        &mut stdin,
-                                        Some(session_id_value),
-                                        true,
-                                        &mut active_prompt_id,
-                                        &mut pending_messages,
-                                        &mut next_id,
-                                        &normalizer,
-                                    ).await {
+                                    if let Err(error) = flush_pending(FlushPendingArgs {
+                                        run_id: &run_id,
+                                        stdin: &mut stdin,
+                                        session_id: Some(session_id_value),
+                                        session_ready: true,
+                                        active_prompt_id: &mut active_prompt_id,
+                                        pending_messages: &mut pending_messages,
+                                        next_id: &mut next_id,
+                                        normalizer: &normalizer,
+                                    }).await {
                                         normalizer.fail_run(error);
                                         explicitly_stopped = true;
                                     } else if active_prompt_id.is_none() {
@@ -483,16 +494,16 @@ pub(super) async fn run_actor(
                                 }
                                 let _ = crate::storage::runs::update_status(&run_id, RunStatus::Idle, None, None);
                                 normalizer.emit_run_state("idle", None);
-                                if let Err(error) = flush_pending(
-                                    &run_id,
-                                    &mut stdin,
-                                    session_id.as_deref(),
+                                if let Err(error) = flush_pending(FlushPendingArgs {
+                                    run_id: &run_id,
+                                    stdin: &mut stdin,
+                                    session_id: session_id.as_deref(),
                                     session_ready,
-                                    &mut active_prompt_id,
-                                    &mut pending_messages,
-                                    &mut next_id,
-                                    &normalizer,
-                                ).await {
+                                    active_prompt_id: &mut active_prompt_id,
+                                    pending_messages: &mut pending_messages,
+                                    next_id: &mut next_id,
+                                    normalizer: &normalizer,
+                                }).await {
                                     normalizer.fail_run(error);
                                     explicitly_stopped = true;
                                 }
@@ -508,14 +519,12 @@ pub(super) async fn run_actor(
                             // the remaining diagnostic lines briefly so a Web
                             // Harness boot failure is visible to the user rather
                             // than being reduced to an unhelpful exit status.
-                            loop {
-                                match tokio::time::timeout(
-                                    std::time::Duration::from_millis(100),
-                                    stderr_lines.next_line(),
-                                ).await {
-                                    Ok(Ok(Some(line))) => push_stderr(&mut stderr_tail, line),
-                                    _ => break,
-                                }
+                            while let Ok(Ok(Some(line))) = tokio::time::timeout(
+                                std::time::Duration::from_millis(100),
+                                stderr_lines.next_line(),
+                            )
+                            .await {
+                                push_stderr(&mut stderr_tail, line);
                             }
                             let status = child.wait().await.ok();
                             let mut detail = status
@@ -586,30 +595,21 @@ fn push_stderr(lines: &mut VecDeque<String>, line: String) {
     lines.push_back(sanitized);
 }
 
-async fn flush_pending(
-    run_id: &str,
-    stdin: &mut ChildStdin,
-    session_id: Option<&str>,
-    session_ready: bool,
-    active_prompt_id: &mut Option<u64>,
-    pending_messages: &mut VecDeque<PendingMessage>,
-    next_id: &mut u64,
-    normalizer: &DshEventNormalizer,
-) -> Result<(), String> {
-    if !session_ready || active_prompt_id.is_some() {
+async fn flush_pending(args: FlushPendingArgs<'_>) -> Result<(), String> {
+    if !args.session_ready || args.active_prompt_id.is_some() {
         return Ok(());
     }
-    let Some(message) = pending_messages.pop_front() else {
+    let Some(message) = args.pending_messages.pop_front() else {
         return Ok(());
     };
-    let Some(session_id) = session_id else {
+    let Some(session_id) = args.session_id else {
         let _ = message
             .reply
             .send(Err("DSH ACP session is not ready".to_string()));
         return Ok(());
     };
-    normalizer.begin_turn();
-    normalizer.emit_user_message(&message.text);
+    args.normalizer.begin_turn();
+    args.normalizer.emit_user_message(&message.text);
     let prompt = match render_work_prompt(&message.text, message.work_context_plan.as_ref()) {
         Ok(prompt) => prompt,
         Err(error) => {
@@ -617,17 +617,17 @@ async fn flush_pending(
             return Err(error);
         }
     };
-    let content = prompt_content(run_id, &prompt, &message.attachments)?;
-    match send_prompt(stdin, session_id, content, next_id).await {
+    let content = prompt_content(args.run_id, &prompt, &message.attachments)?;
+    match send_prompt(args.stdin, session_id, content, args.next_id).await {
         Ok(id) => {
-            *active_prompt_id = Some(id);
+            *args.active_prompt_id = Some(id);
             let _ = crate::storage::runs::update_status(
-                normalizer.run_id(),
+                args.normalizer.run_id(),
                 RunStatus::Running,
                 None,
                 None,
             );
-            normalizer.emit_run_state("running", None);
+            args.normalizer.emit_run_state("running", None);
             let _ = message.reply.send(Ok(()));
             Ok(())
         }
