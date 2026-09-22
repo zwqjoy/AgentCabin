@@ -1,0 +1,63 @@
+appId: io.agentcabin.desktop
+productName: AgentCabin
+copyright: Copyright © 2024-2026 AgentCabin
+
+directories:
+  output: dist-electron
+
+files:
+  - "electron/dist/**/*"
+  - "build/**/*"
+  - "package.json"
+
+extraResources:
+  - from: "src-tauri/target/release/AgentCabin"
+    to: "bin/AgentCabin"
+  - from: "src-tauri/browser-worker"
+    to: "browser-worker"
+  - from: "src-tauri/resources/agentcabin-computer-use"
+    to: "resources/agentcabin-computer-use"
+  - from: "runtime-build"
+    to: "runtimes"
+  # Work's fixed system Pi extensions must be present on a clean install.
+  # Otherwise the first Work launch falls back to an online Pi install.
+  - from: "src-tauri/runtime/extensions"
+    to: "runtime/extensions"
+    filter:
+      - "**/*"
+      - "!node_modules"
+      - "!node_modules/**"
+  - from: "src-tauri/runtime/extensions/node_modules"
+    to: "runtime/extensions/node_modules"
+    filter:
+      - "**/*"
+
+mac:
+  category: public.app-category.developer-tools
+  icon: src-tauri/icons/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  minimumSystemVersion: "13.0"
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: src-tauri/entitlements.plist
+  entitlementsInherit: src-tauri/entitlements.plist
+
+dmg:
+  title: "${productName} ${version}"
+  contents:
+    - x: 180
+      y: 170
+      type: file
+    - x: 480
+      y: 170
+      type: link
+      path: /Applications
+  window:
+    width: 660
+    height: 400

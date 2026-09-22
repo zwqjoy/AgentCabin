@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "agentcabinVersion": "4.1.0",
+  "node": { "version": "22.19.0" },
+  "runtimes": {
+    "pi": { "package": "@earendil-works/pi-coding-agent", "version": "0.85.1", "entrypoint": "dist/bundle/cli.js" },
+    "dsh": { "package": "@deepseek-ai/dsh", "version": "0.1.5-rc.2", "entrypoint": "lib/bin.js" }
+  },
+  "pnpm": { "version": "10.15.0" }
+}

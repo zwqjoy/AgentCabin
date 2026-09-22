@@ -1,0 +1,57 @@
+{
+  "protocolVersion": 1,
+  "agentCapabilities": {
+    "loadSession": true,
+    "_meta": {
+      "x.ai/fs_notify": true,
+      "x.ai/hooks": {
+        "blockingEvents": [],
+        "decisions": [],
+        "stopSignals": []
+      },
+      "x.ai/capabilities": {
+        "toolOverrides": {
+          "x_keyword_search": true,
+          "x_semantic_search": true,
+          "x_user_search": false,
+          "x_thread_fetch": false
+        }
+      }
+    },
+    "promptCapabilities": {
+      "embeddedContext": true
+    },
+    "mcpCapabilities": {
+      "http": true,
+      "sse": true
+    },
+    "sessionCapabilities": {
+      "close": {},
+      "list": {},
+      "resume": {}
+    }
+  },
+  "authMethods": [],
+  "_meta": {
+    "grokShell": true,
+    "defaultAuthMethodId": null,
+    "x.ai/mcp/sdk": true,
+    "x.ai/pluginDirs": true,
+    "currentWorkingDirectory": "/fixture/workspace",
+    "agentVersion": "1.0.0",
+    "agentId": "fixture-agent-id",
+    "agentInstanceId": "fixture-agent-instance-id",
+    "hostname": "fixture-host",
+    "modelState": {
+      "currentModelId": null,
+      "availableModels": []
+    },
+    "mcpServers": [],
+    "mcpApps": false,
+    "metadata": {},
+    "availableCommands": [],
+    "cancelRewind": false,
+    "sessionRecap": true,
+    "voiceMode": false
+  }
+}

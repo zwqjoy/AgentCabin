@@ -1,0 +1,68 @@
+[
+  {
+    "type": "ralph_started",
+    "run_id": "run-ralph-1",
+    "prompt": "Build a REST API for todos",
+    "max_iterations": 3,
+    "completion_promise": "DONE",
+    "started_at": "2026-03-18T12:00:00Z"
+  },
+  {
+    "type": "user_message",
+    "run_id": "run-ralph-1",
+    "text": "Build a REST API for todos",
+    "uuid": "uuid-ralph-1"
+  },
+  {
+    "type": "run_state",
+    "run_id": "run-ralph-1",
+    "state": "running"
+  },
+  {
+    "type": "message_complete",
+    "run_id": "run-ralph-1",
+    "message_id": "msg-r1",
+    "text": "I'll start building the API.",
+    "model": "claude-opus-4-6"
+  },
+  {
+    "type": "run_state",
+    "run_id": "run-ralph-1",
+    "state": "idle"
+  },
+  {
+    "type": "ralph_iteration",
+    "run_id": "run-ralph-1",
+    "iteration": 1,
+    "max_iterations": 3
+  },
+  {
+    "type": "user_message",
+    "run_id": "run-ralph-1",
+    "text": "Build a REST API for todos",
+    "uuid": "uuid-ralph-2"
+  },
+  {
+    "type": "run_state",
+    "run_id": "run-ralph-1",
+    "state": "running"
+  },
+  {
+    "type": "message_complete",
+    "run_id": "run-ralph-1",
+    "message_id": "msg-r2",
+    "text": "API is complete. <promise>DONE</promise>",
+    "model": "claude-opus-4-6"
+  },
+  {
+    "type": "run_state",
+    "run_id": "run-ralph-1",
+    "state": "idle"
+  },
+  {
+    "type": "ralph_complete",
+    "run_id": "run-ralph-1",
+    "reason": "completion_promise",
+    "iteration": 2
+  }
+]

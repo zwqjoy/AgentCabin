@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AgentCabin Eval - Canvas Visual Grounding Test</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; }
+    canvas { border: 1px solid #ddd; border-radius: 6px; cursor: pointer; }
+    #canvasStatus { margin-top: 16px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Self-Drawn Canvas Evaluation</h1>
+  <p>Tests visual grounding fallback when semantic tree contains only a raw canvas.</p>
+  <canvas id="myCanvas" width="400" height="200"></canvas>
+  <div id="canvasStatus">Awaiting Click</div>
+
+  <script>
+    const canvas = document.getElementById("myCanvas");
+    const ctx = canvas.getContext("2d");
+    let clicked = false;
+
+    // Button bounding box inside canvas
+    const btn = { x: 50, y: 70, w: 200, h: 50, label: "Confirm Action" };
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#f8f9fa";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw button rectangle
+      ctx.fillStyle = clicked ? "#28a745" : "#007aff";
+      ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+
+      // Draw button label
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 18px -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(clicked ? "Action Confirmed" : btn.label, btn.x + btn.w / 2, btn.y + btn.h / 2);
+    }
+
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      if (cx >= btn.x && cx <= btn.x + btn.w && cy >= btn.y && cy <= btn.y + btn.h) {
+        clicked = true;
+        document.getElementById("canvasStatus").textContent = "Canvas button clicked";
+        draw();
+      }
+    });
+
+    draw();
+  </script>
+</body>
+</html>

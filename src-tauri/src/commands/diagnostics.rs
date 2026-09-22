@@ -1,0 +1,2565 @@
+use crate::agent::claude_stream::augmented_path;
+use crate::agent::ssh::{expand_local_tilde, shell_escape};
+use crate::models::{
+    AgentsMdInfo, ApiTestResult, AuthDiagnostics, ClaudeMdInfo, CliCheckResult, CliDiagnostics,
+    CliDistTags, CodexAuthResult, ConfigDiagnostics, ConfigIssue, DiagnosticsReport,
+    GlobalProviderCredential, GlobalProviderModel, LocalProxyStatus, PiProviderCredential,
+    ProjectDiagnostics, ProjectInitStatus, RemoteTestResult, ServicesDiagnostics, SshKeyInfo,
+    SystemDiagnostics,
+};
+use crate::process_ext::HideConsole;
+use serde_json::Value;
+use std::path::Path;
+use std::process::Command;
+
+const MINIMUM_PI_VERSION: &str = "0.85.1";
+
+fn parse_cli_semver(raw: &str) -> Option<semver::Version> {
+    raw.split_whitespace().find_map(|token| {
+        semver::Version::parse(
+            token
+                .trim_matches(|character: char| {
+                    !(character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '+'))
+                })
+                .trim_start_matches('v'),
+        )
+        .ok()
+    })
+}
+
+fn pi_version_supported(raw: &str) -> bool {
+    let minimum = semver::Version::parse(MINIMUM_PI_VERSION).expect("valid minimum Pi version");
+    parse_cli_semver(raw).is_some_and(|version| version >= minimum)
+}
+
+fn cli_config_path(agent: &str) -> Option<String> {
+    let data_root = crate::storage::data_dir();
+    let path = match agent {
+        "claude" => crate::storage::profile_bindings::mcp_bindings_path(),
+        "codex" => crate::storage::profile_bindings::skill_bindings_path(),
+        "pi" => crate::storage::profile_bindings::pi_code_profile_dir_with_root(&data_root)
+            .join("pi-extension-bindings.json"),
+        "grok" => crate::storage::profile_bindings::connector_bindings_path(),
+        "dsh" => crate::storage::profile_bindings::mcp_bindings_path(),
+        _ => return None,
+    };
+    Some(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn resolve_capabilities_diagnostics(
+    app_mode: String,
+    runtime: String,
+    cwd: Option<String>,
+) -> Result<crate::agent::capability_resolver::EffectiveCapabilities, String> {
+    let app_mode = match app_mode.to_lowercase().as_str() {
+        "work" => crate::work::models::AppMode::Work,
+        _ => crate::work::models::AppMode::Code,
+    };
+    let runtime_kind =
+        crate::agent::capability_resolver::RuntimeProviderKind::try_from_agent_str(&runtime)?;
+    let cwd_str = cwd.unwrap_or_default();
+    crate::agent::capability_resolver::CapabilityResolver::resolve(
+        &crate::storage::data_dir(),
+        app_mode,
+        runtime_kind,
+        &cwd_str,
+        "diagnostics-preview",
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn check_agent_cli(agent: String) -> Result<CliCheckResult, String> {
+    // For claude, honor the user's custom path/command override (#155) so this readout
+    // matches the binary sessions actually spawn — otherwise a wrapper that isn't named
+    // `claude` (or isn't on PATH) would falsely report "not installed" while sessions work.
+    let resolved = match agent.as_str() {
+        "claude" => crate::agent::claude_stream::resolve_claude_path(),
+        "codex" => "codex".to_string(),
+        "pi" => crate::agent::claude_stream::resolve_pi_path(),
+        "grok" => crate::agent::grok_session_actor::process::resolve_grok_path(),
+        "dsh" => crate::agent::claude_stream::resolve_dsh_path(),
+        _ => return Err(format!("Unknown agent: {}", agent)),
+    };
+
+    log::debug!(
+        "[diagnostics] check_agent_cli: agent={}, resolved={}",
+        agent,
+        resolved
+    );
+    let aug_path = augmented_path();
+
+    // An override may be an explicit path or a bare command name. A path is checked directly;
+    // a bare name goes through PATH lookup (cross-platform: `where` on Windows, scan on Unix).
+    let (found, path) = if resolved.contains('/') || resolved.contains('\\') {
+        if Path::new(&resolved).is_file() {
+            (true, Some(resolved.clone()))
+        } else {
+            (false, None)
+        }
+    } else {
+        match crate::agent::claude_stream::which_binary(&resolved) {
+            Some(p) => (true, Some(p)),
+            None => (false, None),
+        }
+    };
+
+    // Get version if found. Spawn the RESOLVED path, not the bare name — on Windows the npm
+    // binary is `codex.cmd`/`claude.cmd` and `Command::new("codex")` only auto-appends `.exe`,
+    // so a bare-name spawn ENOENTs and version/auth would falsely report "not installed".
+    let version = if found {
+        let exe = path.as_deref().unwrap_or(resolved.as_str());
+        let ver_output = Command::new(exe)
+            .arg("--version")
+            .env("PATH", &aug_path)
+            .hide_console()
+            .output();
+        match ver_output {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                // Pi currently prints its version to stderr, while Codex and Claude use stdout.
+                let raw = if stdout.trim().is_empty() {
+                    stderr.trim().to_string()
+                } else {
+                    stdout.trim().to_string()
+                };
+                // Strip trailing suffix like " (Claude Code)" to get bare semver
+                Some(raw.find(" (").map(|i| raw[..i].to_string()).unwrap_or(raw))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    let (version_supported, minimum_version, version_error) = if agent == "pi" && found {
+        let supported = version.as_deref().is_some_and(pi_version_supported);
+        let error = (!supported).then(|| match version.as_deref() {
+            Some(installed) => {
+                format!("Pi {installed} is not supported. Upgrade to Pi >= {MINIMUM_PI_VERSION}.")
+            }
+            None => format!(
+                "Unable to determine the Pi version. Upgrade to Pi >= {MINIMUM_PI_VERSION}."
+            ),
+        });
+        (Some(supported), Some(MINIMUM_PI_VERSION.to_string()), error)
+    } else {
+        (None, None, None)
+    };
+
+    log::debug!(
+        "[diagnostics] check_agent_cli result: agent={}, found={}, path={:?}",
+        agent,
+        found,
+        path
+    );
+    let (current_provider, current_model) = if agent == "pi" {
+        crate::storage::home_dir()
+            .map(std::path::PathBuf::from)
+            .map(|home| home.join(".pi").join("agent").join("settings.json"))
+            .and_then(|settings_path| std::fs::read_to_string(settings_path).ok())
+            .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+            .map(|settings| {
+                (
+                    settings
+                        .get("defaultProvider")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string),
+                    settings
+                        .get("defaultModel")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string),
+                )
+            })
+            .unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
+
+    let config_path = cli_config_path(&agent);
+    Ok(CliCheckResult {
+        agent,
+        found,
+        path,
+        version,
+        version_supported,
+        minimum_version,
+        version_error,
+        config_path,
+        current_provider,
+        current_model,
+    })
+}
+
+#[tauri::command]
+pub async fn check_codex_auth() -> Result<CodexAuthResult, String> {
+    log::debug!("[diagnostics] check_codex_auth: starting");
+    let subscription = crate::agent::codex_subscription_bridge::subscription_status();
+    let subscription_rate_limits = if subscription.logged_in {
+        crate::agent::codex_subscription_bridge::fetch_subscription_rate_limits()
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+
+    // Reuse check_agent_cli to detect installation
+    let cli_check = check_agent_cli("codex".to_string()).await?;
+    if !cli_check.found {
+        log::debug!("[diagnostics] check_codex_auth: codex not installed");
+        return Ok(CodexAuthResult {
+            installed: false,
+            version: None,
+            logged_in: false,
+            auth_method: None,
+            status_text: None,
+            subscription_logged_in: subscription.logged_in,
+            subscription_account: subscription.account,
+            subscription_rate_limits,
+        });
+    }
+
+    let aug_path = augmented_path();
+    log::debug!(
+        "[diagnostics] check_codex_auth: binary found at {:?}, version={:?}",
+        cli_check.path,
+        cli_check.version
+    );
+
+    // Run `codex login status` to check auth (12s timeout — matches Claude OAuth check).
+    // Spawn the resolved path (cli_check.path), not the bare "codex" — Windows .cmd shim.
+    use tokio::process::Command as TokioCommand;
+    let codex_exe = cli_check.path.as_deref().unwrap_or("codex");
+    let mut cmd = TokioCommand::new(codex_exe);
+    cmd.args(["login", "status"])
+        .env("PATH", &aug_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .hide_console()
+        .kill_on_drop(true);
+
+    let output = match tokio::time::timeout(std::time::Duration::from_secs(12), cmd.output()).await
+    {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => {
+            log::debug!(
+                "[diagnostics] check_codex_auth: failed to execute 'codex login status': {}",
+                e
+            );
+            return Ok(CodexAuthResult {
+                installed: true,
+                version: cli_check.version,
+                logged_in: false,
+                auth_method: None,
+                status_text: Some(format!("exec error: {}", e)),
+                subscription_logged_in: subscription.logged_in,
+                subscription_account: subscription.account.clone(),
+                subscription_rate_limits: subscription_rate_limits.clone(),
+            });
+        }
+        Err(_) => {
+            log::debug!("[diagnostics] check_codex_auth: 'codex login status' timed out (12s)");
+            return Ok(CodexAuthResult {
+                installed: true,
+                version: cli_check.version,
+                logged_in: false,
+                auth_method: None,
+                status_text: Some("timed out (12s)".into()),
+                subscription_logged_in: subscription.logged_in,
+                subscription_account: subscription.account.clone(),
+                subscription_rate_limits: subscription_rate_limits.clone(),
+            });
+        }
+    };
+
+    let exit_code = output.status.code();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let logged_in = output.status.success();
+
+    log::debug!(
+        "[diagnostics] check_codex_auth: exit_code={:?}, logged_in={}, stdout={:?}, stderr={:?}",
+        exit_code,
+        logged_in,
+        stdout,
+        stderr
+    );
+
+    let auth_method = if logged_in {
+        let method = if stdout.contains("ChatGPT") {
+            "chatgpt"
+        } else if stdout.contains("API key") {
+            "api_key"
+        } else {
+            "unknown"
+        };
+        log::debug!(
+            "[diagnostics] check_codex_auth: parsed auth_method={:?}",
+            method
+        );
+        Some(method.to_string())
+    } else {
+        log::debug!(
+            "[diagnostics] check_codex_auth: not logged in (exit_code={:?})",
+            exit_code
+        );
+        None
+    };
+
+    log::debug!(
+        "[diagnostics] check_codex_auth result: installed=true, logged_in={}, auth_method={:?}",
+        logged_in,
+        auth_method
+    );
+
+    Ok(CodexAuthResult {
+        installed: true,
+        version: cli_check.version,
+        logged_in,
+        auth_method,
+        status_text: Some(stdout),
+        subscription_logged_in: subscription.logged_in,
+        subscription_account: subscription.account,
+        subscription_rate_limits,
+    })
+}
+
+#[tauri::command]
+pub async fn get_chatgpt_subscription_rate_limits(
+) -> Result<Option<crate::models::SubscriptionRateLimits>, String> {
+    crate::agent::codex_subscription_bridge::fetch_subscription_rate_limits().await
+}
+
+/// Run `codex doctor --json` and return its structured report verbatim for the diagnostics UI.
+/// Shape: `{schemaVersion, generatedAt, overallStatus, codexVersion, checks:{<id>:{id,category,
+/// status,summary,details,remediation,durationMs}}}`. Richer than `codex login status` —
+/// covers install/config/auth/runtime/app-server health. 25s timeout (doctor probes more,
+/// incl. network). Returns Err only when codex is absent / the run can't start / output isn't JSON.
+#[tauri::command]
+pub async fn run_codex_doctor() -> Result<serde_json::Value, String> {
+    log::debug!("[diagnostics] run_codex_doctor: starting");
+    let cli_check = check_agent_cli("codex".to_string()).await?;
+    if !cli_check.found {
+        return Err("Codex CLI not installed".to_string());
+    }
+    let aug_path = augmented_path();
+    let codex_exe = cli_check.path.as_deref().unwrap_or("codex");
+
+    use tokio::process::Command as TokioCommand;
+    let mut cmd = TokioCommand::new(codex_exe);
+    // --no-color: keep JSON clean of ANSI; --json: machine-readable.
+    cmd.args(["doctor", "--json", "--no-color"])
+        .env("PATH", &aug_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .hide_console()
+        .kill_on_drop(true);
+
+    let output = match tokio::time::timeout(std::time::Duration::from_secs(25), cmd.output()).await
+    {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => return Err(format!("failed to run codex doctor: {}", e)),
+        Err(_) => return Err("codex doctor timed out (25s)".to_string()),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // doctor exits non-zero when overallStatus is fail/warn — that's a valid report, not an error.
+    // Only treat unparseable output as a failure.
+    serde_json::from_str::<serde_json::Value>(stdout.trim()).map_err(|e| {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!("[diagnostics] run_codex_doctor: non-JSON output: {}", e);
+        format!(
+            "codex doctor produced no JSON ({}). stderr: {}",
+            e,
+            stderr.trim()
+        )
+    })
+}
+
+// ── Local proxy detection ──
+
+async fn detect_proxy_inner(proxy_id: &str, base_url: &str) -> LocalProxyStatus {
+    log::debug!(
+        "[diagnostics] detect_local_proxy: proxy_id={}, base_url={}",
+        proxy_id,
+        base_url
+    );
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .no_proxy() // Local services must be reached directly, never via system proxy
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::debug!(
+                "[diagnostics] detect_local_proxy: client build failed: {}",
+                e
+            );
+            return LocalProxyStatus {
+                proxy_id: proxy_id.to_string(),
+                running: false,
+                needs_auth: false,
+                base_url: base_url.to_string(),
+                error: Some(format!("HTTP client build failed: {}", e)),
+            };
+        }
+    };
+    let url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            // Any HTTP response = service is running (connection succeeded).
+            // 401/403 = running but needs auth. All others = running normally.
+            let needs_auth = status == 401 || status == 403;
+            log::debug!(
+                "[diagnostics] detect_local_proxy result: proxy_id={}, running=true, status={}, needs_auth={}",
+                proxy_id,
+                status,
+                needs_auth
+            );
+            LocalProxyStatus {
+                proxy_id: proxy_id.to_string(),
+                running: true,
+                needs_auth,
+                base_url: base_url.to_string(),
+                error: None,
+            }
+        }
+        Err(e) => {
+            log::debug!(
+                "[diagnostics] detect_local_proxy result: proxy_id={}, running=false, err={}",
+                proxy_id,
+                e
+            );
+            LocalProxyStatus {
+                proxy_id: proxy_id.to_string(),
+                running: false,
+                needs_auth: false,
+                base_url: base_url.to_string(),
+                error: Some(e.to_string()),
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn detect_local_proxy(
+    proxy_id: String,
+    base_url: String,
+) -> Result<LocalProxyStatus, String> {
+    Ok(detect_proxy_inner(&proxy_id, &base_url).await)
+}
+
+// ── API connectivity test ──
+
+/// Probe model used when the user hasn't configured one — just for connectivity testing.
+const PROBE_MODEL: &str = "claude-sonnet-4-6";
+
+async fn test_api_inner(
+    api_key: &str,
+    base_url: &str,
+    auth_env_var: &str,
+    model: &str,
+) -> ApiTestResult {
+    let is_probe = model.is_empty();
+    let effective_model = if is_probe { PROBE_MODEL } else { model };
+    let effective_base_url = if base_url.is_empty() {
+        "https://api.anthropic.com"
+    } else {
+        base_url
+    };
+    let url = format!("{}/v1/messages", effective_base_url.trim_end_matches('/'));
+
+    log::debug!(
+        "[diagnostics] test_api_connectivity: url={}, auth={}, model={}, probe={}",
+        url,
+        auth_env_var,
+        effective_model,
+        is_probe
+    );
+    log::debug!(
+        "[diagnostics] test_api_connectivity: key_len={}",
+        api_key.len()
+    );
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::debug!(
+                "[diagnostics] test_api_connectivity: client build failed: {}",
+                e
+            );
+            return ApiTestResult {
+                success: false,
+                latency_ms: 0,
+                reply: None,
+                error: Some(format!("HTTP client build failed: {}", e)),
+                partial: false,
+            };
+        }
+    };
+
+    let mut req = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .header("anthropic-version", "2023-06-01");
+
+    req = match auth_env_var {
+        "ANTHROPIC_AUTH_TOKEN" => req.header("authorization", format!("Bearer {}", api_key)),
+        _ => req.header("x-api-key", api_key),
+    };
+
+    let body = serde_json::json!({
+        "model": effective_model,
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "hi"}]
+    });
+
+    let start = std::time::Instant::now();
+    let resp = match req.json(&body).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let latency_ms = start.elapsed().as_millis() as u64;
+            let error = if e.is_timeout() {
+                "Connection timed out".to_string()
+            } else if e.is_connect() {
+                "Connection refused — is the service running?".to_string()
+            } else {
+                format!("Request failed: {}", e)
+            };
+            log::debug!(
+                "[diagnostics] test_api_connectivity: failed, error={}",
+                error
+            );
+            return ApiTestResult {
+                success: false,
+                latency_ms,
+                reply: None,
+                error: Some(error),
+                partial: false,
+            };
+        }
+    };
+
+    let latency_ms = start.elapsed().as_millis() as u64;
+    let status = resp.status().as_u16();
+
+    if status == 200 {
+        // Parse successful response — must contain content[0].text to count as valid
+        let body_text = resp.text().await.unwrap_or_default();
+        let reply = serde_json::from_str::<serde_json::Value>(&body_text)
+            .ok()
+            .and_then(|v| {
+                v.get("content")?
+                    .get(0)?
+                    .get("text")?
+                    .as_str()
+                    .map(String::from)
+            })
+            .map(|s| {
+                if s.len() > 50 {
+                    format!("{}…", &s[..50])
+                } else {
+                    s
+                }
+            });
+
+        if reply.is_some() {
+            log::debug!(
+                "[diagnostics] test_api_connectivity: success, latency={}ms",
+                latency_ms
+            );
+            ApiTestResult {
+                success: true,
+                latency_ms,
+                reply,
+                error: None,
+                partial: false,
+            }
+        } else {
+            log::debug!("[diagnostics] test_api_connectivity: 200 but invalid response body");
+            ApiTestResult {
+                success: false,
+                latency_ms,
+                reply: None,
+                error: Some(
+                    "Received 200 but response is not a valid Messages API reply".to_string(),
+                ),
+                partial: false,
+            }
+        }
+    } else {
+        // Parse error response
+        let body_text = resp.text().await.unwrap_or_default();
+        let api_error = serde_json::from_str::<serde_json::Value>(&body_text)
+            .ok()
+            .and_then(|v| v.get("error")?.get("message")?.as_str().map(String::from));
+
+        // Probe mode: 400 with model-related error means auth+connectivity OK, just wrong model
+        let is_model_error = status == 400
+            && api_error
+                .as_deref()
+                .map(|m| {
+                    let lower = m.to_lowercase();
+                    lower.contains("model") || lower.contains("not found")
+                })
+                .unwrap_or(false);
+
+        if is_probe && is_model_error {
+            log::debug!(
+                "[diagnostics] test_api_connectivity: partial success (probe model rejected), latency={}ms",
+                latency_ms
+            );
+            return ApiTestResult {
+                success: true,
+                latency_ms,
+                reply: None,
+                error: None,
+                partial: true,
+            };
+        }
+
+        let error = match status {
+            401 | 403 => "Authentication failed — check your API key".to_string(),
+            404 => "Endpoint not found — check your base URL".to_string(),
+            429 => "Rate limited — try again later".to_string(),
+            _ => {
+                if let Some(msg) = api_error {
+                    format!("HTTP {}: {}", status, msg)
+                } else {
+                    format!("HTTP {}", status)
+                }
+            }
+        };
+
+        log::debug!(
+            "[diagnostics] test_api_connectivity: failed, status={}, error={}",
+            status,
+            error
+        );
+        ApiTestResult {
+            success: false,
+            latency_ms,
+            reply: None,
+            error: Some(error),
+            partial: false,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn test_api_connectivity(
+    api_key: String,
+    base_url: String,
+    auth_env_var: String,
+    model: String,
+) -> Result<ApiTestResult, String> {
+    Ok(test_api_inner(&api_key, &base_url, &auth_env_var, &model).await)
+}
+
+/// Test a canonical global Provider using the protocol selected in its profile. This keeps the
+/// global settings screen independent from the older Claude/Pi-specific test commands.
+#[tauri::command]
+pub async fn test_global_provider(
+    provider: GlobalProviderCredential,
+    model: String,
+) -> Result<ApiTestResult, String> {
+    let selected_model = model.trim().to_string();
+    if selected_model.is_empty() {
+        return Err("请先填写测试模型或在模型列表中添加一个模型".into());
+    }
+    let context_window = provider
+        .models
+        .as_ref()
+        .and_then(|models| models.iter().find(|item| item.id == selected_model))
+        .and_then(|item| item.context_window);
+    let models = provider.models.unwrap_or_else(|| {
+        vec![GlobalProviderModel {
+            id: selected_model.clone(),
+            name: None,
+            context_window,
+            max_tokens: None,
+            supports_reasoning: None,
+            supports_xhigh: None,
+            supported_effort_levels: None,
+            supports_images: None,
+        }]
+    });
+    let legacy = PiProviderCredential {
+        id: provider.id,
+        name: provider.name,
+        base_url: normalize_global_provider_base_url(&provider.base_url),
+        api: provider.protocol,
+        model: selected_model,
+        models,
+        context_window,
+        api_key: provider.api_key.or_else(|| {
+            provider
+                .env_key
+                .as_deref()
+                .or(provider.auth_env_var.as_deref())
+                .and_then(|key| std::env::var(key).ok())
+        }),
+    };
+    test_pi_provider(legacy).await
+}
+
+fn normalize_global_provider_base_url(base_url: &str) -> String {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    match reqwest::Url::parse(trimmed) {
+        Ok(url) if url.path().is_empty() || url.path() == "/" => format!("{}/v1", trimmed),
+        _ => trimmed.to_string(),
+    }
+}
+
+fn extract_json_u64_by_keys(item: &Value, keys: &[&str]) -> Option<u64> {
+    for key in keys {
+        if let Some(val) = item.get(*key) {
+            if let Some(num) = val.as_u64() {
+                if num > 0 {
+                    return Some(num);
+                }
+            } else if let Some(num_f) = val.as_f64() {
+                if num_f > 0.0 && num_f.is_finite() {
+                    return Some(num_f as u64);
+                }
+            } else if let Some(s) = val.as_str() {
+                if let Ok(num) = s.trim().parse::<u64>() {
+                    if num > 0 {
+                        return Some(num);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Fetch model ids from a provider's conventional models endpoint. Providers that do not expose
+/// a catalog simply return the endpoint's error and the user can still add models by hand.
+#[tauri::command]
+pub async fn list_global_provider_models(
+    provider: GlobalProviderCredential,
+) -> Result<Vec<GlobalProviderModel>, String> {
+    let base_url = normalize_global_provider_base_url(&provider.base_url);
+    if base_url.is_empty() {
+        return Err("请先填写 Base URL".into());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client build failed: {}", e))?;
+    let mut request = client
+        .get(format!("{}/models", base_url))
+        .header("accept", "application/json");
+    let api_key = provider.api_key.clone().or_else(|| {
+        provider
+            .env_key
+            .as_deref()
+            .or(provider.auth_env_var.as_deref())
+            .and_then(|key| std::env::var(key).ok())
+    });
+    if let Some(api_key) = api_key.as_deref().filter(|key| !key.trim().is_empty()) {
+        request = match provider.protocol.as_str() {
+            "anthropic-messages" => request
+                .header("x-api-key", api_key)
+                .header("anthropic-version", "2023-06-01"),
+            _ => request.header("authorization", format!("Bearer {}", api_key)),
+        };
+    }
+    let response = request.send().await.map_err(|error| {
+        if error.is_timeout() {
+            "获取模型列表超时".to_string()
+        } else if error.is_connect() {
+            "无法连接 Provider，请检查服务是否已启动".to_string()
+        } else {
+            format!("获取模型列表失败：{}", error)
+        }
+    })?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("Provider 返回 HTTP {}", status));
+    }
+    let value = serde_json::from_str::<Value>(&body)
+        .map_err(|e| format!("模型列表不是有效 JSON：{}", e))?;
+    let items = value
+        .get("data")
+        .and_then(Value::as_array)
+        .or_else(|| value.as_array())
+        .ok_or_else(|| "模型列表响应缺少 data 数组".to_string())?;
+    let models = items
+        .iter()
+        .filter_map(|item| {
+            let id = item.get("id").and_then(Value::as_str)?.trim();
+            if id.is_empty() {
+                return None;
+            }
+            Some(GlobalProviderModel {
+                id: id.to_string(),
+                name: item
+                    .get("name")
+                    .or_else(|| item.get("display_name"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                context_window: extract_json_u64_by_keys(
+                    item,
+                    &[
+                        "max_model_len",           // vLLM, SGLang
+                        "context_length",          // LiteLLM, OpenRouter, OneAPI
+                        "context_window",          // Standard / AgentCabin
+                        "contextWindow",           // camelCase
+                        "max_context_length",      // FastChat, LocalAI
+                        "max_position_embeddings", // HuggingFace
+                        "max_sequence_length",
+                    ],
+                ),
+                max_tokens: extract_json_u64_by_keys(
+                    item,
+                    &[
+                        "max_tokens",
+                        "maxTokens",
+                        "max_output_tokens",
+                        "max_output_len",
+                        "max_tokens_per_request",
+                    ],
+                ),
+                supports_reasoning: None,
+                supports_xhigh: None,
+                supported_effort_levels: None,
+                supports_images: None,
+            })
+        })
+        .collect::<Vec<_>>();
+    if models.is_empty() {
+        return Err("Provider 返回了空的模型列表".into());
+    }
+    Ok(models)
+}
+
+fn is_valid_pi_provider_response(api: &str, body: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<Value>(body) else {
+        return false;
+    };
+    match api {
+        "openai-completions" => value.get("choices").and_then(Value::as_array).is_some(),
+        "openai-responses" => {
+            value.get("output").and_then(Value::as_array).is_some()
+                || value.get("id").and_then(Value::as_str).is_some()
+        }
+        "anthropic-messages" => value.get("content").and_then(Value::as_array).is_some(),
+        _ => false,
+    }
+}
+
+/// Validate a managed Pi provider using the API adapter selected for its Provider Bridge.
+/// This deliberately sends one-token chat request and never logs or persists the API key.
+#[tauri::command]
+pub async fn test_pi_provider(provider: PiProviderCredential) -> Result<ApiTestResult, String> {
+    let base_url = provider.base_url.trim().trim_end_matches('/');
+    let model = provider.model.trim();
+    if base_url.is_empty() || model.is_empty() {
+        return Err("Pi provider requires both Base URL and model".into());
+    }
+    let api_key = provider.api_key.as_deref().unwrap_or("");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client build failed: {}", e))?;
+    let (url, body) = match provider.api.as_str() {
+        "openai-completions" => (
+            format!("{}/chat/completions", base_url),
+            serde_json::json!({
+                "model": model,
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}]
+            }),
+        ),
+        "openai-responses" => (
+            format!("{}/responses", base_url),
+            serde_json::json!({"model": model, "max_output_tokens": 1, "input": "hi"}),
+        ),
+        "anthropic-messages" => (
+            format!("{}/messages", base_url),
+            serde_json::json!({
+                "model": model,
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}]
+            }),
+        ),
+        other => return Err(format!("Unsupported Pi provider API: {}", other)),
+    };
+    let mut request = client.post(url).header("content-type", "application/json");
+    if !api_key.is_empty() {
+        request = match provider.api.as_str() {
+            "anthropic-messages" => request
+                .header("x-api-key", api_key)
+                .header("anthropic-version", "2023-06-01"),
+            _ => request.header("authorization", format!("Bearer {}", api_key)),
+        };
+    }
+    let start = std::time::Instant::now();
+    let response = request.json(&body).send().await.map_err(|error| {
+        if error.is_timeout() {
+            "Connection timed out".to_string()
+        } else if error.is_connect() {
+            "Connection refused — is the service running?".to_string()
+        } else {
+            format!("Request failed: {}", error)
+        }
+    })?;
+    let latency_ms = start.elapsed().as_millis() as u64;
+    let status = response.status();
+    let response_text = response.text().await.unwrap_or_default();
+    if status.is_success() && is_valid_pi_provider_response(&provider.api, &response_text) {
+        return Ok(ApiTestResult {
+            success: true,
+            latency_ms,
+            reply: Some("Provider accepted the test request".into()),
+            error: None,
+            partial: false,
+        });
+    }
+    if status.is_success() {
+        return Ok(ApiTestResult {
+            success: false,
+            latency_ms,
+            reply: None,
+            error: Some(format!(
+                "Provider returned HTTP {} but not a valid {} response",
+                status, provider.api
+            )),
+            partial: false,
+        });
+    }
+    let message = serde_json::from_str::<Value>(&response_text)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(|error| error.get("message").or(Some(error)))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        });
+    let error = match status.as_u16() {
+        401 | 403 => "Authentication failed — check your API key".to_string(),
+        404 => "Endpoint not found — check Base URL and API mode".to_string(),
+        429 => "Rate limited — try again later".to_string(),
+        _ => message.map_or_else(
+            || format!("HTTP {}", status),
+            |msg| format!("HTTP {}: {}", status, msg),
+        ),
+    };
+    Ok(ApiTestResult {
+        success: false,
+        latency_ms,
+        reply: None,
+        error: Some(error),
+        partial: false,
+    })
+}
+
+/// Platform-aware message for missing SSH binaries.
+fn ssh_not_found_msg(binary: &str) -> String {
+    #[cfg(windows)]
+    {
+        format!(
+            "{} not found. Install OpenSSH: Settings → Apps → Optional Features → OpenSSH Client.",
+            binary
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        format!(
+            "{} not found. Please install OpenSSH (e.g. apt install openssh-client / brew install openssh).",
+            binary
+        )
+    }
+}
+
+/// Test SSH connectivity and Claude CLI availability on a remote host.
+/// Uses async tokio::process::Command with timeout (audit #8).
+#[tauri::command]
+pub async fn test_remote_host(
+    host: String,
+    user: String,
+    port: Option<u16>,
+    key_path: Option<String>,
+    remote_claude_path: Option<String>,
+) -> Result<RemoteTestResult, String> {
+    use tokio::process::Command as TokioCommand;
+
+    if crate::agent::claude_stream::which_binary("ssh").is_none() {
+        return Ok(RemoteTestResult {
+            ssh_ok: false,
+            cli_found: false,
+            cli_path: None,
+            cli_version: None,
+            error: Some(ssh_not_found_msg("ssh")),
+        });
+    }
+
+    let port = port.unwrap_or(22);
+    let target = format!("{}@{}", user, host);
+    log::debug!(
+        "[diagnostics] test_remote_host: target={}, port={}, key={:?}",
+        target,
+        port,
+        key_path
+    );
+
+    // Step 1: SSH connectivity check (15s timeout)
+    let mut ssh_cmd = TokioCommand::new("ssh");
+    ssh_cmd.args([
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+    ]);
+    ssh_cmd.arg("-p").arg(port.to_string());
+    if let Some(ref key) = key_path {
+        ssh_cmd.args(["-i", &expand_local_tilde(key)]);
+    }
+    ssh_cmd.arg(&target).arg("echo ok");
+    ssh_cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .hide_console()
+        .kill_on_drop(true);
+
+    let ssh_result =
+        tokio::time::timeout(std::time::Duration::from_secs(15), ssh_cmd.output()).await;
+
+    let (ssh_ok, ssh_error) = match ssh_result {
+        Ok(Ok(output)) if output.status.success() => (true, None),
+        Ok(Ok(output)) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            (
+                false,
+                Some(format!(
+                    "SSH failed (exit {:?}): {}",
+                    output.status.code(),
+                    stderr
+                )),
+            )
+        }
+        Ok(Err(e)) => (false, Some(format!("SSH spawn failed: {}", e))),
+        Err(_) => (false, Some("SSH connection timed out (15s)".into())),
+    };
+
+    if !ssh_ok {
+        log::debug!(
+            "[diagnostics] test_remote_host: SSH failed: {:?}",
+            ssh_error
+        );
+        return Ok(RemoteTestResult {
+            ssh_ok: false,
+            cli_found: false,
+            cli_version: None,
+            cli_path: None,
+            error: ssh_error,
+        });
+    }
+
+    // Step 2: CLI check (15s timeout)
+    let claude_bin = remote_claude_path.as_deref().unwrap_or("claude");
+    let escaped_bin = shell_escape(claude_bin);
+    // `command -v` is POSIX-portable (works on Linux, macOS, and most BSDs).
+    // `which` is not guaranteed on all systems and behaves inconsistently.
+    let check_cmd_str = format!("command -v {} && {} --version", escaped_bin, escaped_bin);
+
+    let mut cli_cmd = TokioCommand::new("ssh");
+    cli_cmd.args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]);
+    cli_cmd.arg("-p").arg(port.to_string());
+    if let Some(ref key) = key_path {
+        cli_cmd.args(["-i", &expand_local_tilde(key)]);
+    }
+    cli_cmd.arg(&target).arg(&check_cmd_str);
+    cli_cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .hide_console()
+        .kill_on_drop(true);
+
+    let cli_result =
+        tokio::time::timeout(std::time::Duration::from_secs(15), cli_cmd.output()).await;
+
+    let (cli_found, cli_path, cli_version, cli_error) = match cli_result {
+        Ok(Ok(output)) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let lines: Vec<&str> = stdout.lines().collect();
+            let path = lines.first().map(|s| s.to_string());
+            let version = lines.get(1).map(|s| s.to_string());
+            (true, path, version, None)
+        }
+        Ok(Ok(output)) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            (
+                false,
+                None,
+                None,
+                Some(format!("CLI not found: {}", stderr)),
+            )
+        }
+        Ok(Err(e)) => (false, None, None, Some(format!("CLI check failed: {}", e))),
+        Err(_) => (false, None, None, Some("CLI check timed out (15s)".into())),
+    };
+
+    log::debug!(
+        "[diagnostics] test_remote_host result: ssh_ok={}, cli_found={}, path={:?}, version={:?}",
+        ssh_ok,
+        cli_found,
+        cli_path,
+        cli_version
+    );
+
+    Ok(RemoteTestResult {
+        ssh_ok,
+        cli_found,
+        cli_version,
+        cli_path,
+        error: cli_error,
+    })
+}
+
+/// Check if a project directory has been initialized (has CLAUDE.md).
+#[tauri::command]
+pub fn check_project_init(cwd: String) -> Result<ProjectInitStatus, String> {
+    log::debug!("[diagnostics] check_project_init: cwd={}", cwd);
+    let root = std::path::Path::new(&cwd);
+    if !root.is_dir() {
+        return Ok(ProjectInitStatus {
+            cwd,
+            has_claude_md: false,
+            has_agents_md: false,
+        });
+    }
+    // Canonicalize path (resolve symlinks + normalize case)
+    let canonical = std::fs::canonicalize(root)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| cwd.clone());
+    let has_claude_md = root.join("CLAUDE.md").is_file();
+    let has_agents_md = root.join("AGENTS.md").is_file();
+    log::debug!(
+        "[diagnostics] check_project_init: canonical={}, has_claude_md={}, has_agents_md={}",
+        canonical,
+        has_claude_md,
+        has_agents_md
+    );
+    Ok(ProjectInitStatus {
+        cwd: canonical,
+        has_claude_md,
+        has_agents_md,
+    })
+}
+
+// ── run_diagnostics: comprehensive system check ──
+
+const ENV_VAR_LIMITS: &[(&str, u64, u64)] = &[
+    ("BASH_MAX_OUTPUT_LENGTH", 1, 1_000_000),
+    ("TASK_MAX_OUTPUT_LENGTH", 1, 1_000_000),
+    ("CLAUDE_CODE_MAX_OUTPUT_TOKENS", 1, 128_000),
+];
+
+#[tauri::command]
+pub async fn run_diagnostics(cwd: String) -> Result<DiagnosticsReport, String> {
+    let has_valid_cwd = !cwd.trim().is_empty() && Path::new(&cwd).is_dir();
+    log::debug!(
+        "[diagnostics] run_diagnostics: cwd={:?}, has_valid_cwd={}",
+        cwd,
+        has_valid_cwd
+    );
+
+    // Async checks in parallel
+    let (cli, dist, auth, community, mcp_reg, codex_auth) = tokio::join!(
+        check_cli_inner(),
+        fetch_dist_tags_inner(),
+        check_auth_inner(),
+        check_community_inner(),
+        check_mcp_reg_inner(),
+        async { check_codex_auth().await.ok() },
+    );
+
+    // Merge CLI + dist tags
+    let cli = CliDiagnostics {
+        latest: dist.0,
+        stable: dist.1,
+        auto_update_channel: dist.2,
+        ..cli
+    };
+
+    // Sync checks
+    let user_home = crate::storage::dirs_next().unwrap_or_default();
+    let home = user_home.join(".claude");
+    let codex_home = user_home.join(".codex");
+    let settings_issues = validate_config_files_at(&home, &cwd, has_valid_cwd);
+    let keybinding_issues = validate_keybindings_at(&home);
+    let mcp_issues = validate_mcp_configs_at(&home, &cwd, has_valid_cwd);
+    let env_var_issues = check_env_vars();
+    let claude_md_files = scan_claude_md_files_at(&home, &cwd, has_valid_cwd);
+    let has_claude_md = claude_md_files
+        .iter()
+        .any(|f| f.path.ends_with("CLAUDE.md"));
+    let agents_md_files = scan_agents_md_files_at(&codex_home, &cwd, has_valid_cwd);
+    let has_agents_md = !agents_md_files.is_empty();
+    let sandbox = check_sandbox();
+    let locks = list_lock_files_at(&home);
+
+    log::debug!(
+        "[diagnostics] cli check: found={}, version={:?}",
+        cli.found,
+        cli.version
+    );
+    log::debug!(
+        "[diagnostics] auth check: oauth={}, api_key={}",
+        auth.has_oauth,
+        auth.has_api_key
+    );
+    log::debug!(
+        "[diagnostics] config validation: settings_issues={}, mcp_issues={}, keybinding_issues={}, env_issues={}",
+        settings_issues.len(),
+        mcp_issues.len(),
+        keybinding_issues.len(),
+        env_var_issues.len()
+    );
+
+    Ok(DiagnosticsReport {
+        cli,
+        auth,
+        project: ProjectDiagnostics {
+            cwd: cwd.clone(),
+            has_claude_md,
+            claude_md_files,
+            has_agents_md,
+            agents_md_files,
+            skipped_project_scope: !has_valid_cwd,
+        },
+        configs: ConfigDiagnostics {
+            settings_issues,
+            keybinding_issues,
+            mcp_issues,
+            env_var_issues,
+        },
+        services: ServicesDiagnostics {
+            community_registry: community,
+            mcp_registry: mcp_reg,
+        },
+        system: SystemDiagnostics {
+            sandbox_available: sandbox,
+            lock_files: locks,
+        },
+        codex: codex_auth,
+    })
+}
+
+// ── Sub-check: CLI ──
+
+async fn check_cli_inner() -> CliDiagnostics {
+    let aug_path = augmented_path();
+    // Reuse check_agent_cli for CLI detection + version
+    let cli = check_agent_cli("claude".into())
+        .await
+        .unwrap_or(CliCheckResult {
+            agent: "claude".into(),
+            found: false,
+            path: None,
+            version: None,
+            version_supported: None,
+            minimum_version: None,
+            version_error: None,
+            config_path: cli_config_path("claude"),
+            current_provider: None,
+            current_model: None,
+        });
+
+    let ripgrep_available = Command::new("rg")
+        .arg("--version")
+        .env("PATH", &aug_path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .hide_console()
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    CliDiagnostics {
+        found: cli.found,
+        version: cli.version,
+        path: cli.path,
+        latest: None,              // filled by caller after dist tags fetch
+        stable: None,              // filled by caller
+        auto_update_channel: None, // filled by caller
+        ripgrep_available,
+    }
+}
+
+// ── Sub-check: dist tags + auto-update channel ──
+
+async fn fetch_dist_tags_inner() -> (Option<String>, Option<String>, Option<String>) {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[diagnostics] dist tags: client build failed: {}", e);
+            return (None, None, None);
+        }
+    };
+
+    let resp = client
+        .get("https://registry.npmjs.org/-/package/@anthropic-ai/claude-code/dist-tags")
+        .header("Accept", "application/json")
+        .send()
+        .await;
+
+    let (latest, stable) = match resp {
+        Ok(r) if r.status().is_success() => {
+            let body: serde_json::Value = match r.json().await {
+                Ok(v) => v,
+                Err(e) => {
+                    log::warn!("[diagnostics] dist tags: json parse failed: {}", e);
+                    return (None, None, None);
+                }
+            };
+            (
+                body.get("latest")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                body.get("stable")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+            )
+        }
+        Ok(r) => {
+            log::debug!("[diagnostics] dist tags: HTTP {}", r.status());
+            (None, None)
+        }
+        Err(e) => {
+            log::warn!("[diagnostics] dist tags fetch failed: {}", e);
+            (None, None)
+        }
+    };
+
+    // Auto-update channel from CLI config
+    let cli_config = crate::storage::cli_config::load_cli_config();
+    let auto_update_channel = cli_config
+        .get("autoUpdatesChannel")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    (latest, stable, auto_update_channel)
+}
+
+// ── Sub-check: Auth ──
+
+async fn check_auth_inner() -> AuthDiagnostics {
+    let (has_oauth, oauth_account) = match tokio::time::timeout(
+        std::time::Duration::from_secs(12),
+        super::onboarding::check_cli_oauth(),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            log::warn!("[diagnostics] oauth check timed out");
+            (false, None)
+        }
+    };
+
+    let cli_config = crate::storage::cli_config::load_cli_config();
+    let (api_key, api_key_source) = super::onboarding::detect_cli_api_key(&cli_config);
+    let has_api_key = api_key.is_some();
+    let api_key_hint = api_key.as_ref().map(|k| {
+        if k.len() > 4 {
+            format!("...{}", &k[k.len() - 4..])
+        } else {
+            "***".to_string()
+        }
+    });
+
+    let user_settings = crate::storage::settings::get_user_settings();
+    let app_has_credentials =
+        user_settings.anthropic_api_key.is_some() || !user_settings.platform_credentials.is_empty();
+    let app_platform_name = user_settings.active_platform_id.clone();
+
+    log::debug!(
+        "[diagnostics] auth: oauth={}, api_key={}, app_creds={}",
+        has_oauth,
+        has_api_key,
+        app_has_credentials
+    );
+
+    AuthDiagnostics {
+        has_oauth,
+        oauth_account,
+        has_api_key,
+        api_key_hint,
+        api_key_source,
+        app_has_credentials,
+        app_platform_name,
+    }
+}
+
+// ── Sub-check: Community & MCP registry health ──
+
+async fn check_community_inner() -> Option<bool> {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        crate::storage::community_skills::health_check(),
+    )
+    .await
+    {
+        Ok(health) => Some(health.available),
+        Err(_) => {
+            log::warn!("[diagnostics] community health check timed out");
+            None
+        }
+    }
+}
+
+async fn check_mcp_reg_inner() -> Option<bool> {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        crate::storage::mcp_registry::health_check(),
+    )
+    .await
+    {
+        Ok(health) => Some(health.available),
+        Err(_) => {
+            log::warn!("[diagnostics] mcp registry health check timed out");
+            None
+        }
+    }
+}
+
+// ── Sub-check: Config file validation ──
+
+fn validate_config_files_at(home: &Path, cwd: &str, has_valid_cwd: bool) -> Vec<ConfigIssue> {
+    let mut issues = Vec::new();
+
+    // User scope: ~/.claude/settings.json
+    let user_settings_path = home.join("settings.json");
+    validate_json_file(&user_settings_path, "user", &mut issues);
+
+    // Project scope: {cwd}/.claude/settings.json
+    if has_valid_cwd {
+        let project_settings_path = Path::new(cwd).join(".claude").join("settings.json");
+        validate_json_file(&project_settings_path, "project", &mut issues);
+    }
+
+    issues
+}
+
+fn validate_json_file(path: &Path, scope: &str, issues: &mut Vec<ConfigIssue>) {
+    match std::fs::read_to_string(path) {
+        Ok(content) if content.trim().is_empty() => {} // Empty file = OK (same as not found)
+        Ok(content) => {
+            if let Err(e) = serde_json::from_str::<serde_json::Value>(&content) {
+                issues.push(ConfigIssue {
+                    scope: scope.to_string(),
+                    file: path.display().to_string(),
+                    severity: "error".to_string(),
+                    message: format!("Invalid JSON: {}", e),
+                });
+            }
+        }
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            issues.push(ConfigIssue {
+                scope: scope.to_string(),
+                file: path.display().to_string(),
+                severity: "warning".to_string(),
+                message: format!("Cannot read file: {}", e),
+            });
+        }
+        _ => {} // File not found is OK
+    }
+}
+
+// ── Sub-check: Keybindings validation ──
+
+fn validate_keybindings_at(home: &Path) -> Vec<ConfigIssue> {
+    let mut issues = Vec::new();
+    let path = home.join("keybindings.json");
+
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            match serde_json::from_str::<serde_json::Value>(&content) {
+                Ok(v) => {
+                    if !v.is_object() {
+                        issues.push(ConfigIssue {
+                            scope: "user".to_string(),
+                            file: path.display().to_string(),
+                            severity: "error".to_string(),
+                            message: "Top-level value must be an object".to_string(),
+                        });
+                    } else if let Some(obj) = v.as_object() {
+                        // Best-effort: values should be string or null
+                        for (key, val) in obj {
+                            if !val.is_string() && !val.is_null() {
+                                issues.push(ConfigIssue {
+                                    scope: "user".to_string(),
+                                    file: path.display().to_string(),
+                                    severity: "warning".to_string(),
+                                    message: format!(
+                                        "Key \"{}\" — value should be string or null (best-effort)",
+                                        key
+                                    ),
+                                });
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    issues.push(ConfigIssue {
+                        scope: "user".to_string(),
+                        file: path.display().to_string(),
+                        severity: "error".to_string(),
+                        message: format!("Invalid JSON: {}", e),
+                    });
+                }
+            }
+        }
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            issues.push(ConfigIssue {
+                scope: "user".to_string(),
+                file: path.display().to_string(),
+                severity: "warning".to_string(),
+                message: format!("Cannot read file: {}", e),
+            });
+        }
+        _ => {} // Not found is OK
+    }
+
+    issues
+}
+
+// ── Sub-check: MCP config validation ──
+
+fn validate_mcp_configs_at(home: &Path, cwd: &str, has_valid_cwd: bool) -> Vec<ConfigIssue> {
+    let mut issues = Vec::new();
+    let home_parent = home.parent().unwrap_or(home);
+
+    // 1. ~/.claude.json → top-level mcpServers (user scope)
+    let claude_json_path = home_parent.join(".claude.json");
+    if let Some(root) = read_json_file(&claude_json_path) {
+        if let Some(servers) = root.get("mcpServers") {
+            validate_mcp_servers(servers, "user", &claude_json_path, &mut issues);
+        }
+
+        // 2. ~/.claude.json → projects[cwd].mcpServers (local scope)
+        if has_valid_cwd {
+            if let Some(projects) = root.get("projects").and_then(|p| p.as_object()) {
+                if let Some(proj) = projects.get(cwd).and_then(|p| p.as_object()) {
+                    if let Some(servers) = proj.get("mcpServers") {
+                        validate_mcp_servers(servers, "local", &claude_json_path, &mut issues);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. ~/.claude/settings.json → mcpServers (user scope fallback)
+    let settings_path = home.join("settings.json");
+    if let Some(root) = read_json_file(&settings_path) {
+        if let Some(servers) = root.get("mcpServers") {
+            validate_mcp_servers(servers, "user", &settings_path, &mut issues);
+        }
+    }
+
+    // 4. {cwd}/.mcp.json → mcpServers (project scope)
+    if has_valid_cwd {
+        let mcp_json_path = Path::new(cwd).join(".mcp.json");
+        if let Some(root) = read_json_file(&mcp_json_path) {
+            if let Some(servers) = root.get("mcpServers") {
+                validate_mcp_servers(servers, "project", &mcp_json_path, &mut issues);
+            }
+        }
+    }
+
+    issues
+}
+
+fn read_json_file(path: &Path) -> Option<serde_json::Value> {
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn validate_mcp_servers(
+    servers: &serde_json::Value,
+    scope: &str,
+    file: &Path,
+    issues: &mut Vec<ConfigIssue>,
+) {
+    let obj = match servers.as_object() {
+        Some(o) => o,
+        None => {
+            issues.push(ConfigIssue {
+                scope: scope.to_string(),
+                file: file.display().to_string(),
+                severity: "error".to_string(),
+                message: "mcpServers must be an object".to_string(),
+            });
+            return;
+        }
+    };
+
+    for (name, entry) in obj {
+        let entry_obj = match entry.as_object() {
+            Some(o) => o,
+            None => {
+                issues.push(ConfigIssue {
+                    scope: scope.to_string(),
+                    file: file.display().to_string(),
+                    severity: "error".to_string(),
+                    message: format!("\"{}\" — entry must be an object", name),
+                });
+                continue;
+            }
+        };
+
+        let transport_type = entry_obj
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("stdio");
+
+        match transport_type {
+            "stdio" if !entry_obj.contains_key("command") || !entry_obj["command"].is_string() => {
+                issues.push(ConfigIssue {
+                    scope: scope.to_string(),
+                    file: file.display().to_string(),
+                    severity: "error".to_string(),
+                    message: format!("\"{}\" — missing \"command\" field (type=stdio)", name),
+                });
+            }
+            "http" | "sse" if !entry_obj.contains_key("url") || !entry_obj["url"].is_string() => {
+                issues.push(ConfigIssue {
+                    scope: scope.to_string(),
+                    file: file.display().to_string(),
+                    severity: "error".to_string(),
+                    message: format!(
+                        "\"{}\" — missing \"url\" field (type={})",
+                        name, transport_type
+                    ),
+                });
+            }
+            _ => {} // Valid or unknown transport type
+        }
+    }
+}
+
+// ── Sub-check: Environment variables ──
+
+fn check_env_vars() -> Vec<ConfigIssue> {
+    let mut issues = Vec::new();
+
+    for &(name, min, max) in ENV_VAR_LIMITS {
+        if let Ok(val_str) = std::env::var(name) {
+            match val_str.parse::<u64>() {
+                Ok(val) if val < min || val > max => {
+                    issues.push(ConfigIssue {
+                        scope: "env".to_string(),
+                        file: name.to_string(),
+                        severity: "warning".to_string(),
+                        message: format!("{}={} (valid range: {}–{})", name, val, min, max),
+                    });
+                }
+                Err(_) => {
+                    issues.push(ConfigIssue {
+                        scope: "env".to_string(),
+                        file: name.to_string(),
+                        severity: "warning".to_string(),
+                        message: format!("{}={} — not a valid integer", name, val_str),
+                    });
+                }
+                _ => {} // In range, OK
+            }
+        }
+    }
+
+    issues
+}
+
+// ── Sub-check: CLAUDE.md files ──
+
+fn scan_claude_md_files_at(home: &Path, cwd: &str, has_valid_cwd: bool) -> Vec<ClaudeMdInfo> {
+    let mut files = Vec::new();
+
+    // ~/.claude/CLAUDE.md
+    let global_path = home.join("CLAUDE.md");
+    if let Ok(content) = std::fs::read_to_string(&global_path) {
+        files.push(ClaudeMdInfo {
+            path: global_path.display().to_string(),
+            size_chars: content.chars().count(),
+        });
+    }
+
+    if has_valid_cwd {
+        // {cwd}/CLAUDE.md
+        let cwd_path = Path::new(cwd).join("CLAUDE.md");
+        if let Ok(content) = std::fs::read_to_string(&cwd_path) {
+            files.push(ClaudeMdInfo {
+                path: cwd_path.display().to_string(),
+                size_chars: content.chars().count(),
+            });
+        }
+
+        // {cwd}/.claude/CLAUDE.md
+        let cwd_dot_path = Path::new(cwd).join(".claude").join("CLAUDE.md");
+        if let Ok(content) = std::fs::read_to_string(&cwd_dot_path) {
+            files.push(ClaudeMdInfo {
+                path: cwd_dot_path.display().to_string(),
+                size_chars: content.chars().count(),
+            });
+        }
+    }
+
+    files
+}
+
+// ── Sub-check: AGENTS.md files (Codex) ──
+
+fn scan_agents_md_files_at(codex_home: &Path, cwd: &str, has_valid_cwd: bool) -> Vec<AgentsMdInfo> {
+    let mut files = Vec::new();
+
+    // ~/.codex/AGENTS.md
+    let global_path = codex_home.join("AGENTS.md");
+    if let Ok(content) = std::fs::read_to_string(&global_path) {
+        files.push(AgentsMdInfo {
+            path: global_path.display().to_string(),
+            size_chars: content.chars().count(),
+        });
+    }
+
+    if has_valid_cwd {
+        // {cwd}/AGENTS.md
+        let cwd_path = Path::new(cwd).join("AGENTS.md");
+        if let Ok(content) = std::fs::read_to_string(&cwd_path) {
+            files.push(AgentsMdInfo {
+                path: cwd_path.display().to_string(),
+                size_chars: content.chars().count(),
+            });
+        }
+
+        // {cwd}/.codex/AGENTS.md
+        let cwd_dot_path = Path::new(cwd).join(".codex").join("AGENTS.md");
+        if let Ok(content) = std::fs::read_to_string(&cwd_dot_path) {
+            files.push(AgentsMdInfo {
+                path: cwd_dot_path.display().to_string(),
+                size_chars: content.chars().count(),
+            });
+        }
+    }
+
+    files
+}
+
+// ── Sub-check: Sandbox ──
+
+fn check_sandbox() -> Option<bool> {
+    if cfg!(target_os = "macos") {
+        Some(Path::new("/usr/bin/sandbox-exec").exists())
+    } else {
+        None
+    }
+}
+
+// ── Sub-check: Lock files ──
+
+fn list_lock_files_at(home: &Path) -> Vec<String> {
+    let locks_dir = home.join("locks");
+    match std::fs::read_dir(&locks_dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pi_version_gate_requires_0_84_4_or_newer() {
+        assert!(!pi_version_supported("0.84.3"));
+        assert!(pi_version_supported("0.85.1"));
+        assert!(pi_version_supported("pi 0.85.0"));
+        assert!(pi_version_supported("v1.0.0"));
+        assert!(!pi_version_supported("unknown"));
+    }
+
+    #[test]
+    fn test_check_project_init_no_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nonexistent = tmp.path().join("nonexistent_subdir");
+        let result = check_project_init(nonexistent.to_string_lossy().into()).unwrap();
+        assert!(!result.has_claude_md);
+    }
+
+    #[test]
+    fn test_check_project_init_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = check_project_init(dir.path().to_string_lossy().into()).unwrap();
+        assert!(!result.has_claude_md);
+    }
+
+    #[test]
+    fn test_check_project_init_with_claude_md() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("CLAUDE.md"), "# Project").unwrap();
+        let result = check_project_init(dir.path().to_string_lossy().into()).unwrap();
+        assert!(result.has_claude_md);
+    }
+
+    // ── run_diagnostics sub-check tests ──
+
+    #[test]
+    fn test_validate_settings_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        std::fs::write(home.join("settings.json"), "{ invalid json }").unwrap();
+        let issues = validate_config_files_at(home, "/nonexistent", false);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, "error");
+        assert!(issues[0].message.contains("Invalid JSON"));
+    }
+
+    #[test]
+    fn test_validate_settings_valid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        std::fs::write(home.join("settings.json"), r#"{"key": "value"}"#).unwrap();
+        let issues = validate_config_files_at(home, "/nonexistent", false);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_invalid_cwd_skips_project_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        // Write project-scope settings — should be skipped when cwd invalid
+        let proj_dir = dir.path().join("project").join(".claude");
+        std::fs::create_dir_all(&proj_dir).unwrap();
+        std::fs::write(proj_dir.join("settings.json"), "invalid").unwrap();
+        let issues = validate_config_files_at(home, "/nonexistent_xyz", false);
+        // Only user scope checked, no project scope issue
+        assert!(issues.iter().all(|i| i.scope == "user" || i.scope == "env"));
+    }
+
+    #[test]
+    fn test_validate_keybindings_non_object() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        std::fs::write(home.join("keybindings.json"), "[]").unwrap();
+        let issues = validate_keybindings_at(home);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, "error");
+        assert!(issues[0].message.contains("must be an object"));
+    }
+
+    #[test]
+    fn test_check_env_vars_out_of_range() {
+        // Temporarily set an env var with an out-of-range value
+        let key = "CLAUDE_CODE_MAX_OUTPUT_TOKENS";
+        let orig = std::env::var(key).ok();
+        std::env::set_var(key, "999999");
+        let issues = check_env_vars();
+        // Restore
+        match orig {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+        let found = issues.iter().any(|i| i.message.contains(key));
+        assert!(found, "Expected warning for out-of-range {}", key);
+    }
+
+    #[test]
+    fn test_scan_claude_md_files_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home_claude");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("CLAUDE.md"), "# Global").unwrap();
+
+        let cwd_dir = dir.path().join("project");
+        std::fs::create_dir_all(&cwd_dir).unwrap();
+        std::fs::write(cwd_dir.join("CLAUDE.md"), "# Project content here").unwrap();
+
+        let files = scan_claude_md_files_at(&home, &cwd_dir.to_string_lossy(), true);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].size_chars, 8); // "# Global"
+        assert_eq!(files[1].size_chars, 22); // "# Project content here"
+    }
+
+    #[test]
+    fn test_scan_agents_md_files_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex_home = dir.path().join("home_codex");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::write(codex_home.join("AGENTS.md"), "# Global Codex").unwrap();
+
+        let cwd_dir = dir.path().join("project");
+        let cwd_dotcodex = cwd_dir.join(".codex");
+        std::fs::create_dir_all(&cwd_dotcodex).unwrap();
+        std::fs::write(cwd_dir.join("AGENTS.md"), "# Project root").unwrap();
+        std::fs::write(cwd_dotcodex.join("AGENTS.md"), "# Project dotcodex").unwrap();
+
+        let files = scan_agents_md_files_at(&codex_home, &cwd_dir.to_string_lossy(), true);
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0].size_chars, 14); // "# Global Codex"
+        assert_eq!(files[1].size_chars, 14); // "# Project root"
+        assert_eq!(files[2].size_chars, 18); // "# Project dotcodex"
+    }
+
+    #[test]
+    fn test_scan_agents_md_files_at_skips_project_when_invalid_cwd() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex_home = dir.path().join("home_codex");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::write(codex_home.join("AGENTS.md"), "# Global").unwrap();
+
+        let files = scan_agents_md_files_at(&codex_home, "/nonexistent", false);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].path.ends_with("AGENTS.md"));
+    }
+
+    #[test]
+    fn test_scan_agents_md_files_at_empty_when_none_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = scan_agents_md_files_at(
+            &dir.path().join("nohome"),
+            &dir.path().to_string_lossy(),
+            true,
+        );
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_validate_mcp_stdio_missing_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        std::fs::write(
+            home.join("settings.json"),
+            r#"{"mcpServers":{"s1":{"type":"stdio"}}}"#,
+        )
+        .unwrap();
+        let issues = validate_mcp_configs_at(home, "/nonexistent", false);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, "error");
+        assert!(issues[0].message.contains("missing \"command\""));
+    }
+
+    #[test]
+    fn test_validate_mcp_http_missing_url() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        std::fs::write(
+            home.join("settings.json"),
+            r#"{"mcpServers":{"s1":{"type":"http"}}}"#,
+        )
+        .unwrap();
+        let issues = validate_mcp_configs_at(home, "/nonexistent", false);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, "error");
+        assert!(issues[0].message.contains("missing \"url\""));
+    }
+
+    #[test]
+    fn test_validate_mcp_valid_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        std::fs::write(
+            home.join("settings.json"),
+            r#"{"mcpServers":{"s1":{"command":"node","args":["server.js"]},"s2":{"type":"http","url":"http://localhost:3000"}}}"#,
+        )
+        .unwrap();
+        let issues = validate_mcp_configs_at(home, "/nonexistent", false);
+        assert!(issues.is_empty(), "Expected no issues, got: {:?}", issues);
+    }
+
+    // ── detect_local_proxy tests ──
+
+    #[tokio::test]
+    async fn test_detect_proxy_not_running() {
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            // Use a non-routable address to guarantee connection failure
+            let url = "http://192.0.2.1:1";
+            let result = detect_proxy_inner("test-proxy", url).await;
+            assert!(
+                !result.running,
+                "expected not running, error={:?}",
+                result.error
+            );
+            assert!(!result.needs_auth);
+            assert!(result.error.is_some());
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_detect_proxy_running_200() {
+        use tokio::io::AsyncWriteExt;
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            // Spawn a minimal HTTP server that returns 200
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 1024];
+                    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]";
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            let result = detect_proxy_inner("test-proxy", &url).await;
+            assert!(result.running);
+            assert!(!result.needs_auth);
+            assert!(result.error.is_none());
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_detect_proxy_running_401_needs_auth() {
+        use tokio::io::AsyncWriteExt;
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            // Spawn a minimal HTTP server that returns 401
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 1024];
+                    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let resp = "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            let result = detect_proxy_inner("test-proxy", &url).await;
+            assert!(result.running);
+            assert!(result.needs_auth);
+            assert!(result.error.is_none());
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    // ── test_api_connectivity tests ──
+
+    #[tokio::test]
+    async fn test_api_connectivity_success_200() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let _ = AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let body = r#"{"content":[{"text":"Hello!"}]}"#;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            let result = test_api_inner("test-key", &url, "ANTHROPIC_API_KEY", "test-model").await;
+            assert!(result.success);
+            assert!(!result.partial);
+            assert_eq!(result.reply, Some("Hello!".to_string()));
+            assert!(result.error.is_none());
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_api_connectivity_auth_failure_401() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let _ = AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let body = r#"{"error":{"message":"Invalid API key"}}"#;
+                    let resp = format!(
+                        "HTTP/1.1 401 Unauthorized\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            let result = test_api_inner("bad-key", &url, "ANTHROPIC_API_KEY", "test-model").await;
+            assert!(!result.success);
+            assert!(
+                result
+                    .error
+                    .as_deref()
+                    .unwrap()
+                    .contains("Authentication failed"),
+                "error was: {:?}",
+                result.error
+            );
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_api_connectivity_not_found_404() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let _ = AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            let result = test_api_inner("test-key", &url, "ANTHROPIC_API_KEY", "test-model").await;
+            assert!(!result.success);
+            assert!(
+                result
+                    .error
+                    .as_deref()
+                    .unwrap()
+                    .contains("Endpoint not found"),
+                "error was: {:?}",
+                result.error
+            );
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_api_connectivity_header_x_api_key() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let n = AsyncReadExt::read(&mut stream, &mut buf).await.unwrap();
+                    let req_str = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let _ = tx.send(req_str);
+                    let body = r#"{"content":[{"text":"ok"}]}"#;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            let result =
+                test_api_inner("test-key-123", &url, "ANTHROPIC_API_KEY", "test-model").await;
+            assert!(result.success);
+            let req_str = rx.await.unwrap();
+            let req_lower = req_str.to_lowercase();
+            assert!(
+                req_lower.contains("x-api-key: test-key-123"),
+                "expected x-api-key header, got: {}",
+                req_str
+            );
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_api_connectivity_header_bearer() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let n = AsyncReadExt::read(&mut stream, &mut buf).await.unwrap();
+                    let req_str = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let _ = tx.send(req_str);
+                    let body = r#"{"content":[{"text":"ok"}]}"#;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            let result = test_api_inner(
+                "test-bearer-key",
+                &url,
+                "ANTHROPIC_AUTH_TOKEN",
+                "test-model",
+            )
+            .await;
+            assert!(result.success);
+            let req_str = rx.await.unwrap();
+            let req_lower = req_str.to_lowercase();
+            assert!(
+                req_lower.contains("authorization: bearer test-bearer-key"),
+                "expected Bearer header, got: {}",
+                req_str
+            );
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_api_connectivity_probe_partial_success() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let _ = AsyncReadExt::read(&mut stream, &mut buf).await;
+                    // Simulate a 400 "model not found" response
+                    let body = r#"{"error":{"message":"model: claude-sonnet-4-6 not found"}}"#;
+                    let resp = format!(
+                        "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            // model="" triggers probe mode
+            let result = test_api_inner("test-key", &url, "ANTHROPIC_API_KEY", "").await;
+            assert!(result.success, "expected partial success");
+            assert!(result.partial, "expected partial=true");
+            assert!(result.error.is_none());
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_api_connectivity_non_probe_400_is_failure() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let _ = AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let body = r#"{"error":{"message":"model: foo not found"}}"#;
+                    let resp = format!(
+                        "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            // model="foo" — NOT probe mode, so 400 should be a real failure
+            let result = test_api_inner("test-key", &url, "ANTHROPIC_API_KEY", "foo").await;
+            assert!(!result.success, "expected failure for non-probe 400");
+            assert!(!result.partial);
+            assert!(result.error.is_some());
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_pi_provider_uses_selected_api_path_and_bearer_key() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let n = AsyncReadExt::read(&mut stream, &mut buf).await.unwrap();
+                    let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let _ = tx.send(request);
+                    let body = r#"{"choices":[{"message":{"content":"ok"}}]}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(response.as_bytes()).await;
+                }
+            });
+            let provider = PiProviderCredential {
+                id: "custom-openai".into(),
+                name: "Custom OpenAI-compatible".into(),
+                base_url: format!("http://127.0.0.1:{}/v1", port),
+                api: "openai-completions".into(),
+                model: "test-model".into(),
+                models: vec![],
+                context_window: None,
+                api_key: Some("pi-test-key".into()),
+            };
+            let result = test_pi_provider(provider).await.unwrap();
+            assert!(result.success);
+            let request = rx.await.unwrap().to_ascii_lowercase();
+            assert!(request.starts_with("post /v1/chat/completions "));
+            assert!(request.contains("authorization: bearer pi-test-key"));
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_pi_provider_reports_invalid_api_key() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let _ = AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let body = r#"{"error":{"message":"invalid api key"}}"#;
+                    let response = format!(
+                        "HTTP/1.1 401 Unauthorized\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(response.as_bytes()).await;
+                }
+            });
+            let provider = PiProviderCredential {
+                id: "custom-anthropic".into(),
+                name: "Custom Anthropic-compatible".into(),
+                base_url: format!("http://127.0.0.1:{}/v1", port),
+                api: "anthropic-messages".into(),
+                model: "test-model".into(),
+                models: vec![],
+                context_window: None,
+                api_key: Some("bad-key".into()),
+            };
+            let result = test_pi_provider(provider).await.unwrap();
+            assert!(!result.success);
+            assert_eq!(
+                result.error.as_deref(),
+                Some("Authentication failed — check your API key")
+            );
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[test]
+    fn test_pi_provider_response_validation_matches_api_mode() {
+        assert!(is_valid_pi_provider_response(
+            "openai-completions",
+            r#"{"choices":[]}"#
+        ));
+        assert!(is_valid_pi_provider_response(
+            "openai-responses",
+            r#"{"id":"resp_1","output":[]}"#
+        ));
+        assert!(is_valid_pi_provider_response(
+            "anthropic-messages",
+            r#"{"content":[]}"#
+        ));
+        assert!(!is_valid_pi_provider_response(
+            "openai-completions",
+            "<html>proxy login</html>"
+        ));
+        assert!(!is_valid_pi_provider_response(
+            "anthropic-messages",
+            r#"{"choices":[]}"#
+        ));
+    }
+
+    #[test]
+    fn global_provider_root_url_uses_v1_api_path() {
+        assert_eq!(
+            normalize_global_provider_base_url("http://127.0.0.1:3000"),
+            "http://127.0.0.1:3000/v1"
+        );
+        assert_eq!(
+            normalize_global_provider_base_url("http://127.0.0.1:3000/"),
+            "http://127.0.0.1:3000/v1"
+        );
+        assert_eq!(
+            normalize_global_provider_base_url("http://127.0.0.1:3000/v1"),
+            "http://127.0.0.1:3000/v1"
+        );
+        assert_eq!(
+            normalize_global_provider_base_url("https://api.example.com/anthropic"),
+            "https://api.example.com/anthropic"
+        );
+    }
+}
+
+/// Fetch npm dist-tags for @anthropic-ai/claude-code.
+/// Returns latest/stable version strings. Non-fatal: returns None on failure.
+#[tauri::command]
+pub async fn get_cli_dist_tags() -> Result<CliDistTags, String> {
+    log::debug!("[diagnostics] get_cli_dist_tags");
+    let (latest, stable, _channel) = fetch_dist_tags_inner().await;
+    Ok(CliDistTags { latest, stable })
+}
+
+/// Check for existing SSH key pairs. Returns info about the first usable pair found.
+/// Priority: ed25519 > rsa. A "usable pair" means both private key and .pub exist.
+#[tauri::command]
+pub fn check_ssh_key() -> Result<SshKeyInfo, String> {
+    let candidates = [("~/.ssh/id_ed25519", "ed25519"), ("~/.ssh/id_rsa", "rsa")];
+
+    #[cfg(unix)]
+    let ssh_copy_id_available = crate::agent::claude_stream::which_binary("ssh-copy-id").is_some();
+    #[cfg(not(unix))]
+    let ssh_copy_id_available = false;
+
+    log::debug!(
+        "[diagnostics] check_ssh_key: ssh_copy_id_available={}",
+        ssh_copy_id_available
+    );
+
+    // First pass: find a complete pair (private + pub both exist)
+    for (tilde_path, key_type) in &candidates {
+        let expanded = expand_local_tilde(tilde_path);
+        let pub_expanded = format!("{}.pub", expanded);
+        let priv_exists = std::path::Path::new(&expanded).is_file();
+        let pub_exists = std::path::Path::new(&pub_expanded).is_file();
+
+        log::debug!(
+            "[diagnostics] check_ssh_key: {} priv={} pub={}",
+            tilde_path,
+            priv_exists,
+            pub_exists
+        );
+
+        if priv_exists && pub_exists {
+            return Ok(SshKeyInfo {
+                key_path: tilde_path.to_string(),
+                key_path_expanded: expanded,
+                pub_key_path: format!("{}.pub", tilde_path),
+                key_type: key_type.to_string(),
+                exists: true,
+                pub_exists: true,
+                ssh_copy_id_available,
+            });
+        }
+    }
+
+    // Second pass: report first partial match (private exists but pub missing)
+    for (tilde_path, key_type) in &candidates {
+        let expanded = expand_local_tilde(tilde_path);
+        let priv_exists = std::path::Path::new(&expanded).is_file();
+
+        if priv_exists {
+            return Ok(SshKeyInfo {
+                key_path: tilde_path.to_string(),
+                key_path_expanded: expanded,
+                pub_key_path: format!("{}.pub", tilde_path),
+                key_type: key_type.to_string(),
+                exists: true,
+                pub_exists: false,
+                ssh_copy_id_available,
+            });
+        }
+    }
+
+    // Nothing found at all
+    Ok(SshKeyInfo {
+        key_path: "~/.ssh/id_ed25519".into(),
+        key_path_expanded: expand_local_tilde("~/.ssh/id_ed25519"),
+        pub_key_path: "~/.ssh/id_ed25519.pub".into(),
+        key_type: "ed25519".into(),
+        exists: false,
+        pub_exists: false,
+        ssh_copy_id_available,
+    })
+}
+
+/// Generate an ed25519 SSH key pair. Fails if key already exists.
+/// Returns SshKeyInfo for the newly created key.
+#[tauri::command]
+pub fn generate_ssh_key() -> Result<SshKeyInfo, String> {
+    if crate::agent::claude_stream::which_binary("ssh-keygen").is_none() {
+        return Err(ssh_not_found_msg("ssh-keygen"));
+    }
+
+    let ssh_dir = expand_local_tilde("~/.ssh");
+    let key_path = expand_local_tilde("~/.ssh/id_ed25519");
+
+    // Check if key already exists
+    if std::path::Path::new(&key_path).is_file() {
+        return Err("Key already exists at ~/.ssh/id_ed25519".into());
+    }
+
+    // Ensure ~/.ssh directory exists with correct permissions
+    std::fs::create_dir_all(&ssh_dir).map_err(|e| format!("Failed to create ~/.ssh: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&ssh_dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("Failed to set ~/.ssh permissions: {}", e))?;
+    }
+
+    // Get hostname for comment
+    let hostname = Command::new("hostname")
+        .hide_console()
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "localhost".into());
+
+    let comment = format!("agentcabin@{}", hostname);
+    let aug_path = augmented_path();
+
+    log::debug!(
+        "[diagnostics] generate_ssh_key: path={}, comment={}",
+        key_path,
+        comment
+    );
+
+    let output = Command::new("ssh-keygen")
+        .args(["-t", "ed25519", "-N", "", "-C", &comment, "-f", &key_path])
+        .env("PATH", &aug_path)
+        .hide_console()
+        .output()
+        .map_err(|e| format!("Failed to run ssh-keygen: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ssh-keygen failed: {}", stderr));
+    }
+
+    log::debug!("[diagnostics] generate_ssh_key: success");
+
+    // Return fresh check result
+    check_ssh_key()
+}

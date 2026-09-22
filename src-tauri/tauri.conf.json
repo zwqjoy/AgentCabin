@@ -1,0 +1,122 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/.github/schemas/tauri-v2.json",
+  "productName": "AgentCabin",
+  "version": "0.2.1",
+  "identifier": "io.agentcabin.desktop",
+  "build": {
+    "frontendDist": "../build",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "AgentCabin",
+        "width": 1280,
+        "height": 920,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "maximized": false,
+        "center": true,
+        "dragDropEnabled": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      },
+      {
+        "label": "pet",
+        "title": "Desktop Pet",
+        "url": "/pet",
+        "width": 160,
+        "height": 176,
+        "resizable": false,
+        "fullscreen": false,
+        "maximized": false,
+        "center": false,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "shadow": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com https://*.anthropic.com; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "resources": [
+      "browser-worker/**/*",
+      "resources/agentcabin-computer-use/macos/agentcabin-computer-use.app",
+      "resources/agentcabin-computer-use/macos/ocr-helper",
+      "resources/agentcabin-computer-use/LICENSE",
+      "resources/agentcabin-computer-use/UPSTREAM.md"
+    ],
+    "shortDescription": "AI-assisted vibe coding desktop app",
+    "longDescription": "AgentCabin wraps AI coding CLIs (Claude Code, Codex) with a visual chat interface, run management, and activity monitoring. Local-first, no cloud required.",
+    "macOS": {
+      "entitlements": "entitlements.plist",
+      "minimumSystemVersion": "13.0",
+      "dmg": {
+        "windowPosition": {
+          "x": 400,
+          "y": 400
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        }
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1 | libappindicator3-1",
+          "xclip | xsel"
+        ],
+        "recommends": [
+          "wl-clipboard",
+          "fonts-noto-cjk | fonts-wqy-microhei"
+        ]
+      }
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  }
+}

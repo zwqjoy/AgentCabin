@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "resources": [
+      "browser-worker/**/*",
+      "runtime/extensions/**/*",
+      "resources/agentcabin-computer-use/macos/agentcabin-computer-use.app",
+      "resources/agentcabin-computer-use/macos/ocr-helper",
+      "resources/agentcabin-computer-use/LICENSE",
+      "resources/agentcabin-computer-use/UPSTREAM.md"
+    ]
+  }
+}

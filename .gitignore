@@ -1,0 +1,80 @@
+# Dependencies
+node_modules/
+src-tauri/runtime/pi/node_modules/
+src-tauri/runtime/pi/integrity.json
+src-tauri/runtime/extensions/node_modules/
+src-tauri/runtime/extensions/integrity.json
+.agentcabin-build-cache/
+src-tauri/binaries/agentcabin-node-*
+src-tauri/binaries/agentcabin-pi-*
+src-tauri/resources/agentcabin-computer-use/macos/bridge
+src-tauri/resources/agentcabin-computer-use/macos/ocr-helper
+src-tauri/resources/agentcabin-computer-use/macos/agentcabin-computer-use.app/Contents/MacOS/bridge
+src-tauri/resources/agentcabin-computer-use/macos/agentcabin-computer-use.app/Contents/_CodeSignature
+
+# Environment variables
+.env
+.env.*
+
+# Frontend build output
+build/
+.svelte-kit/
+
+# Electron build output
+electron/dist/
+dist-electron/
+runtime-build/
+
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# npm pack artifacts
+*.tgz
+package/
+packages/
+
+# Duplicate Rust build dirs (Finder copy artifacts)
+src-tauri/target */
+
+# Turborepo cache (monorepo remnant)
+.turbo/
+
+# Claude Code (local dev context)
+CLAUDE.md
+AGENTS.md
+/memory/
+.claude/
+
+# Git hooks (shared via .githooks/, activated by `npm run prepare`)
+
+.metadata_never_index
+
+# Serena cache and memories
+.serena/
+
+# Unrelated binaries
+forget_ptr
+
+# Smoke reports
+reports/work-smoke/

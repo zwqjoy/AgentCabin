@@ -1,0 +1,20 @@
+{
+  "name": "agentcabin-pi-extensions",
+  "private": true,
+  "version": "4.0.1",
+  "description": "Pinned Pi extensions bundled with AgentCabin",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@gotgenes/pi-permission-system": "31.1.1",
+    "@narumitw/pi-goal": "0.54.4",
+    "@narumitw/pi-lsp": "0.49.7",
+    "@narumitw/pi-plan-mode": "0.56.0",
+    "@pi9/todo": "0.3.7",
+    "pi-context-prune": "1.4.0",
+    "pi-mcp-adapter": "2.22.0",
+    "pi-mono-multi-edit": "2.0.0",
+    "pi-subagents": "0.51.0"
+  }
+}

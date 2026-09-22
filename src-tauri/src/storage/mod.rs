@@ -1,0 +1,112 @@
+pub mod agent_plugins;
+pub mod artifacts;
+pub mod changelog;
+pub mod claude_usage;
+pub mod cli_config;
+pub mod cli_sessions;
+pub mod cli_sessions_common;
+pub mod codex_sessions;
+pub mod codex_usage;
+pub mod community_skills;
+pub mod events;
+pub mod favorites;
+pub mod mcp_registry;
+pub mod pi_commands;
+pub mod pi_packages;
+pub mod pi_sessions;
+pub mod plugins;
+pub mod profile_bindings;
+pub mod project_preferences;
+pub mod prompt_index;
+pub mod prompt_templates;
+pub mod run_index;
+pub mod runs;
+pub mod settings;
+pub mod skills;
+pub mod teams;
+
+pub use profile_bindings as pi_profile_bindings;
+pub use skills as pi_skills;
+
+use std::path::PathBuf;
+
+pub fn data_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("AGENTCABIN_DATA_DIR") {
+        let trimmed = dir.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    let home = dirs_next().expect("Could not determine home directory");
+    home.join(".agentcabin")
+}
+
+pub fn runs_dir() -> PathBuf {
+    data_dir().join("runs")
+}
+
+pub fn run_dir(run_id: &str) -> PathBuf {
+    runs_dir().join(run_id)
+}
+
+/// Resolve the user's home directory reliably.
+/// Primary: `getpwuid()` system call (works even when `$HOME` is unset,
+/// e.g. GUI apps launched from Finder/Dock on macOS 26+).
+/// Fallback: `$HOME` (Unix) or `$USERPROFILE` (Windows).
+pub fn home_dir() -> Option<String> {
+    #[cfg(unix)]
+    {
+        let pwd_home = unsafe {
+            let uid = libc::getuid();
+            let pw = libc::getpwuid(uid);
+            if !pw.is_null() {
+                let dir = (*pw).pw_dir;
+                if !dir.is_null() {
+                    Some(std::ffi::CStr::from_ptr(dir).to_string_lossy().into_owned())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+        if pwd_home.is_some() {
+            return pwd_home;
+        }
+        std::env::var("HOME").ok()
+    }
+    #[cfg(not(unix))]
+    {
+        std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .or_else(|_| {
+                let drive = std::env::var("HOMEDRIVE").unwrap_or_default();
+                let path = std::env::var("HOMEPATH").unwrap_or_default();
+                if !drive.is_empty() && !path.is_empty() {
+                    Ok(format!("{}{}", drive, path))
+                } else {
+                    Err(std::env::VarError::NotPresent)
+                }
+            })
+            .ok()
+    }
+}
+
+pub(crate) fn dirs_next() -> Option<PathBuf> {
+    home_dir().map(PathBuf::from)
+}
+
+pub fn ensure_dir(path: &std::path::Path) -> std::io::Result<()> {
+    if !path.exists() {
+        std::fs::create_dir_all(path)?;
+    }
+
+    // Restrict directory permissions — data dir may contain sensitive data
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+    }
+
+    Ok(())
+}

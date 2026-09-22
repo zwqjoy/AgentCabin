@@ -1,0 +1,3208 @@
+@import "./lib/dsh-ui/dsh-theme.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* Keep verbose model process secondary to the answer while preserving access to it. */
+  .chat-thought-process-panel {
+    max-height: min(17.5rem, 32vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    border: 1px solid hsl(var(--border) / 0.65);
+    background: hsl(var(--muted) / 0.35);
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.28) transparent;
+  }
+
+  .chat-thought-process-panel::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .chat-thought-process-panel::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .chat-thought-process-panel::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+    background-color: hsl(var(--muted-foreground) / 0.28);
+  }
+
+  .chat-thought-process-panel::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.42);
+  }
+}
+
+@layer base {
+  /* ── Light mode ── */
+  :root {
+    --background: 220 20% 97.5%;
+    --foreground: 220 11% 10%;
+    --primary: 158 70% 42.5%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 16% 95%;
+    --secondary-foreground: 220 11% 10%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 9% 41%;
+    --accent: 220 18% 94%;
+    --accent-foreground: 220 11% 10%;
+    --destructive: 0 64% 57%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 14% 88%;
+    --input: 220 14% 86%;
+    --ring: 158 70% 42.5%;
+    --radius: 0.625rem;
+    --sidebar-background: 220 14% 96%;
+    --sidebar-foreground: 220 11% 12%;
+    --sidebar-primary: 158 70% 42.5%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 18% 91.5%;
+    --sidebar-accent-foreground: 220 11% 10%;
+    --sidebar-border: 220 14% 87%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 11% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 11% 10%;
+    --sidebar-ring: 158 70% 42.5%;
+    /* Semantic: Claude accent (orange) - used sparingly for Claude agent + warnings only */
+    --claude-accent: 38 86% 64%;
+    /* Soft shadow tokens */
+    --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04);
+    --shadow-md: 0 4px 14px rgba(17, 24, 39, 0.06);
+    --shadow-lg: 0 8px 28px rgba(17, 24, 39, 0.08);
+
+    /* AgentCabin Design System: semantic aliases used by shared UI surfaces. */
+    --bg-app: #f7f8fa;
+    --bg-sidebar: #f4f5f6;
+    --bg-surface: #ffffff;
+    --bg-subtle: #fafafb;
+    --bg-hover: rgba(17, 24, 39, 0.035);
+    --bg-selected: rgba(32, 185, 130, 0.1);
+    --text-primary: #17191c;
+    --text-secondary: #62676f;
+    --text-tertiary: #92979f;
+    --text-disabled: #b9bdc3;
+    --border-default: rgba(17, 24, 39, 0.08);
+    --border-subtle: rgba(17, 24, 39, 0.065);
+    --border-strong: rgba(17, 24, 39, 0.13);
+    --divider: rgba(17, 24, 39, 0.065);
+    --accent-primary: #20b982;
+    --accent-primary-hover: #18a874;
+    --accent-primary-active: #159468;
+    --accent-soft: rgba(32, 185, 130, 0.1);
+    --accent-border: rgba(32, 185, 130, 0.32);
+    --status-success: #20b982;
+    --status-warning: #b7791f;
+    --status-danger: #d34b4b;
+    --radius-sm: 8px;
+    --radius-control: 10px;
+    --radius-card: 14px;
+    --radius-composer: 18px;
+    --control-height-sm: 2rem;
+    --control-height-md: 2.25rem;
+    --control-height-lg: 2.5rem;
+    --composer-input-min-height: 4rem;
+    --icon-size-sm: 1rem;
+    --icon-size-md: 1.125rem;
+    --icon-size-lg: 1.25rem;
+    --duration-fast: 120ms;
+    --duration-normal: 160ms;
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --font-ui:
+      -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC",
+      "Microsoft YaHei", "Segoe UI", sans-serif;
+    --font-code:
+      ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    /* User-controlled overrides (set via JS when non-empty) */
+    --font-ui-override: ;
+    --font-code-override: ;
+    --user-accent: ;
+    --user-bg: ;
+    --user-fg: ;
+    /* Typography scale */
+    --ui-font-size: 14px;
+    --ui-font-size-secondary: 12px;
+    --ui-font-size-caption: 10px;
+    --ui-font-size-micro: 11px;
+    --ui-font-size-tiny: 9px;
+    --ui-font-size-heading: 16px;
+    --code-font-size: 13px;
+    /* Contrast factor: 1.0 = neutral, <1.0 = softer, >1.0 = stronger */
+    --contrast-factor: 1;
+    --leading-body: 1.5;
+    --leading-tight: 1.25;
+    --shadow-card: none;
+    --shadow-floating: 0 8px 28px rgba(17, 24, 39, 0.06);
+    --shadow-control-focus: 0 0 0 2px rgba(32, 185, 130, 0.18);
+
+    /* ── AgentCabin Conversation Design System Tokens ── */
+    /* Typography */
+    --chat-font-size: 15px;
+    --chat-secondary-size: 13px;
+    --chat-meta-size: 12px;
+    --chat-code-size: 13px;
+    --chat-line-height: 1.62;
+    --chat-secondary-line-height: 1.5;
+    /* Text colors */
+    --chat-text-primary: #202124;
+    --chat-text-secondary: #646b75;
+    --chat-text-tertiary: #9298a1;
+    /* Surfaces */
+    --chat-surface: #ffffff;
+    --chat-surface-subtle: #f7f8f9;
+    --chat-surface-code: #f5f6f7;
+    --chat-surface-user: #f5f6f7;
+    /* Borders */
+    --chat-border: rgba(17, 24, 39, 0.07);
+    --chat-border-strong: rgba(17, 24, 39, 0.12);
+    /* Radii */
+    --chat-radius-sm: 6px;
+    --chat-radius-md: 10px;
+    --chat-radius-lg: 12px;
+    --chat-radius-user: 12px;
+  }
+
+  /* ── Dark mode ── */
+  .dark {
+    --background: 220 12% 10%;
+    --foreground: 220 14% 93%;
+    --primary: 158 70% 52%;
+    --primary-foreground: 220 12% 10%;
+    --secondary: 220 12% 15%;
+    --secondary-foreground: 220 14% 93%;
+    --muted: 220 12% 15%;
+    --muted-foreground: 220 8% 62%;
+    --accent: 220 12% 18%;
+    --accent-foreground: 220 14% 93%;
+    --destructive: 0 64% 57%;
+    --destructive-foreground: 0 0% 93%;
+    --border: 220 10% 22%;
+    --input: 220 10% 23%;
+    --ring: 158 70% 52%;
+    --sidebar-background: 220 13% 13%;
+    --sidebar-foreground: 220 14% 93%;
+    --sidebar-primary: 158 70% 52%;
+    --sidebar-primary-foreground: 220 12% 10%;
+    --sidebar-accent: 220 12% 19%;
+    --sidebar-accent-foreground: 220 14% 93%;
+    --sidebar-border: 220 10% 20%;
+    --popover: 220 12% 15%;
+    --popover-foreground: 220 14% 93%;
+    --card: 220 12% 15%;
+    --card-foreground: 220 14% 93%;
+    --sidebar-ring: 158 70% 52%;
+    --claude-accent: 38 86% 64%;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+    --bg-app: #1c1f24;
+    --bg-sidebar: #20242a;
+    --bg-surface: #252a31;
+    --bg-subtle: #22262c;
+    --bg-hover: rgba(255, 255, 255, 0.045);
+    --bg-selected: rgba(32, 185, 130, 0.14);
+    --text-primary: #eef0f2;
+    --text-secondary: #a2a8b0;
+    --text-tertiary: #7b828c;
+    --text-disabled: #5d646e;
+    --border-default: rgba(255, 255, 255, 0.11);
+    --border-subtle: rgba(255, 255, 255, 0.075);
+    --border-strong: rgba(255, 255, 255, 0.17);
+    --divider: rgba(255, 255, 255, 0.075);
+    --accent-primary: #35c992;
+    --accent-primary-hover: #48d4a0;
+    --accent-primary-active: #20b982;
+    --accent-soft: rgba(53, 201, 146, 0.14);
+    --accent-border: rgba(53, 201, 146, 0.38);
+    --status-success: #35c992;
+    --status-warning: #e0a84d;
+    --status-danger: #e17878;
+    --shadow-card: none;
+    --shadow-floating: 0 8px 28px rgba(0, 0, 0, 0.28);
+    --shadow-control-focus: 0 0 0 2px rgba(53, 201, 146, 0.22);
+
+    /* ── AgentCabin Conversation Design System Tokens (Dark) ── */
+    --chat-font-size: 15px;
+    --chat-secondary-size: 13px;
+    --chat-meta-size: 12px;
+    --chat-code-size: 13px;
+    --chat-line-height: 1.62;
+    --chat-secondary-line-height: 1.5;
+    --chat-text-primary: #e9eaec;
+    --chat-text-secondary: #a0a4ab;
+    --chat-text-tertiary: #747981;
+    --chat-surface: #1b1c20;
+    --chat-surface-subtle: #212226;
+    --chat-surface-code: #15171c;
+    --chat-surface-user: #242629;
+    --chat-border: rgba(255, 255, 255, 0.07);
+    --chat-border-strong: rgba(255, 255, 255, 0.12);
+    --chat-radius-sm: 6px;
+    --chat-radius-md: 10px;
+    --chat-radius-lg: 12px;
+    --chat-radius-user: 12px;
+  }
+
+  /* ── Neutral Grayscale Color Schemes ── */
+  .scheme-neutral {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 9%;
+    --sidebar-border: 0 0% 91%;
+    --bg-app: #fafafa;
+    --bg-sidebar: #f5f5f5;
+    --bg-surface: #ffffff;
+  }
+  .dark.scheme-neutral {
+    --background: 0 0% 9%;
+    --foreground: 0 0% 98%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --sidebar-background: 0 0% 7%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 15%;
+    --bg-app: #141414;
+    --bg-sidebar: #101010;
+    --bg-surface: #1a1a1a;
+  }
+
+  .scheme-zinc {
+    --background: 240 5.9% 100%;
+    --foreground: 240 10% 3.9%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 10% 3.9%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --border: 240 5.9% 89%;
+    --input: 240 5.9% 89%;
+    --sidebar-background: 240 4.8% 97%;
+    --sidebar-foreground: 240 10% 3.9%;
+    --sidebar-border: 240 5.9% 90%;
+    --bg-app: #fafafa;
+    --bg-sidebar: #f4f4f5;
+    --bg-surface: #ffffff;
+  }
+  .dark.scheme-zinc {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --border: 240 3.7% 18%;
+    --input: 240 3.7% 18%;
+    --sidebar-background: 240 10% 3%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-border: 240 3.7% 15%;
+    --bg-app: #121215;
+    --bg-sidebar: #0d0d10;
+    --bg-surface: #18181b;
+  }
+
+  .scheme-slate {
+    --background: 210 40% 98%;
+    --foreground: 222.2 84% 4.9%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --border: 214.3 31.8% 90%;
+    --input: 214.3 31.8% 90%;
+    --sidebar-background: 210 40% 96.5%;
+    --sidebar-foreground: 222.2 84% 4.9%;
+    --sidebar-border: 214.3 31.8% 89%;
+    --bg-app: #f8fafc;
+    --bg-sidebar: #f1f5f9;
+    --bg-surface: #ffffff;
+  }
+  .dark.scheme-slate {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --border: 217.2 32.6% 18%;
+    --input: 217.2 32.6% 18%;
+    --sidebar-background: 224 71% 3.5%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 15%;
+    --bg-app: #0b1120;
+    --bg-sidebar: #070d18;
+    --bg-surface: #0f172a;
+  }
+
+  .scheme-stone {
+    --background: 60 9.1% 97.8%;
+    --foreground: 20 14.3% 4.1%;
+    --secondary: 60 4.8% 95.9%;
+    --secondary-foreground: 20 14.3% 4.1%;
+    --muted: 60 4.8% 95.9%;
+    --muted-foreground: 25 5.3% 44.7%;
+    --border: 20 5.9% 89%;
+    --input: 20 5.9% 89%;
+    --sidebar-background: 60 6% 96%;
+    --sidebar-foreground: 20 14.3% 4.1%;
+    --sidebar-border: 20 5.9% 88%;
+    --bg-app: #fafaf9;
+    --bg-sidebar: #f5f5f4;
+    --bg-surface: #ffffff;
+  }
+  .dark.scheme-stone {
+    --background: 20 14.3% 4.1%;
+    --foreground: 60 9.1% 97.8%;
+    --secondary: 12 6.5% 15.1%;
+    --secondary-foreground: 60 9.1% 97.8%;
+    --muted: 12 6.5% 15.1%;
+    --muted-foreground: 24 5.4% 63.9%;
+    --border: 12 6.5% 18%;
+    --input: 12 6.5% 18%;
+    --sidebar-background: 20 14.3% 3%;
+    --sidebar-foreground: 60 9.1% 97.8%;
+    --sidebar-border: 12 6.5% 15%;
+    --bg-app: #121110;
+    --bg-sidebar: #0e0d0c;
+    --bg-surface: #1c1917;
+  }
+
+  .scheme-gray {
+    --background: 0 0% 100%;
+    --foreground: 220 8.9% 4.6%;
+    --secondary: 220 14.3% 95.9%;
+    --secondary-foreground: 220 8.9% 4.6%;
+    --muted: 220 14.3% 95.9%;
+    --muted-foreground: 220 8.9% 46.1%;
+    --border: 220 13% 89%;
+    --input: 220 13% 89%;
+    --sidebar-background: 220 12% 97%;
+    --sidebar-foreground: 220 8.9% 4.6%;
+    --sidebar-border: 220 13% 88%;
+    --bg-app: #f9fafb;
+    --bg-sidebar: #f3f4f6;
+    --bg-surface: #ffffff;
+  }
+  .dark.scheme-gray {
+    --background: 224 71% 4%;
+    --foreground: 210 20% 98%;
+    --secondary: 215 27.9% 16.9%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 215 27.9% 16.9%;
+    --muted-foreground: 217.9 10.6% 64.9%;
+    --border: 215 27.9% 18%;
+    --input: 215 27.9% 18%;
+    --sidebar-background: 224 71% 3%;
+    --sidebar-foreground: 210 20% 98%;
+    --sidebar-border: 215 27.9% 15%;
+    --bg-app: #0f131a;
+    --bg-sidebar: #0a0e14;
+    --bg-surface: #111827;
+  }
+
+  /* ── Warm scheme (legacy, opt-in only) ── */
+  .scheme-warm {
+    --background: 0 0% 100%;
+    --foreground: 26 24% 12%;
+    --primary: 38 86% 64%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 30 14% 93%;
+    --secondary-foreground: 26 24% 12%;
+    --muted: 30 14% 93%;
+    --muted-foreground: 0 0% 42%;
+    --accent: 30 14% 93%;
+    --accent-foreground: 26 24% 12%;
+    --border: 30 8% 85%;
+    --input: 30 8% 85%;
+    --ring: 38 86% 64%;
+    --sidebar-background: 30 10% 96%;
+    --sidebar-foreground: 26 24% 12%;
+    --sidebar-primary: 38 86% 64%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 30 14% 90%;
+    --sidebar-accent-foreground: 26 24% 12%;
+    --sidebar-border: 30 8% 88%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 26 24% 12%;
+    --sidebar-ring: 38 86% 64%;
+  }
+
+  .dark.scheme-warm {
+    --background: 0 0% 7.1%;
+    --foreground: 0 0% 93%;
+    --primary: 38 86% 64%;
+    --primary-foreground: 0 0% 7.1%;
+    --secondary: 0 0% 15.7%;
+    --secondary-foreground: 0 0% 93%;
+    --muted: 0 0% 15.7%;
+    --muted-foreground: 0 0% 54.5%;
+    --accent: 0 0% 15.7%;
+    --accent-foreground: 0 0% 93%;
+    --destructive: 0 64% 57%;
+    --destructive-foreground: 0 0% 93%;
+    --border: 0 0% 24.7%;
+    --input: 0 0% 24.7%;
+    --ring: 35 93% 77%;
+    --sidebar-background: 26 24% 12%;
+    --sidebar-foreground: 0 0% 93%;
+    --sidebar-primary: 38 86% 64%;
+    --sidebar-primary-foreground: 0 0% 7.1%;
+    --sidebar-accent: 26 15% 20%;
+    --sidebar-accent-foreground: 0 0% 93%;
+    --sidebar-border: 26 10% 18%;
+    --popover: 0 0% 12.9%;
+    --popover-foreground: 0 0% 93%;
+    --sidebar-ring: 38 86% 64%;
+  }
+
+  /* ── Accent Color Schemes ── */
+  .scheme-emerald {
+    --primary: 158 64% 45%;
+    --primary-foreground: 0 0% 100%;
+    --ring: 158 64% 45%;
+    --sidebar-primary: 158 64% 45%;
+  }
+  .dark.scheme-emerald {
+    --primary: 158 64% 52%;
+    --primary-foreground: 0 0% 10%;
+    --ring: 158 64% 52%;
+    --sidebar-primary: 158 64% 52%;
+  }
+
+  .scheme-violet {
+    --primary: 262 83% 58%;
+    --primary-foreground: 0 0% 100%;
+    --ring: 262 83% 58%;
+    --sidebar-primary: 262 83% 58%;
+  }
+  .dark.scheme-violet {
+    --primary: 263 70% 66%;
+    --primary-foreground: 0 0% 10%;
+    --ring: 263 70% 66%;
+    --sidebar-primary: 263 70% 66%;
+  }
+
+  .scheme-ocean {
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --ring: 217 91% 60%;
+    --sidebar-primary: 217 91% 60%;
+  }
+  .dark.scheme-ocean {
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 10%;
+    --ring: 217 91% 60%;
+    --sidebar-primary: 217 91% 60%;
+  }
+
+  .scheme-rose {
+    --primary: 346 84% 61%;
+    --primary-foreground: 0 0% 100%;
+    --ring: 346 84% 61%;
+    --sidebar-primary: 346 84% 61%;
+  }
+  .dark.scheme-rose {
+    --primary: 346 84% 65%;
+    --primary-foreground: 0 0% 10%;
+    --ring: 346 84% 65%;
+    --sidebar-primary: 346 84% 65%;
+  }
+}
+
+/* User-controlled motion preference. Keep layout changes immediate while
+ * preserving the underlying state transitions for users who prefer motion. */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* ── User accent override ── */
+/* When --user-accent is set (non-empty), remap the primary/ring tokens */
+:root:has(body) {
+  --accent-resolved: var(--user-accent, var(--accent-primary));
+}
+
+/* Apply user accent via inline style override — see appearance.svelte.ts applyAppearanceCss */
+/* The JS sets --user-accent directly; CSS then propagates it to semantic tokens via specificity. */
+
+/* ── User background/foreground overrides ── */
+/* Applied via inline style on :root when non-empty (JS-driven) */
+
+/* ── Pointer cursor — toggled by .use-pointer-cursor on <html> ── */
+.use-pointer-cursor button:not(:disabled),
+.use-pointer-cursor [role="button"]:not([aria-disabled="true"]),
+.use-pointer-cursor [role="tab"]:not([aria-disabled="true"]),
+.use-pointer-cursor [role="radio"]:not([aria-disabled="true"]),
+.use-pointer-cursor [role="switch"]:not([aria-disabled="true"]),
+.use-pointer-cursor [role="checkbox"]:not([aria-disabled="true"]),
+.use-pointer-cursor input[type="checkbox"]:not(:disabled),
+.use-pointer-cursor input[type="radio"]:not(:disabled),
+.use-pointer-cursor select:not(:disabled),
+.use-pointer-cursor label[for] {
+  cursor: pointer;
+}
+
+/* ── Translucent sidebar — toggled by .translucent-sidebar on <html> ── */
+.translucent-sidebar .app-shell-sidebar,
+.translucent-sidebar .settings-sidebar,
+.translucent-sidebar [data-sidebar] {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(240, 242, 245, 0.45) 100%
+  ) !important;
+  backdrop-filter: blur(24px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.8) !important;
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.8),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.9),
+    0 8px 32px rgba(0, 0, 0, 0.04) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.5) !important;
+}
+
+.dark.translucent-sidebar .app-shell-sidebar,
+.dark.translucent-sidebar .settings-sidebar,
+.dark.translucent-sidebar [data-sidebar] {
+  background: linear-gradient(
+    135deg,
+    rgba(32, 36, 42, 0.7) 0%,
+    rgba(20, 24, 30, 0.5) 100%
+  ) !important;
+  backdrop-filter: blur(24px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.8) !important;
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.08),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.05) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.translucent-sidebar .settings-sidebar-search input {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border-color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.dark.translucent-sidebar .settings-sidebar-search input {
+  background: rgba(0, 0, 0, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* ── Diff marker symbols — toggled by .diff-symbols on <html> ── */
+/* When active, lines that are additions get a '+' gutter char,
+   deletions get '-'. The diff renderer must apply these classes. */
+.diff-symbols .diff-line-add::before {
+  content: "+ ";
+  font-family: var(--font-code-override, var(--font-code));
+  font-size: 0.75em;
+  color: var(--status-success);
+  user-select: none;
+}
+.diff-symbols .diff-line-del::before {
+  content: "- ";
+  font-family: var(--font-code-override, var(--font-code));
+  font-size: 0.75em;
+  color: var(--status-danger);
+  user-select: none;
+}
+
+/* ── Font smoothing — macOS/WebKit only ── */
+.font-smoothing-enabled body,
+.font-smoothing-enabled body * {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.font-smoothing-disabled body,
+.font-smoothing-disabled body * {
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
+}
+
+/* ── Code areas: respect --code-font-size and --font-code-override ── */
+pre,
+code,
+.code-block,
+.diff-view,
+.terminal-pane,
+[data-code-area] {
+  font-family: var(--font-code-override, var(--font-code));
+  font-size: var(--code-font-size);
+}
+
+/* ── Contrast adjustments via --contrast-factor ── */
+/* Borders and dividers scale with contrast */
+:root {
+  --border-default-alpha: calc(0.08 * var(--contrast-factor));
+  --border-subtle-alpha: calc(0.065 * var(--contrast-factor));
+  --border-strong-alpha: calc(0.13 * var(--contrast-factor));
+  --text-secondary-opacity: calc(clamp(0.5, var(--contrast-factor), 1.5));
+}
+.dark {
+  --border-default-alpha: calc(0.11 * var(--contrast-factor));
+  --border-subtle-alpha: calc(0.075 * var(--contrast-factor));
+  --border-strong-alpha: calc(0.17 * var(--contrast-factor));
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* Respect user font override if set, else fall back to design system default */
+    font-family: var(--font-ui-override, var(--font-ui));
+    font-size: var(--ui-font-size);
+    line-height: var(--leading-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Pet window: keep the WebView truly transparent so the OS compositing
+     layer shows through. app.css sets bg-background on body, which would
+     make the pet window opaque without this override. */
+  html.pet-transparent,
+  html.pet-transparent body,
+  html.pet-transparent body > div {
+    background: transparent !important;
+    background-color: transparent !important;
+  }
+
+  [data-tauri-drag-region],
+  [data-window-drag-region] {
+    -webkit-app-region: drag;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  [data-tauri-drag-region] button,
+  [data-tauri-drag-region] input,
+  [data-tauri-drag-region] textarea,
+  [data-tauri-drag-region] select,
+  [data-tauri-drag-region] a,
+  [data-tauri-drag-region] [role="button"],
+  [data-tauri-drag-region] .no-drag,
+  [data-window-drag-region] button,
+  [data-window-drag-region] input,
+  [data-window-drag-region] textarea,
+  [data-window-drag-region] select,
+  [data-window-drag-region] a,
+  [data-window-drag-region] [role="button"],
+  [data-window-drag-region] .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-control-focus);
+  }
+}
+
+@layer components {
+  /* Reusable control primitives. Page-specific utility classes may still add color or layout. */
+  .ui-button {
+    min-height: var(--control-height-md);
+    border-radius: var(--radius-control);
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    transition:
+      background-color var(--duration-normal) var(--ease-standard),
+      border-color var(--duration-normal) var(--ease-standard),
+      color var(--duration-normal) var(--ease-standard),
+      opacity var(--duration-normal) var(--ease-standard),
+      transform var(--duration-fast) var(--ease-standard);
+  }
+
+  .ui-button:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .ui-button-sm {
+    min-height: var(--control-height-sm);
+    border-radius: var(--radius-sm);
+    font-size: 0.8125rem;
+  }
+
+  .ui-button-lg {
+    min-height: var(--control-height-lg);
+    border-radius: var(--radius-control);
+  }
+
+  .ui-icon-button {
+    display: inline-flex;
+    width: var(--control-height-md);
+    height: var(--control-height-md);
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-control);
+    color: var(--text-secondary);
+    transition:
+      background-color var(--duration-normal) var(--ease-standard),
+      color var(--duration-normal) var(--ease-standard);
+  }
+
+  .ui-icon-button:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .ui-card {
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-card);
+    background: var(--bg-surface);
+    box-shadow: none;
+    transition:
+      border-color var(--duration-normal) var(--ease-standard),
+      background-color var(--duration-normal) var(--ease-standard),
+      box-shadow var(--duration-normal) var(--ease-standard);
+  }
+
+  .ui-card:hover {
+    border-color: var(--border-default);
+  }
+
+  .ui-input {
+    min-height: var(--control-height-md);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-control);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition:
+      border-color var(--duration-normal) var(--ease-standard),
+      background-color var(--duration-normal) var(--ease-standard),
+      box-shadow var(--duration-normal) var(--ease-standard);
+  }
+
+  .ui-input:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+
+  .ui-input:focus {
+    border-color: hsl(var(--ring) / 0.72);
+    box-shadow: var(--shadow-control-focus);
+    outline: none;
+  }
+
+  .ui-input::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  .ui-sidebar-item {
+    min-height: 2.5rem;
+    border-radius: var(--radius-control);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition:
+      background-color var(--duration-normal) var(--ease-standard),
+      color var(--duration-normal) var(--ease-standard);
+  }
+
+  .ui-sidebar-item svg {
+    width: var(--icon-size-sm);
+    height: var(--icon-size-sm);
+  }
+
+  .ui-settings-row {
+    display: flex;
+    min-height: 4rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 0.75rem 0;
+  }
+
+  .ui-settings-row + .ui-settings-row {
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .ui-section-label {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    letter-spacing: 0.02em;
+  }
+
+  .ui-composer {
+    border-radius: var(--radius-composer);
+    box-shadow: var(--shadow-floating);
+    transition:
+      border-color var(--duration-normal) var(--ease-standard),
+      box-shadow var(--duration-normal) var(--ease-standard);
+  }
+
+  .ui-composer:focus-within {
+    box-shadow: var(--shadow-floating);
+  }
+
+  .ui-empty-state {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  @media (max-width: 720px) {
+    .ui-settings-row {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+  }
+}
+
+/* Animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes pulse-bar {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out both;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out both;
+}
+
+.animate-toast-in {
+  animation: toast-in 0.3s ease-out both;
+}
+
+.animate-toast-out {
+  animation: toast-out 0.25s ease-in both;
+}
+
+/* Spin animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Thinking dots */
+@keyframes thinking-bounce {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.thinking-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: hsl(var(--muted-foreground));
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+
+/* Spinner star — pulse between dim and bright */
+.spinner-star {
+  display: inline-block;
+  animation: star-pulse 2s ease-in-out infinite alternate;
+  font-size: 0.75rem;
+  color: hsl(var(--primary));
+}
+@keyframes star-pulse {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* Spinner shimmer — gradient sweep across text */
+.spinner-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary) / 0.6) 0%,
+    hsl(var(--primary)) 40%,
+    hsl(var(--primary) / 0.6) 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-slide 3s ease-in-out infinite;
+}
+@keyframes shimmer-slide {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* Card hover effect */
+.card-hover {
+  transition:
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: hsl(var(--ring) / 0.3);
+}
+.dark .card-hover:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Prose for chat – AgentCabin Conversation Design System ── */
+.prose-chat {
+  font-size: var(--chat-font-size);
+  line-height: var(--chat-line-height);
+  /* No letter-spacing: Chinese text looks better without it */
+  color: var(--chat-text-primary, hsl(var(--foreground)));
+}
+
+/* Inline code (not code blocks — strictly scoped to inline code outside <pre>) */
+.prose-chat :not(pre) > code {
+  font-family: var(--font-code-override, var(--font-code));
+  font-size: 0.9em;
+  font-weight: 400;
+  background: var(--chat-surface-code, #f5f6f7);
+  border: none;
+  padding: 0.12em 0.35em;
+  margin: 0 0.15em;
+  border-radius: 5px;
+  color: inherit;
+  vertical-align: baseline;
+  word-break: break-word;
+}
+.dark .prose-chat :not(pre) > code {
+  background: rgba(255, 255, 255, 0.09);
+  color: inherit;
+}
+
+/* Clickable file path links in chat & prose — neutral code style, no primary color */
+.prose-chat .file-path-link,
+.prose .file-path-link,
+.file-path-link {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1em 0.35em;
+  margin: 0 0.1em;
+  border-radius: 5px;
+  font-family: var(--font-code-override, var(--font-code, monospace));
+  font-size: 0.88em;
+  font-weight: 400;
+  color: var(--chat-text-secondary, hsl(var(--muted-foreground)));
+  background: var(--chat-surface-code, #f5f6f7);
+  border: none;
+  text-decoration: none;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+  vertical-align: baseline;
+  word-break: break-all;
+}
+.prose-chat .file-path-link:hover,
+.prose .file-path-link:hover,
+.file-path-link:hover {
+  color: hsl(var(--foreground));
+  background: rgba(0, 0, 0, 0.08);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dark .file-path-link {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--chat-text-secondary, hsl(var(--muted-foreground)));
+}
+.dark .file-path-link:hover {
+  background: rgba(255, 255, 255, 0.13);
+  color: hsl(var(--foreground));
+}
+.file-path-link .file-icon {
+  font-size: 0.85em;
+  opacity: 0.7;
+  user-select: none;
+}
+
+.prose-chat strong,
+.prose-chat b {
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+.prose-chat p {
+  margin: 0.65em 0;
+}
+.prose-chat p:first-child {
+  margin-top: 0;
+}
+.prose-chat p:last-child {
+  margin-bottom: 0;
+}
+
+/* Headings — sized relative to 15px base */
+.prose-chat h1 {
+  font-size: 1.5em; /* ~22.5px */
+  font-weight: 650;
+  margin: 1.1rem 0 0.45rem;
+  padding-bottom: 0;
+  border-bottom: none;
+  color: hsl(var(--foreground));
+  line-height: 1.3;
+}
+.prose-chat h2 {
+  font-size: 1.3em; /* ~19.5px */
+  font-weight: 650;
+  margin: 1rem 0 0.35rem;
+  padding-bottom: 0;
+  border-bottom: none;
+  color: hsl(var(--foreground));
+  line-height: 1.35;
+}
+.prose-chat h3 {
+  font-size: 1.1em; /* ~16.5px */
+  font-weight: 620;
+  margin: 0.8rem 0 0.25rem;
+  color: hsl(var(--foreground));
+  line-height: 1.4;
+}
+.prose-chat h4 {
+  font-size: 1em; /* 15px */
+  font-weight: 600;
+  margin: 0.7rem 0 0.2rem;
+  color: hsl(var(--foreground));
+  line-height: 1.4;
+}
+/* No extra top margin when heading is first child */
+.prose-chat > h1:first-child,
+.prose-chat > h2:first-child,
+.prose-chat > h3:first-child,
+.prose-chat > h4:first-child {
+  margin-top: 0;
+}
+
+/* Lists */
+.prose-chat ul,
+.prose-chat ol {
+  padding-left: 1.4rem;
+  margin: 0.55rem 0;
+}
+.prose-chat li {
+  margin: 0.25rem 0;
+  line-height: var(--chat-line-height);
+}
+.prose-chat li::marker {
+  color: hsl(var(--muted-foreground) / 0.7);
+}
+/* Nested marker style progression */
+.prose-chat ul > li {
+  list-style-type: disc;
+}
+.prose-chat ul ul > li {
+  list-style-type: circle;
+}
+.prose-chat ul ul ul > li {
+  list-style-type: square;
+}
+/* Tighter spacing for nested lists */
+.prose-chat li > ul,
+.prose-chat li > ol {
+  margin: 0.1rem 0;
+}
+
+/* Blockquote — very light left border, no colored background */
+.prose-chat blockquote {
+  border-left: 2px solid hsl(var(--border));
+  background: transparent;
+  padding: 0.35rem 0.875rem;
+  margin: 0.65rem 0;
+  border-radius: 0;
+  color: hsl(var(--muted-foreground));
+}
+.prose-chat blockquote p {
+  margin: 0.2rem 0;
+}
+
+/* Horizontal rule */
+.prose-chat hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(to right, transparent, hsl(var(--border)), transparent);
+  margin: 1.5rem 0;
+}
+
+/* Task list checkbox */
+.prose-chat input[type="checkbox"] {
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border: 1.5px solid hsl(var(--border));
+  border-radius: 0.25rem;
+  background: transparent;
+  vertical-align: middle;
+  margin-right: 0.375rem;
+  position: relative;
+}
+.prose-chat input[type="checkbox"]:checked {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+.prose-chat input[type="checkbox"]:checked::after {
+  content: "\2713";
+  position: absolute;
+  color: hsl(var(--primary-foreground));
+  font-size: 0.7rem;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Table wrapper (rounded container + zebra stripes + horizontal scroll) */
+.table-wrapper {
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  border: 1px solid hsl(var(--border) / 0.5);
+  border-radius: 0.5rem;
+}
+.table-wrapper table {
+  margin: 0;
+  width: 100%;
+  border-collapse: collapse;
+  border: none;
+}
+.table-wrapper th {
+  background: hsl(var(--muted) / 0.6);
+  font-weight: 600;
+  text-align: left;
+}
+.table-wrapper td,
+.table-wrapper th {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.3);
+  font-size: 0.8125rem;
+}
+.table-wrapper tbody tr:last-child td {
+  border-bottom: none;
+}
+.table-wrapper tbody tr:nth-child(even) {
+  background: hsl(var(--muted) / 0.15);
+}
+
+/* Code block container — light gray surface, subtle border */
+.code-block {
+  border-radius: var(--chat-radius-md, 10px);
+  overflow: hidden;
+  margin: 0.5rem 0;
+  background: var(--chat-surface-code, #f5f6f7);
+  border: 1px solid var(--chat-border, rgba(17, 24, 39, 0.07));
+}
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.2rem 0.75rem;
+  background: transparent;
+  border-bottom: 1px solid var(--chat-border, rgba(17, 24, 39, 0.07));
+}
+.code-block-lang {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground) / 0.75);
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+.code-block-copy {
+  font-size: 0.6875rem;
+  color: hsl(var(--muted-foreground) / 0.65);
+  cursor: pointer;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  transition:
+    color 0.12s,
+    background-color 0.12s;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+}
+.code-block-copy:hover {
+  color: hsl(var(--foreground));
+  background: rgba(0, 0, 0, 0.05);
+}
+.code-block-copy.copied {
+  color: hsl(142 71% 40%);
+}
+.code-block pre {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0;
+  background: transparent;
+  overflow-x: auto;
+  font-size: var(--chat-code-size, 13px);
+  line-height: 1.55;
+  color: hsl(var(--foreground));
+}
+.code-block pre code {
+  background: transparent !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  font-size: inherit;
+  color: inherit !important;
+}
+
+/* Tool terminal output (Bash, shell commands) — theme-aware surface.
+   Light: follows --muted/--foreground like other tool cards (Read/Edit/Grep).
+   Dark: keeps a deeper "terminal" black, matching .tool-code-block's dark override. */
+.tool-terminal {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--code-font-size);
+  line-height: 1.5;
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.dark .tool-terminal {
+  background: hsl(0 0% 8%);
+  color: hsl(0 0% 85%);
+}
+
+/* Shell command syntax colors (colorizeCommand output) — theme-aware.
+   Light palette is darkened for contrast on the light surface; dark palette
+   keeps the original terminal-bright colors. */
+.sh-prompt {
+  color: #16a34a;
+}
+.sh-command {
+  color: #1f2937;
+}
+.sh-flag {
+  color: #0891b2;
+}
+.sh-string {
+  color: #a16207;
+}
+.sh-operator {
+  color: #9333ea;
+}
+.sh-assign {
+  color: #0891b2;
+}
+.sh-arg {
+  color: #4b5563;
+}
+
+.dark .sh-prompt {
+  color: #4ade80;
+}
+.dark .sh-command {
+  color: #e5e7eb;
+}
+.dark .sh-flag {
+  color: #22d3ee;
+}
+.dark .sh-string {
+  color: #facc15;
+}
+.dark .sh-operator {
+  color: #c084fc;
+}
+.dark .sh-assign {
+  color: #22d3ee;
+}
+.dark .sh-arg {
+  color: #9ca3af;
+}
+
+/* Diff view (Edit tool) */
+.diff-section {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--code-font-size);
+  line-height: 1.6;
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+.diff-removed {
+  background: hsl(0 60% 50% / 0.12);
+  color: hsl(0 70% 65%);
+}
+.dark .diff-removed {
+  background: hsl(0 60% 50% / 0.15);
+  color: hsl(0 70% 72%);
+}
+.diff-added {
+  background: hsl(142 60% 45% / 0.12);
+  color: hsl(142 60% 40%);
+}
+.dark .diff-added {
+  background: hsl(142 60% 45% / 0.15);
+  color: hsl(142 60% 65%);
+}
+
+/* Diff table (structuredPatch + fallback) */
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--code-font-size);
+  line-height: 1.6;
+}
+.diff-gutter {
+  width: 4ch;
+  min-width: 4ch;
+  text-align: right;
+  padding-right: 0.5ch;
+  color: hsl(var(--muted-foreground) / 0.5);
+  user-select: none;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.diff-sign {
+  width: 2ch;
+  min-width: 2ch;
+  text-align: center;
+  font-weight: 600;
+  user-select: none;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.diff-sign-del {
+  color: hsl(0 70% 60%);
+}
+.diff-sign-add {
+  color: hsl(142 60% 50%);
+}
+.diff-code {
+  white-space: pre;
+  padding-left: 0.5ch;
+}
+/* Row backgrounds */
+.diff-row-removed td {
+  background: hsl(0 60% 50% / 0.12);
+}
+.diff-row-removed .diff-code {
+  color: hsl(0 70% 65%);
+}
+.dark .diff-row-removed td {
+  background: hsl(0 60% 50% / 0.15);
+}
+.dark .diff-row-removed .diff-code {
+  color: hsl(0 70% 72%);
+}
+.diff-row-added td {
+  background: hsl(142 60% 45% / 0.12);
+}
+.diff-row-added .diff-code {
+  color: hsl(142 60% 40%);
+}
+.dark .diff-row-added td {
+  background: hsl(142 60% 45% / 0.15);
+}
+.dark .diff-row-added .diff-code {
+  color: hsl(142 60% 65%);
+}
+.diff-row-context .diff-code {
+  color: hsl(var(--foreground));
+  opacity: 0.7;
+}
+
+/* Line numbers in code/tool views */
+.tool-line-num {
+  display: inline-block;
+  width: 3ch;
+  text-align: right;
+  color: hsl(var(--muted-foreground) / 0.5);
+  margin-right: 1rem;
+  user-select: none;
+  font-size: 0.75rem;
+}
+
+/* File path header for tool output */
+.tool-file-header {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  padding: 0.25rem 0.75rem;
+  background: hsl(var(--muted) / 0.6);
+  border-bottom: 1px solid hsl(var(--border) / 0.5);
+}
+
+/* Content-visibility optimization: skip layout/paint for off-screen entries.
+ * Note: `content-visibility: auto` already implies layout/style/paint containment
+ * dynamically (size containment when off-screen, normal when on-screen). Declaring
+ * `contain` explicitly overrides this dynamic behavior and was observed to cause
+ * 2.5s style recalc storms on click in WKWebView. Let the browser manage it. */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
+}
+
+/* Scrollbar-hide utility (for horizontal pill rows) */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-muted-foreground/20 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/40;
+}
+
+/* Code block — dark mode uses chat-surface-code token */
+.dark .code-block {
+  background: var(--chat-surface-code, #15171c);
+  border-color: var(--chat-border, rgba(255, 255, 255, 0.07));
+}
+.dark .code-block-header {
+  background: transparent;
+  border-bottom-color: var(--chat-border, rgba(255, 255, 255, 0.07));
+}
+.dark .code-block-copy:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Diff section — dark mode deeper background */
+.dark .diff-section {
+  background: hsl(0 0% 8%);
+}
+
+/* Tool code containers — darker in dark mode (Read, Write new-file, etc.) */
+.dark .tool-code-block {
+  background: hsl(0 0% 8%) !important;
+}
+
+/* ── Highlight.js syntax highlighting (Light Mode / Default) ── */
+.hljs {
+  color: #24292e;
+  background: transparent !important;
+}
+pre.hljs,
+pre code.hljs,
+code.hljs {
+  background: transparent !important;
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  color: #d73a49;
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.class_.inherited__,
+.hljs-title.function_ {
+  color: #6f42c1;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: #005cc5;
+}
+.hljs-regexp,
+.hljs-string,
+.hljs-meta .hljs-string {
+  color: #032f62;
+}
+.hljs-built_in,
+.hljs-symbol {
+  color: #e36209;
+}
+.hljs-comment,
+.hljs-code,
+.hljs-formula {
+  color: #6a737d;
+  font-style: italic;
+}
+.hljs-name,
+.hljs-quote,
+.hljs-selector-tag,
+.hljs-selector-pseudo {
+  color: #22863a;
+}
+.hljs-subst {
+  color: #24292e;
+}
+.hljs-section {
+  color: #005cc5;
+  font-weight: bold;
+}
+.hljs-bullet {
+  color: #735c0f;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: bold;
+}
+.hljs-addition {
+  color: #22863a;
+  background-color: #f0fff4;
+}
+.hljs-deletion {
+  color: #b31d28;
+  background-color: #ffeef0;
+}
+
+/* ── Highlight.js syntax highlighting (Dark Mode) ── */
+.dark .hljs {
+  color: #c9d1d9;
+  background: transparent !important;
+}
+.dark pre.hljs,
+.dark pre code.hljs,
+.dark code.hljs {
+  background: transparent !important;
+}
+.dark .hljs-doctag,
+.dark .hljs-keyword,
+.dark .hljs-meta .hljs-keyword,
+.dark .hljs-template-tag,
+.dark .hljs-template-variable,
+.dark .hljs-type,
+.dark .hljs-variable.language_ {
+  color: #ff7b72;
+}
+.dark .hljs-title,
+.dark .hljs-title.class_,
+.dark .hljs-title.class_.inherited__,
+.dark .hljs-title.function_ {
+  color: #d2a8ff;
+}
+.dark .hljs-attr,
+.dark .hljs-attribute,
+.dark .hljs-literal,
+.dark .hljs-meta,
+.dark .hljs-number,
+.dark .hljs-operator,
+.dark .hljs-variable,
+.dark .hljs-selector-attr,
+.dark .hljs-selector-class,
+.dark .hljs-selector-id {
+  color: #79c0ff;
+}
+.dark .hljs-regexp,
+.dark .hljs-string,
+.dark .hljs-meta .hljs-string {
+  color: #a5d6ff;
+}
+.dark .hljs-built_in,
+.dark .hljs-symbol {
+  color: #ffa657;
+}
+.dark .hljs-comment,
+.dark .hljs-code,
+.dark .hljs-formula {
+  color: #8b949e;
+  font-style: italic;
+}
+.dark .hljs-name,
+.dark .hljs-quote,
+.dark .hljs-selector-tag,
+.dark .hljs-selector-pseudo {
+  color: #7ee787;
+}
+.dark .hljs-subst {
+  color: #c9d1d9;
+}
+.dark .hljs-section {
+  color: #1f6feb;
+  font-weight: bold;
+}
+.dark .hljs-bullet {
+  color: #f2cc60;
+}
+.dark .hljs-emphasis {
+  font-style: italic;
+}
+.dark .hljs-strong {
+  font-weight: bold;
+}
+.dark .hljs-addition {
+  color: #aff5b4;
+  background-color: #033a16;
+}
+.dark .hljs-deletion {
+  color: #ffdcd7;
+  background-color: #67060c;
+}
+
+/* CodeMirror 6 theme integration
+   style-mod may fail to inject CSS on some WebView engines (observed on
+   Intel Mac WKWebView, Windows WebView2). All rules below serve as static
+   fallbacks so CodeMirror renders correctly even when style-mod is absent. */
+.cm-editor {
+  display: flex !important;
+  flex-direction: column !important;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  tab-size: 2;
+  height: 100%;
+}
+.cm-editor .cm-scroller {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+.cm-editor .cm-gutters {
+  background-color: hsl(var(--muted) / 0.4);
+  border-right: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+.cm-editor .cm-lineNumbers .cm-gutterElement {
+  padding-right: 12px;
+  padding-left: 8px;
+}
+.cm-editor .cm-activeLineGutter {
+  background-color: hsl(var(--muted) / 0.65);
+}
+.cm-editor .cm-activeLine {
+  background-color: hsl(var(--muted) / 0.35);
+}
+.cm-editor .cm-content {
+  display: block;
+  flex-grow: 2;
+  flex-shrink: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 0 4px 8px;
+  box-sizing: border-box;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  caret-color: transparent;
+}
+.cm-editor .cm-selectionLayer {
+  z-index: -1;
+  contain: size style;
+}
+.cm-editor .cm-cursorLayer {
+  z-index: 100;
+  contain: size style;
+  pointer-events: none;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+/* Clean, centered chat content width — aligned with composer (56rem / 896px, matching max-w-4xl / Codex width) */
+@layer components {
+  .chat-content-width {
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    max-width: 56rem; /* 896px (Tailwind max-w-4xl) — aligned with Codex desktop dialog width */
+    width: 100%;
+  }
+}
+
+/* Codex-inspired application chrome.
+ * Keep the existing utility classes for behavior and responsive layout, while
+ * giving the chat shell a quieter hierarchy: compact navigation, clear canvas,
+ * and one strong floating composer. */
+.app-shell-sidebar {
+  background: hsl(var(--sidebar-background));
+}
+
+.app-shell-sidebar-panel {
+  background: hsl(var(--sidebar-background));
+  border-right-color: hsl(var(--sidebar-border) / 0.7);
+}
+
+.app-shell-sidebar-header {
+  box-sizing: border-box;
+}
+
+.app-shell-sidebar-header > span {
+  font-size: 0.9375rem;
+  letter-spacing: -0.01em;
+}
+
+.app-shell-sidebar-header button,
+.app-shell-sidebar-footer button {
+  border-radius: 0.5625rem;
+}
+
+.app-shell-sidebar-tabs {
+  min-height: 2.75rem;
+  padding: 0 0.625rem;
+}
+
+.app-shell-sidebar-tabs > button {
+  min-height: 2.75rem;
+  padding: 0.625rem 0.5rem;
+  font-size: 0.8125rem;
+  letter-spacing: -0.005em;
+}
+
+.app-shell-sidebar-search {
+  padding: 0.625rem 0.75rem 0.5rem;
+}
+
+.app-shell-sidebar-search-input {
+  height: 2.25rem;
+  border-radius: 0.625rem;
+  background: hsl(var(--background) / 0.72);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.app-shell-sidebar-search-input--with-adornments {
+  padding-inline: 1.75rem;
+}
+
+.app-shell-sidebar-content {
+  padding: 0.375rem 0.625rem 0.625rem;
+}
+
+.app-shell-conversation-item {
+  border-radius: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.app-shell-sidebar-footer {
+  min-height: 3rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.chat-layout-surface {
+  background: hsl(var(--background));
+}
+
+.chat-main-content {
+  background: hsl(var(--background));
+}
+
+.session-status-bar {
+  min-height: 2.75rem;
+  background: hsl(var(--background) / 0.96);
+  border-bottom-color: hsl(var(--border) / 0.6);
+  font-size: 0.75rem;
+}
+
+.chat-welcome {
+  padding: 1.5rem 1.5rem 5.5rem;
+}
+
+.chat-welcome-inner {
+  width: min(100%, 760px);
+  max-width: 760px;
+}
+
+.chat-welcome-inner h2 {
+  font-size: 1.5rem;
+  line-height: 1.35;
+  letter-spacing: -0.025em;
+}
+
+.chat-welcome-inner p {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.chat-welcome-cards {
+  margin-bottom: 1.5rem;
+}
+
+.chat-welcome-main-grid {
+  gap: 0.625rem;
+}
+
+.chat-welcome-main-grid > button {
+  min-height: 3.25rem;
+  border-radius: 0.75rem;
+  border-color: hsl(var(--border) / 0.72);
+  background: var(--bg-surface);
+  padding: 0.625rem 0.75rem;
+  transition:
+    border-color var(--duration-normal) var(--ease-standard),
+    background-color var(--duration-normal) var(--ease-standard),
+    box-shadow var(--duration-normal) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+
+.chat-welcome-main-grid > button:hover {
+  border-color: hsl(var(--foreground) / 0.2);
+  background: hsl(var(--muted) / 0.42);
+  transform: translateY(-1px);
+}
+
+.prompt-composer {
+  border-radius: var(--radius-composer);
+  border-color: hsl(var(--border) / 0.8);
+  box-shadow: var(--shadow-card);
+}
+
+.prompt-composer:focus-within {
+  border-color: var(--chat-border-strong, var(--border-strong));
+  box-shadow: var(--shadow-floating);
+}
+
+.prompt-composer > div:first-child {
+  padding: 0.625rem 1rem 0.375rem;
+}
+
+.prompt-composer > div:last-child {
+  padding: 0.375rem 0.625rem 0.625rem;
+}
+
+.prompt-composer textarea {
+  line-height: 1.55;
+}
+
+.prompt-composer > div:last-child > div:first-child > button {
+  min-height: 1.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.prompt-composer > div:last-child > div:last-child > button:not(.rounded-full) {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-control);
+}
+
+.ui-agent-selector-trigger,
+.ui-model-picker {
+  transition:
+    background-color var(--duration-normal) var(--ease-standard),
+    color var(--duration-normal) var(--ease-standard);
+}
+
+/* Chat chrome: stable selectors for the actual three-pane layout. The utility
+ * classes above are intentionally kept for behavior; these rules provide the
+ * Codex-like visual hierarchy without depending on generated Tailwind order. */
+.chat-sidebar-panel {
+  width: 100%;
+  min-width: 0;
+  background: hsl(var(--sidebar-background));
+  box-shadow: 0.125rem 0 0.75rem hsl(0 0% 0% / 0.055);
+}
+
+.chat-sidebar-panel .app-shell-sidebar-header {
+  border-bottom: 1px solid hsl(var(--sidebar-border) / 0.55);
+}
+
+.chat-sidebar-panel .app-shell-sidebar-header > span {
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.chat-sidebar-panel .app-shell-sidebar-header button {
+  width: 2.125rem;
+  height: 2.125rem;
+}
+
+.chat-sidebar-panel .app-shell-sidebar-tabs {
+  min-height: 3.25rem;
+  padding-inline: 0.75rem;
+  background: hsl(var(--sidebar-background) / 0.92);
+}
+
+.chat-sidebar-panel .app-shell-sidebar-tabs > button {
+  min-height: 3.25rem;
+  padding: 0.75rem 0.625rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.chat-sidebar-panel .app-shell-sidebar-tabs > button.border-primary {
+  color: hsl(var(--foreground));
+  border-bottom-width: 2px;
+}
+
+.chat-sidebar-panel .app-shell-sidebar-search-input {
+  height: 2.5rem;
+  border-color: hsl(var(--sidebar-border) / 0.85);
+  background: hsl(var(--background) / 0.86);
+  box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.025);
+}
+
+.chat-sidebar-panel .app-shell-sidebar-search-input:focus {
+  border-color: hsl(var(--ring) / 0.65);
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.1);
+}
+
+.chat-sidebar-panel .app-shell-sidebar-content {
+  padding: 0.5rem 0.75rem 0.875rem;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.24) transparent;
+}
+
+.chat-sidebar-panel .chat-sidebar-content {
+  padding-top: 0.375rem;
+}
+
+.chat-sidebar-panel .chat-sidebar-content > button,
+.chat-sidebar-panel .chat-sidebar-content > div > button {
+  border-radius: 0.625rem;
+}
+
+.chat-sidebar-panel .chat-sidebar-content > button {
+  min-height: 2.5rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.chat-sidebar-panel .chat-sidebar-content > div:first-child {
+  margin-bottom: 0.5rem;
+}
+
+.chat-project-group {
+  margin-bottom: 0.25rem;
+}
+
+.chat-project-header {
+  min-height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 0.625rem;
+  padding-inline: 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.chat-project-header:hover,
+.chat-project-header:focus-visible {
+  border-color: hsl(var(--sidebar-border) / 0.7);
+  background: hsl(var(--sidebar-accent) / 0.62);
+}
+
+.chat-project-header > span {
+  min-width: 0;
+}
+
+.chat-project-header > span:last-of-type {
+  color: hsl(var(--muted-foreground));
+  font-weight: 500;
+}
+
+.chat-project-children {
+  margin: 0.125rem 0 0.375rem;
+  padding-left: 0.625rem;
+  border-left: 1px solid hsl(var(--sidebar-border) / 0.72);
+}
+
+.chat-project-new-chat {
+  min-height: 1.75rem;
+  margin-bottom: 0.0625rem;
+  border-radius: 0.5rem;
+}
+
+.chat-conversation-item {
+  position: relative;
+  min-height: 2rem;
+  margin-bottom: 0.125rem;
+  border: 1px solid transparent;
+  border-radius: 0.625rem;
+  padding: 0.3rem 0.75rem;
+}
+
+.chat-conversation-item:hover {
+  border-color: transparent;
+  background: hsl(var(--sidebar-accent) / 0.5);
+}
+
+.chat-conversation-item.bg-sidebar-accent,
+.chat-conversation-item[aria-current="true"] {
+  border-color: transparent;
+  background: hsl(var(--primary) / 0.1) !important;
+  color: hsl(var(--primary)) !important;
+  box-shadow: none;
+}
+
+.chat-conversation-item > div:first-child {
+  min-height: 1.25rem;
+}
+
+.chat-conversation-title {
+  font-size: var(--ui-font-size);
+  font-weight: 560;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+.chat-conversation-time {
+  color: hsl(var(--muted-foreground) / 0.82);
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+
+.chat-conversation-preview {
+  margin: 0.1rem 0 0;
+  color: hsl(var(--muted-foreground) / 0.82);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.chat-conversation-meta {
+  min-height: 1rem;
+  color: hsl(var(--muted-foreground) / 0.88);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.chat-conversation-hover-card {
+  position: fixed;
+  z-index: 100;
+  width: min(21rem, calc(100vw - 1.25rem));
+  padding: 0.8rem 0.9rem;
+  overflow: hidden;
+  pointer-events: none;
+  border: 1px solid hsl(var(--border) / 0.78);
+  border-radius: 0.9rem;
+  background: hsl(var(--popover) / 0.96);
+  color: hsl(var(--popover-foreground));
+  box-shadow:
+    0 16px 38px hsl(0 0% 0% / 0.14),
+    0 2px 8px hsl(0 0% 0% / 0.07);
+  backdrop-filter: blur(18px);
+  animation: chat-conversation-hover-in 140ms ease-out;
+}
+
+.chat-conversation-hover-title {
+  min-width: 0;
+  overflow: hidden;
+  color: hsl(var(--foreground));
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-conversation-hover-time,
+.chat-conversation-hover-agent,
+.chat-conversation-hover-footer {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.6875rem;
+}
+
+.chat-conversation-hover-agent {
+  margin-top: 0.2rem;
+}
+
+.chat-conversation-hover-summary {
+  display: -webkit-box;
+  margin: 0.75rem 0;
+  overflow: hidden;
+  color: hsl(var(--foreground) / 0.9);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.chat-conversation-hover-details {
+  border-top: 1px solid hsl(var(--border) / 0.62);
+  padding-top: 0.6rem;
+}
+
+.chat-conversation-hover-detail {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  color: hsl(var(--foreground) / 0.82);
+  font-size: 0.6875rem;
+}
+
+.chat-conversation-hover-detail svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.chat-conversation-hover-path {
+  margin: 0.3rem 0 0.55rem 1.3rem;
+  color: hsl(var(--muted-foreground));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.625rem;
+}
+
+.chat-conversation-hover-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+
+@keyframes chat-conversation-hover-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (hover: none), (max-width: 700px) {
+  .chat-conversation-hover-card {
+    display: none;
+  }
+}
+
+.chat-agent-mark {
+  width: 0.4rem;
+  height: 0.4rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+.chat-agent-claude {
+  background: hsl(var(--claude-accent));
+}
+
+.chat-agent-codex {
+  background: hsl(210 90% 58%);
+}
+
+.chat-agent-pi {
+  background: hsl(270 75% 60%);
+}
+
+.chat-agent-dsh {
+  background: hsl(189 94% 43%);
+}
+
+.chat-conversation-item .chat-unread-dot {
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+}
+
+.chat-sidebar-panel .app-shell-sidebar-content > button,
+.chat-sidebar-panel .app-shell-sidebar-content > div > button {
+  min-height: 2.75rem;
+  border: 1px solid transparent;
+}
+
+.chat-sidebar-panel .app-shell-sidebar-content > button:hover,
+.chat-sidebar-panel .app-shell-sidebar-content > div > button:hover {
+  border-color: hsl(var(--sidebar-border) / 0.72);
+  background: hsl(var(--sidebar-accent) / 0.62);
+}
+
+.chat-sidebar-panel .app-shell-sidebar-footer {
+  background: hsl(var(--sidebar-background) / 0.96);
+  border-top-color: hsl(var(--sidebar-border) / 0.65);
+}
+
+.chat-right-panel {
+  min-width: 0;
+  background: hsl(var(--sidebar-background));
+  border-left-color: hsl(var(--border) / 0.8);
+  box-shadow: -0.125rem 0 0.75rem hsl(0 0% 0% / 0.055);
+}
+
+.chat-right-panel-inner {
+  background: hsl(var(--sidebar-background));
+}
+
+.chat-right-panel-header {
+  min-height: 4rem;
+  padding: 0.875rem 1rem;
+  background: hsl(var(--sidebar-background));
+  border-bottom-color: hsl(var(--border) / 0.7);
+}
+
+.chat-right-panel-header button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5625rem;
+}
+
+.chat-right-panel-header button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.chat-right-panel-header button.bg-accent {
+  background: hsl(var(--accent));
+  box-shadow: inset 0 0 0 1px hsl(var(--border) / 0.35);
+}
+
+.chat-right-panel-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-right-panel-tab:hover {
+  background: hsl(var(--accent) / 0.72);
+}
+
+.chat-right-panel-inner > div:last-child {
+  background: hsl(var(--background));
+}
+
+.chat-three-pane {
+  background: hsl(var(--background));
+}
+
+.chat-canvas {
+  min-width: 0;
+  background: hsl(var(--background));
+}
+
+.chat-canvas > .session-status-bar {
+  padding-inline: 1rem;
+}
+
+.chat-welcome-inner {
+  width: min(100%, 760px);
+  max-width: 760px;
+}
+
+.chat-welcome-main-grid {
+  gap: 0.625rem;
+}
+
+.chat-welcome-main-grid > button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 3px;
+}
+
+.chat-welcome-main-grid > button[aria-expanded="true"] {
+  border-color: hsl(var(--foreground) / 0.3);
+  background: hsl(var(--muted) / 0.65);
+}
+
+@media (max-width: 900px) {
+  .chat-sidebar-panel {
+    box-shadow: none;
+  }
+
+  .chat-right-panel-header {
+    padding-inline: 0.75rem;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * AgentCabin product shell refinements
+ * Shared by the Chat shell, settings rail and the composer. Keep these rules
+ * semantic so page markup can use the same visual language in both surfaces.
+ * ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --app-header-height: 56px;
+  --app-sidebar-row-height: 40px;
+  --app-sidebar-icon-button: 32px;
+}
+
+body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
+.app-shell,
+.chat-layout-surface,
+.chat-three-pane,
+.chat-main-content,
+.chat-canvas {
+  background: var(--bg-app);
+}
+
+.app-shell-sidebar,
+.app-shell-sidebar-panel,
+.settings-sidebar {
+  background: var(--bg-sidebar) !important;
+  color: var(--text-primary);
+  border-color: var(--border-default) !important;
+  box-shadow: none !important;
+}
+
+.app-shell-sidebar:focus,
+.app-shell-sidebar-panel:focus,
+.settings-sidebar:focus {
+  outline: none;
+  box-shadow: none !important;
+}
+
+.app-shell-sidebar-panel {
+  border-right-width: 1px;
+}
+
+.app-shell-sidebar-header {
+  min-height: auto;
+  height: auto;
+  border-bottom: 1px solid var(--divider);
+}
+
+/* The macOS title-bar overlay shares this header. Keep the traffic-light safe area. */
+.app-shell-sidebar-header.pt-9 {
+  padding-top: 36px;
+  padding-bottom: 10px;
+}
+
+.app-shell-sidebar-header.pt-7 {
+  min-height: 72px;
+  height: 72px;
+  padding-top: 28px;
+  padding-bottom: 8px;
+}
+
+.app-shell-sidebar-header > div {
+  min-height: var(--app-sidebar-row-height);
+}
+
+.app-shell-sidebar-header > div > span,
+.app-shell-sidebar-header > div > div > span {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.app-shell-sidebar-header button,
+.app-shell-sidebar-footer a,
+.app-shell-sidebar-footer button {
+  min-width: var(--app-sidebar-icon-button);
+  min-height: var(--app-sidebar-icon-button);
+  border-radius: var(--radius-sm);
+}
+
+.app-shell-sidebar-header button:hover,
+.app-shell-sidebar-footer a:hover,
+.app-shell-sidebar-footer button:hover {
+  background: var(--bg-hover) !important;
+}
+
+.app-shell-sidebar-tabs {
+  min-height: var(--app-sidebar-row-height);
+  padding: 0 12px;
+  border-bottom-color: var(--divider) !important;
+  background: transparent;
+}
+
+.app-shell-sidebar-tabs > button {
+  min-height: var(--app-sidebar-row-height);
+  padding: 0 12px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.app-shell-sidebar-tabs > button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.app-shell-sidebar-tabs > button.border-primary,
+.chat-sidebar-panel .app-shell-sidebar-tabs > button.border-primary {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+.app-shell-sidebar-search {
+  padding: 8px 12px 6px !important;
+}
+
+.app-shell-sidebar-search-input {
+  height: 36px !important;
+  border-color: var(--border-default) !important;
+  border-radius: var(--radius-control) !important;
+  background: var(--bg-surface) !important;
+  color: var(--text-primary);
+  font-size: 14px !important;
+  box-shadow: none !important;
+}
+
+.app-shell-sidebar-search-input:focus {
+  border-color: var(--accent-border) !important;
+  box-shadow: var(--shadow-control-focus) !important;
+}
+
+.app-shell-sidebar-content {
+  padding: 8px 12px 12px !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(98, 103, 111, 0.22) transparent;
+}
+
+.chat-sidebar-panel .chat-sidebar-content > button,
+.chat-sidebar-panel .chat-sidebar-content > div > button,
+.chat-sidebar-panel .chat-project-header,
+.chat-sidebar-panel .chat-conversation-item {
+  border-radius: var(--radius-sm);
+}
+
+.chat-sidebar-panel .chat-project-header {
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.chat-sidebar-panel .chat-project-header:hover,
+.chat-sidebar-panel .chat-project-header:focus-visible,
+.chat-sidebar-panel .chat-conversation-item:hover,
+.chat-sidebar-panel .chat-sidebar-content > button:hover,
+.chat-sidebar-panel .chat-sidebar-content > div > button:hover {
+  border-color: transparent;
+  background: var(--bg-hover) !important;
+}
+
+.chat-sidebar-panel .chat-conversation-item {
+  min-height: 28px;
+  margin-bottom: 2px;
+  border-color: transparent;
+  padding: 4px 8px;
+}
+
+.chat-sidebar-panel .chat-conversation-item.bg-sidebar-accent,
+.chat-sidebar-panel .chat-conversation-item[aria-current="true"] {
+  border-color: transparent;
+  background: hsl(var(--primary) / 0.1) !important;
+  color: hsl(var(--primary)) !important;
+  box-shadow: none;
+  font-weight: 500;
+}
+
+.chat-sidebar-panel .chat-conversation-title {
+  font-size: var(--ui-font-size);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.chat-sidebar-panel .chat-conversation-time,
+.chat-sidebar-panel .chat-conversation-preview,
+.chat-sidebar-panel .chat-conversation-meta {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.chat-sidebar-panel .chat-agent-mark {
+  width: 6px;
+  height: 6px;
+}
+
+.chat-sidebar-panel .app-shell-sidebar-footer {
+  min-height: 48px;
+  padding: 8px 12px;
+  border-top-color: var(--divider) !important;
+  background: var(--bg-sidebar) !important;
+}
+
+.chat-sidebar-panel .app-shell-sidebar-footer a {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.session-status-bar {
+  height: auto;
+  min-height: var(--app-header-height);
+  flex: 0 0 auto;
+  border-bottom-color: var(--divider) !important;
+  background: var(--bg-surface) !important;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.session-status-bar > div:first-child {
+  height: var(--app-header-height) !important;
+  min-height: var(--app-header-height);
+  padding-inline: 20px;
+}
+
+.session-status-bar > div:nth-child(2) {
+  height: 28px;
+  min-height: 28px;
+  border-top-color: var(--divider) !important;
+  background: var(--bg-surface);
+}
+
+.chat-welcome {
+  padding: 32px 24px 120px;
+}
+
+.chat-welcome-inner {
+  width: min(100%, 760px);
+  max-width: 760px;
+}
+
+.chat-welcome-inner > img,
+.work-home-logo {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+}
+
+.chat-welcome-inner h2,
+.work-home-title {
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 36px;
+  letter-spacing: -0.025em;
+}
+
+.chat-welcome-inner p,
+.work-home-subtitle {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.chat-resume-action {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 36px;
+  align-self: center;
+  margin: 16px auto 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 400;
+  box-shadow: none;
+}
+
+.chat-resume-action:hover {
+  border-color: var(--border-strong) !important;
+  background: var(--bg-hover) !important;
+}
+
+/* Old hot-reloaded sessions can retain the former transient message ring. */
+.chat-content [data-entry-id].ring-2 {
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  box-shadow: none !important;
+}
+
+.prompt-composer {
+  width: 100%;
+  max-width: 56rem;
+  margin-inline: auto;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-composer) !important;
+  background: var(--bg-surface) !important;
+  box-shadow: var(--shadow-floating) !important;
+}
+
+.prompt-composer:focus-within {
+  border-color: var(--chat-border-strong) !important;
+  box-shadow: var(--shadow-floating) !important;
+}
+
+.prompt-composer > div:first-child {
+  padding: 10px 16px 8px !important;
+  border-bottom-color: var(--divider) !important;
+}
+
+.prompt-composer textarea,
+.prompt-composer textarea:focus,
+.prompt-composer textarea:focus-visible,
+.ui-composer textarea,
+.ui-composer textarea:focus,
+.ui-composer textarea:focus-visible {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-shadow: 0 0 #0000 !important;
+}
+
+.prompt-composer textarea {
+  min-height: var(--composer-input-min-height);
+  padding: 12px 16px 8px !important;
+  color: var(--text-primary);
+  font-size: var(--chat-font-size, 15px);
+  line-height: var(--chat-line-height, 1.62);
+}
+
+.prompt-composer textarea::placeholder {
+  color: var(--chat-text-tertiary, #9298a1);
+}
+
+.prompt-composer > div:last-child {
+  min-height: 48px;
+  padding: 6px 12px 10px !important;
+}
+
+.prompt-composer > div:last-child button:not(.fixed *):not([role="menu"] *):not([role="dialog"] *) {
+  min-height: var(--control-height-sm);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.prompt-composer
+  > div:last-child
+  button[class*="h-7"][class*="w-7"]:not(.fixed *):not([role="menu"] *):not([role="dialog"] *) {
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+}
+
+.prompt-composer
+  > div:last-child
+  button[class*="h-8"][class*="w-8"]:not(.fixed *):not([role="menu"] *):not([role="dialog"] *) {
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+}
+
+.prompt-composer
+  > div:last-child
+  button:not(.fixed *):not([role="menu"] *):not([role="dialog"] *):hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.prompt-composer
+  > div:last-child
+  button.bg-foreground:not(.fixed *):not([role="menu"] *):not([role="dialog"] *) {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.prompt-composer
+  > div:last-child
+  button.bg-foreground:not(.fixed *):not([role="menu"] *):not([role="dialog"] *):hover {
+  background: var(--accent-primary-hover);
+}
+
+.prompt-composer
+  > div:last-child
+  button.text-muted-foreground\/40:disabled:not(.fixed *):not([role="menu"] *):not(
+    [role="dialog"] *
+  ) {
+  color: var(--text-disabled);
+}
+
+.ui-agent-selector-trigger,
+.ui-model-picker {
+  min-height: 32px !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.ui-agent-selector-trigger {
+  font-size: 14px !important;
+}
+
+.ui-model-picker {
+  font-size: 12px !important;
+}
+
+/* ── User-controlled UI typography ────────────────────────────────────────
+ * Tailwind's text utilities use the document's fixed rem root, so they do not
+ * respond to the UI base size applied to body. Keep the existing hierarchy,
+ * but bind the app shell and settings surfaces to the shared UI tokens. */
+.settings-sidebar-header > button,
+.settings-sidebar-header input,
+.settings-sidebar-nav button,
+.settings-sidebar-nav a {
+  font-size: var(--ui-font-size) !important;
+  line-height: 1.5;
+}
+
+.settings-sidebar-group > div:first-child {
+  font-size: var(--ui-font-size-caption);
+  line-height: 1.5;
+}
+
+.settings-sidebar-empty {
+  font-size: var(--ui-font-size-secondary);
+  line-height: 1.5;
+}
+
+.settings-content .text-sm {
+  font-size: var(--ui-font-size) !important;
+}
+
+.settings-content .text-xs {
+  font-size: var(--ui-font-size-secondary) !important;
+}
+
+.settings-content .text-base {
+  font-size: var(--ui-font-size-heading) !important;
+}
+
+.app-shell-sidebar-header .text-sm {
+  font-size: var(--ui-font-size) !important;
+}
+
+.app-shell-sidebar-header .text-xs {
+  font-size: var(--ui-font-size-secondary) !important;
+}
+
+.app-shell-sidebar-header > div > span,
+.app-shell-sidebar-header > div > div > span,
+.app-shell-sidebar-search-input,
+.chat-sidebar-panel .app-shell-sidebar-footer a,
+.session-status-bar,
+.chat-welcome-inner p,
+.chat-resume-action,
+.ui-agent-selector-trigger {
+  font-size: var(--ui-font-size) !important;
+}
+
+.prompt-composer textarea {
+  font-size: var(--chat-font-size) !important;
+  line-height: 1.58 !important;
+}
+
+.app-shell-sidebar-tabs > button {
+  font-size: 13px !important;
+}
+
+.chat-sidebar-panel .chat-project-header {
+  font-size: 12px !important;
+}
+
+.chat-sidebar-panel .chat-conversation-title {
+  font-size: 13px !important;
+}
+
+.prompt-composer > div:last-child button:not(.fixed *):not([role="menu"] *):not([role="dialog"] *),
+.ui-model-picker {
+  font-size: var(--ui-font-size-secondary) !important;
+}
+
+.chat-sidebar-panel .chat-conversation-time,
+.chat-sidebar-panel .chat-conversation-preview,
+.chat-sidebar-panel .chat-conversation-meta {
+  font-size: var(--ui-font-size-caption);
+}
+
+/* Conversation typography: isolated from general UI typography.
+ * Respects --chat-font-size (15px) and --chat-line-height (1.62). */
+.chat-message-user-body,
+.chat-message-body,
+.prose-chat,
+.prose-chat > .prose,
+.prose-chat > pre,
+.chat-message-body > .prose,
+.chat-message-body > pre {
+  font-size: var(--chat-font-size) !important;
+}
+
+.chat-message-user-body,
+.chat-message-body,
+.prose-chat,
+.prose-chat > .prose,
+.prose-chat > pre,
+.chat-message-body > .prose,
+.chat-message-body > pre {
+  line-height: var(--chat-line-height) !important;
+}
+
+.chat-message-body .prose h1 {
+  font-size: 1.5em;
+  line-height: 1.3;
+}
+
+.chat-message-body .prose h2 {
+  font-size: 1.3em;
+  line-height: 1.35;
+}
+
+.chat-message-body .prose h3 {
+  font-size: 1.1em;
+  line-height: 1.4;
+}
+
+.chat-message-body .prose h4 {
+  font-size: 1em;
+  line-height: 1.4;
+}
+
+/* Pi Work renders its own navigation and workspace tree inside the shared
+ * shell. Keep its hierarchy intact instead of flattening every text utility
+ * into the body size. */
+.work-mode-sidebar {
+  font-family: var(--font-ui-override, var(--font-ui));
+  font-size: var(--ui-font-size-secondary);
+  line-height: 1.45;
+}
+
+.work-sidebar-nav {
+  padding: 8px 8px 10px !important;
+}
+
+.ui-sidebar-nav-item {
+  min-height: 34px;
+  padding: 0 10px !important;
+  border-radius: 8px !important;
+  font-family: inherit;
+  font-size: 13px !important;
+  line-height: 20px !important;
+}
+
+.work-sidebar-nav-item {
+  min-height: 34px;
+  color: var(--text-secondary) !important;
+}
+
+.work-sidebar-nav-item svg {
+  color: var(--text-secondary) !important;
+}
+
+.work-sidebar-nav-item--active {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+  box-shadow: inset 2px 0 0 var(--accent-primary);
+  font-weight: 600 !important;
+}
+
+.work-sidebar-nav-item--active svg {
+  color: var(--accent-primary) !important;
+}
+
+.work-sidebar-body {
+  padding: 10px 12px 12px !important;
+}
+
+.work-sidebar-section-label {
+  min-height: 24px;
+  font-size: 10.5px !important;
+  letter-spacing: 0.02em;
+  line-height: 1.35 !important;
+  text-transform: none;
+}
+
+.chat-project-workspace-row,
+.work-sidebar-workspace-row {
+  min-height: 34px;
+  border-radius: 8px !important;
+}
+
+.chat-project-workspace-button,
+.work-sidebar-workspace-button {
+  font-size: 13px !important;
+  font-weight: 500;
+  line-height: 1.4 !important;
+}
+
+.chat-project-new-chat,
+.work-sidebar-conversation-action,
+.work-sidebar-add-workspace {
+  min-height: 32px;
+  padding: 0 10px !important;
+  font-size: 13px !important;
+  line-height: 20px !important;
+}
+
+/* ConversationItem is shared with Code and normally follows the 14px shell
+ * title token. Work's tree needs one quieter step so workspace names and
+ * sessions do not compete with the primary navigation. */
+.work-mode-sidebar .chat-conversation-title {
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+}
+
+.work-mode-sidebar .chat-conversation-time,
+.work-mode-sidebar .chat-conversation-preview,
+.work-mode-sidebar .chat-conversation-meta {
+  font-size: 10px !important;
+  line-height: 1.3 !important;
+}
+
+.work-mode-sidebar [class*="text-[10px]"] {
+  font-size: var(--ui-font-size-caption) !important;
+}
+
+.work-mode-sidebar [class*="text-[11px]"] {
+  font-size: var(--ui-font-size-micro) !important;
+}
+
+.work-mode-sidebar [class*="text-[9px]"] {
+  font-size: var(--ui-font-size-tiny) !important;
+}
+
+/* Shared active navigation state. Settings and chat use this semantic class,
+ * so no page needs to invent a second blue/gray selection color. */
+.ui-nav-selected {
+  background: var(--accent-soft) !important;
+  color: var(--accent-primary) !important;
+  box-shadow: none !important;
+}
+
+.ui-nav-selected svg {
+  color: var(--accent-primary);
+}
+
+.ui-nav-item:hover {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary);
+}
+
+.ui-switch {
+  width: 36px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  transition:
+    background-color var(--duration-normal) var(--ease-standard),
+    border-color var(--duration-normal) var(--ease-standard);
+}
+
+.ui-switch[aria-checked="true"] {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+}
+
+.ui-switch > span {
+  width: 16px;
+  height: 16px;
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.18);
+}
+
+.ui-switch[aria-checked="true"] > span {
+  transform: translateX(17px);
+}
+
+@media (max-width: 720px) {
+  .session-status-bar > div:first-child {
+    padding-inline: 12px;
+  }
+
+  .chat-welcome {
+    padding-inline: 16px;
+  }
+
+  .prompt-composer {
+    border-radius: 14px !important;
+  }
+}
+
+/* ── WorkBuddy-style Chat Search Highlight ── */
+mark.agent-search-highlight {
+  background-color: rgba(45, 212, 191, 0.28) !important;
+  color: inherit !important;
+  border-radius: 3px !important;
+  padding: 1px 2px !important;
+  margin: 0 !important;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.dark mark.agent-search-highlight {
+  background-color: rgba(52, 211, 153, 0.28) !important;
+  color: inherit !important;
+}
+
+mark.agent-search-highlight.agent-search-highlight-active {
+  background-color: rgba(16, 185, 129, 0.75) !important;
+  color: #ffffff !important;
+  box-shadow:
+    0 0 0 2px #059669,
+    0 1px 4px rgba(0, 0, 0, 0.18) !important;
+  font-weight: 600 !important;
+}
+
+.dark mark.agent-search-highlight.agent-search-highlight-active {
+  background-color: rgba(16, 185, 129, 0.85) !important;
+  color: #022c22 !important;
+  box-shadow:
+    0 0 0 2px #34d399,
+    0 1px 6px rgba(0, 0, 0, 0.35) !important;
+  font-weight: 600 !important;
+}
+
+/* Work home is intentionally quieter than the capability-rich conversation
+ * view. Keep this scoped so Code keeps its existing information architecture. */
+.work-home-empty-state {
+  padding-top: clamp(1.5rem, 7vh, 4.5rem);
+}
+
+.work-home-secondary-actions {
+  display: none !important;
+}
+
+.work-home-composer {
+  width: 100%;
+  max-width: 56rem;
+}
+
+@media (max-width: 720px) {
+  .work-home-empty-state {
+    padding-top: 1rem;
+  }
+
+  .work-home-title {
+    font-size: 24px !important;
+    line-height: 32px;
+  }
+}
+
+/* ── Composer context row (Codex style) ───────────────────────────────────────
+ * The agent / project / workspace / branch chips live in a muted strip above the
+ * textarea, mirroring the Codex composer instead of crowding the bottom bar.
+ * Behavior is unchanged; only the placement and chrome differ. */
+.prompt-composer > div.composer-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: 8px 8px 0 !important;
+  padding: 3px !important;
+  border-bottom: 0 !important;
+  border-radius: var(--radius-control);
+  background: hsl(var(--muted) / 0.75);
+}
+
+/* Composer context-row chips: agent / project / workspace / branch.
+ * `:not([data-composer-menu])` exempts the dropdown menus these chips open. Those
+ * menus are absolutely positioned overlays parented directly under a chip wrapper,
+ * so without the exemption they inherit the chip chrome — most visibly the
+ * `:hover` background below, which is a near-transparent wash that lets the page
+ * behind the open menu show through. */
+.prompt-composer > div.composer-context-row > div > button,
+.prompt-composer > div.composer-context-row > div > div:not([data-composer-menu]) {
+  min-height: 26px;
+  padding-inline: 8px !important;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--ui-font-size-secondary, 12px);
+}
+
+.prompt-composer > div.composer-context-row > div > button:hover:not(:disabled),
+.prompt-composer > div.composer-context-row > div > div:not([data-composer-menu]):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.prompt-composer > div.composer-context-row + textarea {
+  padding-top: 8px !important;
+}

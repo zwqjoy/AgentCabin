@@ -1,0 +1,479 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import {
+    EditorView,
+    lineNumbers,
+    highlightActiveLineGutter,
+    highlightActiveLine,
+    drawSelection,
+    keymap,
+  } from "@codemirror/view";
+  import { EditorState, Compartment, type Extension } from "@codemirror/state";
+  import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+  import {
+    bracketMatching,
+    syntaxHighlighting,
+    defaultHighlightStyle,
+    LanguageDescription,
+  } from "@codemirror/language";
+  import { classHighlighter } from "@lezer/highlight";
+  import { languages } from "@codemirror/language-data";
+  import { oneDark } from "@codemirror/theme-one-dark";
+  import { dbg, dbgWarn } from "$lib/utils/debug";
+  import { perfMark, perfMarkAsync } from "$lib/utils/perf";
+  import { fileName } from "$lib/utils/format";
+  import {
+    resolveStaticExtensionInfo,
+    resolveStaticFilenameInfo,
+    resolveByFirstLine,
+  } from "$lib/utils/codemirror-languages";
+
+  let {
+    content = $bindable(""),
+    filePath = "",
+    readonly = false,
+    onsave,
+    class: className = "",
+  }: {
+    content: string;
+    filePath?: string;
+    readonly?: boolean;
+    onsave?: () => void;
+    class?: string;
+  } = $props();
+
+  let editorEl: HTMLDivElement | undefined = $state();
+  let view: EditorView | undefined = $state();
+  let updating = false;
+
+  const themeCompartment = new Compartment();
+  const langCompartment = new Compartment();
+
+  /** Race condition guard: only apply the latest language resolution. */
+  let langSeq = 0;
+
+  /**
+   * Resolve language extensions for a file path.
+   *
+   * 1a. Filename match (Containerfile, Makefile, Cargo.lock, .gitignore,
+   *     Dockerfile.dev, ...) — must run BEFORE extension match because
+   *     Dockerfile.dev would otherwise miss EXT_MAP for "dev" and fall
+   *     through pointlessly. Note: exact "Dockerfile" / "Component.vue" /
+   *     "snippet.liquid" are intentionally NOT in static maps so the
+   *     dynamic loader can supply their real parsers.
+   * 1b. Extension static mapping (sync) — covers ~30 common languages
+   * 2.  Dynamic fallback via @codemirror/language-data (async, with try/catch)
+   * 3.  First-line detection (shebang, XML declaration, JSON brace)
+   * 4.  Returns [] on failure (plain text, never throws)
+   */
+  async function resolveLanguage(path: string): Promise<Extension[]> {
+    const name = fileName(path);
+
+    // 1a. Filename match
+    const filenameInfo = resolveStaticFilenameInfo(name);
+    if (filenameInfo) {
+      dbg("code-editor", "filename-hit", {
+        name,
+        kind: filenameInfo.kind,
+        approx: filenameInfo.approx,
+      });
+      return filenameInfo.extensions;
+    }
+
+    // 1b. Extension static mapping (sync — no dynamic chunk loading)
+    const extInfo = resolveStaticExtensionInfo(name);
+    if (extInfo) {
+      dbg("code-editor", "static-hit", {
+        name,
+        kind: extInfo.kind,
+        approx: extInfo.approx,
+      });
+      return extInfo.extensions;
+    }
+
+    // 2. Dynamic fallback: language-data auto-detection
+    const desc = LanguageDescription.matchFilename(languages, name);
+    if (desc) {
+      try {
+        const support = await desc.load();
+        dbg("code-editor", "dynamic-hit", { name, lang: desc.name });
+        return [support];
+      } catch (e) {
+        dbgWarn("code-editor", "dynamic-failed", { name, lang: desc.name, error: e });
+        // Fall through to first-line detection below
+      }
+    }
+
+    // 3. First-line detection (shebang, XML declaration, JSON brace)
+    if (content) {
+      const firstLine = content.trimStart().split("\n")[0] ?? "";
+      const guess = resolveByFirstLine(firstLine);
+      if (guess) {
+        dbg("code-editor", "first-line-hit", { name, firstLine: firstLine.slice(0, 40) });
+        return guess;
+      }
+    }
+
+    dbg("code-editor", "plain-text-fallback", { name });
+    return [];
+  }
+
+  /** Check if syntax highlighting styles are actually applied after language loads. Run once. */
+  let styleCheckDone = false;
+  function verifySyntaxStyles(v: EditorView) {
+    if (styleCheckDone) return;
+    styleCheckDone = true;
+    // Give parser time to tokenize + style-mod to inject CSS
+    requestAnimationFrame(() => {
+      if (!v.dom.isConnected) return;
+      const baseColor = getComputedStyle(v.contentDOM).color;
+      // Sample up to 20 token spans — enough to detect missing styles without perf cost
+      const spans = v.contentDOM.querySelectorAll(".cm-line span");
+      const limit = Math.min(spans.length, 20);
+      let hasHighlight = false;
+      for (let i = 0; i < limit; i++) {
+        if (getComputedStyle(spans[i]).color !== baseColor) {
+          hasHighlight = true;
+          break;
+        }
+      }
+      if (limit > 0 && !hasHighlight) {
+        dbgWarn("code-editor", "style-injection-failed", {
+          baseColor,
+          sampledSpans: limit,
+          msg: "Language loaded but no token has distinct color — styles may not be injected",
+        });
+      }
+    });
+  }
+
+  function isDarkMode(): boolean {
+    return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+  }
+
+  /** Build the full extensions array. Used both at initial mount and on file-swap setState. */
+  function buildExtensions(dark: boolean, langExt: Extension[]): Extension[] {
+    return [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      highlightActiveLine(),
+      drawSelection(), // Renders CM6 cursor (native caret is hidden via caret-color: transparent in app.css)
+      bracketMatching(),
+      history(),
+      keymap.of([
+        {
+          key: "Mod-s",
+          run: () => {
+            onsave?.();
+            return true;
+          },
+        },
+        ...defaultKeymap,
+        ...historyKeymap,
+      ]),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      // Static tok-* class fallback: if style-mod CSS injection fails
+      // (observed on Intel Mac WKWebView), the static CSS in the style block below
+      // provides baseline syntax highlighting via classHighlighter.
+      syntaxHighlighting(classHighlighter),
+      EditorView.editable.of(!readonly),
+      EditorState.readOnly.of(readonly),
+      themeCompartment.of(dark ? oneDark : []),
+      langCompartment.of(langExt),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged && !updating) {
+          updating = true;
+          content = update.state.doc.toString();
+          updating = false;
+        }
+      }),
+    ];
+  }
+
+  onMount(() => {
+    if (!editorEl) return;
+
+    const dark = isDarkMode();
+    dbg("code-editor", "mount", { filePath, readonly, dark });
+
+    // Initial view: empty doc + empty language compartment. Cheap (no tokenize on empty).
+    // The $effect below immediately swaps in real content + resolved language via setState
+    // — single tokenize pass for the actual file. This avoids the previous double-tokenize
+    // (one for content dispatch, one for language reconfigure) on every file load.
+    perfMark(
+      "cm-create-view",
+      () => {
+        const state = EditorState.create({ doc: "", extensions: buildExtensions(dark, []) });
+        view = new EditorView({ state, parent: editorEl });
+      },
+      { chars: 0 },
+    );
+
+    // Watch dark mode changes via MutationObserver on <html> class
+    const observer = new MutationObserver(() => {
+      if (!view) return;
+      const dark = isDarkMode();
+      view.dispatch({
+        effects: themeCompartment.reconfigure(dark ? oneDark : []),
+      });
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    return () => {
+      observer.disconnect();
+      view?.destroy();
+      view = undefined;
+    };
+  });
+
+  /**
+   * Combined sync effect: handles both file-switch (filePath change) and content-only
+   * external sync (typing/save). Splitting these into two effects caused two separate
+   * dispatches per file load → two full-document tokenize passes. Now a file switch
+   * uses `view.setState(newState)` to apply new content + new language in a single
+   * tokenize pass; content-only sync still uses dispatch.
+   */
+  let lastFilePath: string | null = null;
+
+  $effect(() => {
+    if (!view) return;
+    const _path = filePath; // track dep
+    const _content = content; // track dep
+    const pathChanged = _path !== lastFilePath;
+    lastFilePath = _path;
+
+    if (pathChanged) {
+      const seq = ++langSeq;
+      perfMarkAsync(
+        "cm-swap-file",
+        async () => {
+          const lang = await resolveLanguage(_path);
+          if (seq !== langSeq || !view) return; // stale — user already switched again
+          // Single state replace: new doc + new language in one operation. CodeMirror
+          // tokenizes the new doc once with the new language. Compare to dispatch+reconfigure
+          // which tokenizes twice (once for content replace, once for language reconfigure).
+          const dark = isDarkMode();
+          const newState = EditorState.create({
+            doc: _content,
+            extensions: buildExtensions(dark, lang),
+          });
+          view.setState(newState);
+          if (lang.length > 0) verifySyntaxStyles(view);
+        },
+        { filePath: _path, chars: _content.length },
+      );
+    } else if (!updating && _content !== view.state.doc.toString()) {
+      // Same file, content drifted from doc (external save / external write) — full replace.
+      // Typed updates are already echoed back via the updateListener and won't hit this
+      // branch (content === doc by then).
+      updating = true;
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: _content },
+      });
+      updating = false;
+    }
+  });
+</script>
+
+<div bind:this={editorEl} class="code-editor-wrapper {className}"></div>
+
+<style>
+  .code-editor-wrapper {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: inherit;
+  }
+  .code-editor-wrapper :global(.cm-editor) {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    width: 100%;
+    height: 100% !important;
+    min-height: inherit !important;
+  }
+  /* scroller flex layout is enforced globally in app.css */
+
+  /*
+   * Static tok-* fallback — provides syntax highlighting when style-mod
+   * dynamic CSS injection fails (Intel Mac WKWebView).
+   *
+   * These rules have lower specificity than style-mod's generated classes,
+   * so they only take visual effect when the dynamic styles are absent.
+   * Colors match oneDark (dark) / defaultHighlightStyle (light).
+   */
+
+  /* ── Light mode ── */
+  .code-editor-wrapper :global(.tok-keyword) {
+    color: #708;
+  }
+  .code-editor-wrapper :global(.tok-atom) {
+    color: #219;
+  }
+  .code-editor-wrapper :global(.tok-bool) {
+    color: #219;
+  }
+  .code-editor-wrapper :global(.tok-number) {
+    color: #164;
+  }
+  .code-editor-wrapper :global(.tok-string) {
+    color: #a11;
+  }
+  .code-editor-wrapper :global(.tok-string2) {
+    color: #e40;
+  }
+  .code-editor-wrapper :global(.tok-comment) {
+    color: #940;
+    font-style: italic;
+  }
+  .code-editor-wrapper :global(.tok-variableName) {
+    color: #05a;
+  }
+  .code-editor-wrapper :global(.tok-variableName2) {
+    color: #085;
+  }
+  .code-editor-wrapper :global(.tok-variableName.tok-definition) {
+    color: #00f;
+  }
+  .code-editor-wrapper :global(.tok-typeName) {
+    color: #085;
+  }
+  .code-editor-wrapper :global(.tok-namespace) {
+    color: #085;
+  }
+  .code-editor-wrapper :global(.tok-className) {
+    color: #167;
+  }
+  .code-editor-wrapper :global(.tok-macroName) {
+    color: #256;
+  }
+  .code-editor-wrapper :global(.tok-propertyName) {
+    color: #00c;
+  }
+  .code-editor-wrapper :global(.tok-propertyName.tok-definition) {
+    color: #00c;
+  }
+  .code-editor-wrapper :global(.tok-operator) {
+    color: #708;
+  }
+  .code-editor-wrapper :global(.tok-meta) {
+    color: #555;
+  }
+  .code-editor-wrapper :global(.tok-punctuation) {
+    color: #555;
+  }
+  .code-editor-wrapper :global(.tok-link) {
+    color: #219;
+    text-decoration: underline;
+  }
+  .code-editor-wrapper :global(.tok-heading) {
+    color: #00f;
+    font-weight: bold;
+  }
+  .code-editor-wrapper :global(.tok-emphasis) {
+    font-style: italic;
+  }
+  .code-editor-wrapper :global(.tok-strong) {
+    font-weight: bold;
+  }
+  .code-editor-wrapper :global(.tok-invalid) {
+    color: #f00;
+  }
+  .code-editor-wrapper :global(.tok-inserted) {
+    color: #164;
+  }
+  .code-editor-wrapper :global(.tok-deleted) {
+    color: #a11;
+    text-decoration: line-through;
+  }
+
+  /* ── Dark mode (oneDark-aligned) ── */
+  :global(.dark) .code-editor-wrapper :global(.tok-keyword) {
+    color: #c678dd;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-atom) {
+    color: #d19a66;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-bool) {
+    color: #d19a66;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-number) {
+    color: #d19a66;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-string) {
+    color: #98c379;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-string2) {
+    color: #e06c75;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-comment) {
+    color: #5c6370;
+    font-style: italic;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-variableName) {
+    color: #e06c75;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-variableName2) {
+    color: #e06c75;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-variableName.tok-definition) {
+    color: #61afef;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-typeName) {
+    color: #e5c07b;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-namespace) {
+    color: #e5c07b;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-className) {
+    color: #e5c07b;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-macroName) {
+    color: #e06c75;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-propertyName) {
+    color: #61afef;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-propertyName.tok-definition) {
+    color: #61afef;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-operator) {
+    color: #56b6c2;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-meta) {
+    color: #abb2bf;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-punctuation) {
+    color: #abb2bf;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-link) {
+    color: #61afef;
+    text-decoration: underline;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-heading) {
+    color: #e06c75;
+    font-weight: bold;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-emphasis) {
+    font-style: italic;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-strong) {
+    font-weight: bold;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-invalid) {
+    color: #f44747;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-inserted) {
+    color: #98c379;
+  }
+  :global(.dark) .code-editor-wrapper :global(.tok-deleted) {
+    color: #e06c75;
+    text-decoration: line-through;
+  }
+</style>
