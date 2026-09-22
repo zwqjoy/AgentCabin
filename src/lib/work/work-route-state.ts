@@ -15,7 +15,6 @@ export type WorkPanel = "files" | "pending" | "library" | "archived" | "automati
 const LEGACY_VIEW_PANELS: Record<string, WorkPanel> = {
   inbox: "pending",
   library: "library",
-  archived: "archived",
   tasks: "automation",
   automation: "automation",
 };
@@ -42,6 +41,8 @@ export interface WorkRouteState {
    * are mapped onto panels here (e.g. `?view=inbox` → `pending`).
    */
   panel: WorkPanel | null;
+  /** Legacy `?view=archived` selects the Sidebar archive filter. */
+  archiveFilter: boolean;
 }
 
 export function parseWorkRouteState(url: URL | { searchParams: URLSearchParams }): WorkRouteState {
@@ -64,6 +65,7 @@ export function parseWorkRouteState(url: URL | { searchParams: URLSearchParams }
     prompt: params.get("prompt"),
     preset: params.get("preset"),
     panel,
+    archiveFilter: legacyView === "archived",
   };
 }
 

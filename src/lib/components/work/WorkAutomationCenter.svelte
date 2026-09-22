@@ -112,6 +112,34 @@
       .sort((a, b) => (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt)),
   );
 
+  let taskSections = $derived(
+    [
+      { title: "运行中", tasks: filteredTasks.filter((task) => task.status === "in_run") },
+      {
+        title: "待处理",
+        tasks: filteredTasks.filter((task) => task.status === "needs_attention"),
+      },
+      {
+        title: "定时任务",
+        tasks: filteredTasks.filter(
+          (task) =>
+            task.status !== "in_run" &&
+            task.status !== "needs_attention" &&
+            Boolean(task.schedule?.enabled),
+        ),
+      },
+      {
+        title: "其他任务",
+        tasks: filteredTasks.filter(
+          (task) =>
+            task.status !== "in_run" &&
+            task.status !== "needs_attention" &&
+            !task.schedule?.enabled,
+        ),
+      },
+    ].filter((section) => section.tasks.length > 0),
+  );
+
   async function loadStats() {
     if (!isGlobalView) {
       stats = null;
@@ -509,7 +537,7 @@
     </div>
   </div>
 
-  <!-- Automation Tasks Grid -->
+  <!-- Tasks are grouped by the next useful action; editing remains a secondary action. -->
   {#if filteredTasks.length === 0}
     <div
       class="flex h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 p-8 text-center text-xs text-muted-foreground"
@@ -521,19 +549,32 @@
       </p>
     </div>
   {:else}
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {#each filteredTasks as task (task.id)}
-        <WorkAutomationCard
-          {task}
-          {workspaces}
-          triggering={triggeringTaskId === task.id}
-          onToggleSchedule={handleToggleSchedule}
-          onTriggerNow={handleTriggerNow}
-          onViewHistory={handleViewHistory}
-          onEdit={openEditModal}
-          onDelete={(t) => (taskToDelete = t)}
-          onDuplicate={handleDuplicate}
-        />
+    <div class="space-y-7">
+      {#each taskSections as section (section.title)}
+        <section aria-labelledby={`task-section-${section.title}`}>
+          <h2
+            id={`task-section-${section.title}`}
+            class="mb-2 text-sm font-semibold text-foreground"
+          >
+            {section.title}
+            <span class="font-normal text-muted-foreground">{section.tasks.length}</span>
+          </h2>
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {#each section.tasks as task (task.id)}
+              <WorkAutomationCard
+                {task}
+                {workspaces}
+                triggering={triggeringTaskId === task.id}
+                onToggleSchedule={handleToggleSchedule}
+                onTriggerNow={handleTriggerNow}
+                onViewHistory={handleViewHistory}
+                onEdit={openEditModal}
+                onDelete={(t) => (taskToDelete = t)}
+                onDuplicate={handleDuplicate}
+              />
+            {/each}
+          </div>
+        </section>
       {/each}
     </div>
   {/if}

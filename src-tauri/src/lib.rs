@@ -351,6 +351,7 @@ pub fn run() {
             commands::work::work_start_session,
             commands::work::work_start_standalone_session,
             commands::work::work_list_standalone_sessions,
+            commands::work::work_list_recent_sessions,
             commands::work::work_resume_session,
             commands::work::work_send_message,
             commands::work::work_stop_session,

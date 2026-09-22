@@ -5,6 +5,7 @@ import { getRun, setRunFlags, stopRun, stopSession, deleteRuns } from "$lib/api"
 import {
   archiveWorkspace,
   deleteWorkspace,
+  listRecentWorkSessions,
   listWorkSessions,
   renameWorkspace,
   restoreWorkspace,
@@ -61,6 +62,8 @@ export class WorkSidebarStore {
   workspaces = $derived(workWorkspaceStore.workspaces);
   archivedWorkspaces = $derived(workWorkspaceStore.archivedWorkspaces);
   standaloneSessions = $derived(workWorkspaceStore.standaloneSessions);
+  recentSessions = $state<TaskRun[]>([]);
+  recentLoading = $state(false);
   loading = $derived(!workWorkspaceStore.workspacesLoaded && workWorkspaceStore.loadingWorkspaces);
   /** Tasks currently running or blocked on the user — drives the sidebar "任务" count. */
   activeTaskCount = $derived(
@@ -109,25 +112,9 @@ export class WorkSidebarStore {
     );
   }
 
-  /**
-   * Flat "recent conversations" list across standalone sessions and every
-   * loaded workspace, newest first. Workspace sessions are only included once
-   * their workspace has been loaded (expanded or selected), so no extra
-   * fan-out is triggered by rendering the sidebar.
-   */
+  /** Recent is an authoritative core projection, not a by-product of expanded trees. */
   getRecentConversations(matches: (session: TaskRun) => boolean): TaskRun[] {
-    const seen = new Set<string>();
-    const merged: TaskRun[] = [];
-    const push = (session: TaskRun) => {
-      if (seen.has(session.id) || session.archived || !matches(session)) return;
-      seen.add(session.id);
-      merged.push(session);
-    };
-    for (const session of this.sortedByActivity(this.standaloneSessions)) push(session);
-    for (const workspace of this.workspaces) {
-      for (const session of this.getSortedSessions(workspace.id)) push(session);
-    }
-    return merged.slice(0, RECENT_CONVERSATIONS_LIMIT);
+    return this.recentSessions.filter(matches).slice(0, RECENT_CONVERSATIONS_LIMIT);
   }
 
   getArchivedConversations(matches: (session: TaskRun) => boolean): TaskRun[] {
@@ -165,6 +152,22 @@ export class WorkSidebarStore {
   async loadStandaloneSessions(force = false): Promise<void> {
     if (!getTransport().isDesktop()) return;
     await workWorkspaceStore.fetchStandaloneSessions(force);
+  }
+
+  async loadRecentSessions(): Promise<void> {
+    if (!getTransport().isDesktop() || this.recentLoading) return;
+    this.recentLoading = true;
+    try {
+      this.recentSessions = await withTimeout(
+        listRecentWorkSessions(RECENT_CONVERSATIONS_LIMIT),
+        WORK_SESSION_LIST_TIMEOUT_MS,
+        "读取最近 Work 对话超时",
+      );
+    } catch (cause) {
+      this.error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      this.recentLoading = false;
+    }
   }
 
   async loadSessions(workspaceId: string, force = false): Promise<void> {
@@ -449,6 +452,7 @@ export class WorkSidebarStore {
 
     void workWorkspaceStore.fetchWorkspaces();
     void workWorkspaceStore.fetchStandaloneSessions();
+    void this.loadRecentSessions();
     void workWorkspaceStore.fetchArchivedCount();
     inboxStore.fetch(false);
     workTaskStore.fetchTasks();
@@ -511,6 +515,7 @@ export class WorkSidebarStore {
       }
       this.sessionsByWorkspace = next;
       workWorkspaceStore.setStandaloneSessions(applyRunMutation(this.standaloneSessions, mutation));
+      this.recentSessions = applyRunMutation(this.recentSessions, mutation);
       void workWorkspaceStore.fetchArchivedCount();
     };
 
@@ -547,6 +552,10 @@ export class WorkSidebarStore {
             detail.run,
             ...this.standaloneSessions.filter((run) => run.id !== detail.run?.id),
           ]);
+          this.recentSessions = [
+            detail.run,
+            ...this.recentSessions.filter((run) => run.id !== detail.run?.id),
+          ];
         } else {
           void this.loadStandaloneSessions();
         }
@@ -560,6 +569,7 @@ export class WorkSidebarStore {
       const page_ = get(page);
       const selectedId = page_.url.searchParams.get("workspace") ?? "";
       if (selectedId) void this.loadSessions(selectedId);
+      void this.loadRecentSessions();
     };
 
     window.addEventListener(RUNS_CHANGED_EVENT, handleRunMutation);

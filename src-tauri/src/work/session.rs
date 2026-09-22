@@ -78,6 +78,26 @@ pub fn list_standalone_sessions() -> Result<Vec<TaskRun>, String> {
         .collect())
 }
 
+/// List the newest Work conversations across standalone and active workspaces.
+/// The aggregation stays in the core so the sidebar does not fan out one IPC
+/// request per workspace just to render its Recent section.
+pub fn list_recent_sessions(limit: usize) -> Result<Vec<TaskRun>, String> {
+    let mut sessions = list_standalone_sessions()?;
+    for workspace in workspace::manager().list()? {
+        sessions.extend(list_sessions(&workspace.id)?);
+    }
+    sessions.sort_by(|left, right| {
+        right
+            .last_activity_at
+            .as_deref()
+            .unwrap_or(&right.started_at)
+            .cmp(left.last_activity_at.as_deref().unwrap_or(&left.started_at))
+    });
+    sessions.retain(|session| session.archived != Some(true));
+    sessions.truncate(limit);
+    Ok(sessions)
+}
+
 #[derive(Debug, Clone)]
 pub enum RuntimeTurnOutcome {
     Success,

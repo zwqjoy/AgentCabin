@@ -167,14 +167,7 @@
 
   async function addAccessRoot() {
     if (!selectedId || accessBusyPath) return;
-    const { open } = await import("$lib/platform/dialog");
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "选择 Work 可访问的目录",
-    });
-    if (typeof selected !== "string") return;
-    accessBusyPath = selected;
+    accessBusyPath = "pending";
     try {
       await controller.addAccessRoot();
     } finally {
@@ -194,12 +187,6 @@
 
   async function removeAccessRoot(root: WorkAccessRoot) {
     if (!selectedId || accessBusyPath) return;
-    const { confirm } = await import("$lib/platform/dialog");
-    const ok = await confirm(`移除目录"${root.path}"？`, {
-      title: "移除目录",
-      kind: "warning",
-    });
-    if (!ok) return;
     accessBusyPath = root.path;
     try {
       await controller.removeAccessRoot(root);

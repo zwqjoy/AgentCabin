@@ -48,7 +48,7 @@
   const rawPath = $derived(conversation.projectPath || run.remote_cwd || run.cwd || "");
   const projectPath = $derived(isStandaloneWork ? "" : rawPath);
   const projectLabel = $derived.by(() => {
-    if (isStandaloneWork) return "独立任务";
+    if (isStandaloneWork) return "";
     if (conversation.projectName) return conversation.projectName;
     return rawPath.split(/[\\/]/).filter(Boolean).at(-1) || t("sidebar_uncategorized");
   });

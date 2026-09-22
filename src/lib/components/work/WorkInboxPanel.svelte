@@ -91,9 +91,10 @@
   }
 
   function workspaceLabel(item: InboxItem): string {
+    if (!item.workspaceId) return "";
     return (
       workspaces.find((workspace) => workspace.id === item.workspaceId)?.name ||
-      (item.workspaceId ? `工作区 ${shortId(item.workspaceId)}` : "独立任务")
+      `工作区 ${shortId(item.workspaceId)}`
     );
   }
 
@@ -375,7 +376,9 @@
                 <div class="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
                   <span class="font-semibold text-foreground/80">来自任务</span>
                   <span class="truncate">{taskLabel(item)}</span>
-                  <span class="truncate text-muted-foreground/70">· {workspaceLabel(item)}</span>
+                  {#if workspaceLabel(item)}
+                    <span class="truncate text-muted-foreground/70">· {workspaceLabel(item)}</span>
+                  {/if}
                 </div>
                 {#if displayPath}
                   <div

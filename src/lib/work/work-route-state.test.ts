@@ -39,7 +39,8 @@ describe("parseWorkRouteState", () => {
   it("maps legacy view params onto auxiliary panels", () => {
     expect(parseWorkRouteState(url("?view=inbox")).panel).toBe("pending");
     expect(parseWorkRouteState(url("?view=library")).panel).toBe("library");
-    expect(parseWorkRouteState(url("?view=archived")).panel).toBe("archived");
+    expect(parseWorkRouteState(url("?view=archived")).panel).toBeNull();
+    expect(parseWorkRouteState(url("?view=archived")).archiveFilter).toBe(true);
     expect(parseWorkRouteState(url("?view=tasks")).panel).toBe("automation");
     expect(parseWorkRouteState(url("?view=automation")).panel).toBe("automation");
     // Unknown legacy views degrade to no panel instead of a broken page.

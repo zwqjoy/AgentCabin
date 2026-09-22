@@ -67,10 +67,7 @@
         );
         const mappedStandalones = standalones.map((s) => ({
           ...s,
-          cwd:
-            !s.workspace_id || s.cwd?.includes(".agentcabin/standalone_tasks")
-              ? "独立任务"
-              : s.cwd || "独立任务",
+          cwd: s.workspace_id && !s.cwd?.includes(".agentcabin/standalone_tasks") ? s.cwd : "",
         }));
         runs = [...mappedStandalones, ...wsSessionsList.flat()];
       } else if (realm === "code" || realm === "native" || realm === "pi") {
@@ -98,10 +95,7 @@
         );
         const mappedStandalones = standalones.map((s) => ({
           ...s,
-          cwd:
-            !s.workspace_id || s.cwd?.includes(".agentcabin/standalone_tasks")
-              ? "独立任务"
-              : s.cwd || "独立任务",
+          cwd: s.workspace_id && !s.cwd?.includes(".agentcabin/standalone_tasks") ? s.cwd : "",
         }));
         runs = [...normalRuns, ...mappedStandalones, ...wsSessionsList.flat()];
       }

@@ -30,7 +30,16 @@
   // Search + archive filter (archive is a filter, never a top-level page).
   let conversationSearch = $state("");
   let showArchived = $state(false);
+  let lastArchiveQuery = $state<boolean | null>(null);
   let normalizedSearch = $derived(conversationSearch.trim().toLocaleLowerCase());
+
+  $effect(() => {
+    const archiveQuery = pageUrl.searchParams.get("view") === "archived";
+    if (archiveQuery !== lastArchiveQuery) {
+      lastArchiveQuery = archiveQuery;
+      showArchived = archiveQuery;
+    }
+  });
 
   function matchesConversation(session: TaskRun): boolean {
     const query = normalizedSearch;
@@ -259,47 +268,6 @@
       </div>
     </div>
 
-    <!-- Secondary management entries: pending attention + background tasks.
-         Deliberately below the primary flow — conversation + workspaces come first. -->
-    {#if workTransportSupported}
-      <div class="mt-2 shrink-0 border-t border-sidebar-border/40 px-0.5 pt-1.5">
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors {activePanel ===
-          'pending'
-            ? 'bg-sidebar-accent text-sidebar-foreground'
-            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}"
-          onclick={openPendingPanel}
-        >
-          <span>待处理</span>
-          {#if inboxStore.pendingCount > 0}
-            <span
-              class="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/25 px-1 text-[10px] font-bold text-amber-600 dark:text-amber-400"
-            >
-              {inboxStore.pendingCount}
-            </span>
-          {/if}
-        </button>
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors {activePanel ===
-          'automation'
-            ? 'bg-sidebar-accent text-sidebar-foreground'
-            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}"
-          onclick={openTaskPanel}
-        >
-          <span>任务</span>
-          {#if sidebar.activeTaskCount > 0}
-            <span
-              class="flex h-4 min-w-4 items-center justify-center rounded-full bg-sidebar-accent px-1 text-[10px] font-bold text-sidebar-foreground/80"
-            >
-              {sidebar.activeTaskCount}
-            </span>
-          {/if}
-        </button>
-      </div>
-    {/if}
-
     <!-- Recent conversations -->
     {#if recentConversations.length > 0}
       <div class="mb-2 shrink-0">
@@ -312,7 +280,7 @@
           {#each recentConversations as session (session.id)}
             <ConversationItem
               conversation={sessionConversation(session)}
-              selected={session.id === activeRunId && !selectedId}
+              selected={session.id === activeRunId}
               statusLabel={sessionAttentionLabel(session)}
               onclick={() =>
                 session.workspace_id
@@ -610,6 +578,43 @@
         </div>
       {/if}
     </div>
+
+    {#if workTransportSupported}
+      <footer class="mt-auto shrink-0 border-t border-sidebar-border/40 px-0.5 pt-2">
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors {activePanel ===
+          'pending'
+            ? 'bg-sidebar-accent text-sidebar-foreground'
+            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}"
+          onclick={openPendingPanel}
+        >
+          <span>待处理</span>
+          {#if inboxStore.pendingCount > 0}
+            <span
+              class="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/25 px-1 text-[10px] font-bold text-amber-600 dark:text-amber-400"
+              >{inboxStore.pendingCount}</span
+            >
+          {/if}
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors {activePanel ===
+          'automation'
+            ? 'bg-sidebar-accent text-sidebar-foreground'
+            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}"
+          onclick={openTaskPanel}
+        >
+          <span>任务</span>
+          {#if sidebar.activeTaskCount > 0}
+            <span
+              class="flex h-4 min-w-4 items-center justify-center rounded-full bg-sidebar-accent px-1 text-[10px] font-bold text-sidebar-foreground/80"
+              >{sidebar.activeTaskCount}</span
+            >
+          {/if}
+        </button>
+      </footer>
+    {/if}
   </div>
 </div>
 
