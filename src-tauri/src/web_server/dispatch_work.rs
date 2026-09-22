@@ -259,6 +259,7 @@ async fn work_dispatch(
         "work_get_session" => crate::commands::work::conversations::work_get_session(workspace_id: String),
         "work_list_sessions" => crate::commands::work::conversations::work_list_sessions(workspace_id: String),
         "work_list_recent_sessions" => crate::commands::work::conversations::work_list_recent_sessions(limit: Option<usize>),
+        "work_list_archived_sessions" => crate::commands::work::conversations::work_list_archived_sessions(limit: Option<usize>),
         "work_list_standalone_sessions" => crate::commands::work::conversations::work_list_standalone_sessions(),
         "work_get_projection" => crate::commands::work::conversations::work_get_projection(run_id: String),
         "work_get_run_progress" => crate::commands::work::conversations::work_get_run_progress(task_id: String, run_id: String),

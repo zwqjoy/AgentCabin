@@ -98,6 +98,25 @@ pub fn list_recent_sessions(limit: usize) -> Result<Vec<TaskRun>, String> {
     Ok(sessions)
 }
 
+/// List archived Work conversations from the complete run metadata index.
+/// This projection is independent of workspace expansion and workspace load state.
+pub fn list_archived_sessions(limit: usize) -> Result<Vec<TaskRun>, String> {
+    let mut sessions: Vec<TaskRun> = storage::runs::list_all_run_metas()
+        .into_iter()
+        .filter(|run| run.app_mode == AppMode::Work && run.archived == Some(true))
+        .map(storage::runs::run_with_summary)
+        .collect();
+    sessions.sort_by(|left, right| {
+        right
+            .last_activity_at
+            .as_deref()
+            .unwrap_or(&right.started_at)
+            .cmp(left.last_activity_at.as_deref().unwrap_or(&left.started_at))
+    });
+    sessions.truncate(limit);
+    Ok(sessions)
+}
+
 #[derive(Debug, Clone)]
 pub enum RuntimeTurnOutcome {
     Success,

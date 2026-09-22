@@ -5,6 +5,7 @@ import { getRun, setRunFlags, stopRun, stopSession, deleteRuns } from "$lib/api"
 import {
   archiveWorkspace,
   deleteWorkspace,
+  listArchivedWorkSessions,
   listRecentWorkSessions,
   listWorkSessions,
   renameWorkspace,
@@ -23,6 +24,11 @@ import {
   type RunMutation,
 } from "$lib/utils/run-mutations";
 import { deleteSnapshot } from "$lib/utils/snapshot-cache";
+import {
+  applyWorkArchiveProjectionMutation,
+  filterArchivedWorkSessions,
+  filterRecentWorkSessions,
+} from "$lib/utils/work-archive-projection";
 import type { TaskRun } from "$lib/types";
 import type { WorkWorkspaceSummary } from "$lib/types/work";
 import {
@@ -32,6 +38,7 @@ import {
 
 const WORK_SESSION_LIST_TIMEOUT_MS = 10_000;
 const RECENT_CONVERSATIONS_LIMIT = 20;
+const ARCHIVED_CONVERSATIONS_LIMIT = 50;
 
 /**
  * Owns every piece of Work sidebar lifecycle that is not presentation:
@@ -64,6 +71,8 @@ export class WorkSidebarStore {
   standaloneSessions = $derived(workWorkspaceStore.standaloneSessions);
   recentSessions = $state<TaskRun[]>([]);
   recentLoading = $state(false);
+  archivedSessions = $state<TaskRun[]>([]);
+  archivedLoading = $state(false);
   loading = $derived(!workWorkspaceStore.workspacesLoaded && workWorkspaceStore.loadingWorkspaces);
   /** Tasks currently running or blocked on the user — drives the sidebar "任务" count. */
   activeTaskCount = $derived(
@@ -89,17 +98,6 @@ export class WorkSidebarStore {
     });
   }
 
-  private sortedByActivity(sessions: TaskRun[]): TaskRun[] {
-    return [...sessions].sort((left, right) => {
-      const leftPinned = left.pinned ?? false;
-      const rightPinned = right.pinned ?? false;
-      if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
-      return (right.last_activity_at ?? right.started_at).localeCompare(
-        left.last_activity_at ?? left.started_at,
-      );
-    });
-  }
-
   getVisibleSessions(workspaceId: string, matches: (session: TaskRun) => boolean): TaskRun[] {
     return this.getSortedSessions(workspaceId).filter(
       (session) => !session.archived && matches(session),
@@ -114,22 +112,17 @@ export class WorkSidebarStore {
 
   /** Recent is an authoritative core projection, not a by-product of expanded trees. */
   getRecentConversations(matches: (session: TaskRun) => boolean): TaskRun[] {
-    return this.recentSessions.filter(matches).slice(0, RECENT_CONVERSATIONS_LIMIT);
+    return filterRecentWorkSessions(this.recentSessions, matches).slice(
+      0,
+      RECENT_CONVERSATIONS_LIMIT,
+    );
   }
 
   getArchivedConversations(matches: (session: TaskRun) => boolean): TaskRun[] {
-    const seen = new Set<string>();
-    const merged: TaskRun[] = [];
-    const push = (session: TaskRun) => {
-      if (seen.has(session.id) || !session.archived || !matches(session)) return;
-      seen.add(session.id);
-      merged.push(session);
-    };
-    for (const session of this.sortedByActivity(this.standaloneSessions)) push(session);
-    for (const workspace of [...this.workspaces, ...this.archivedWorkspaces]) {
-      for (const session of this.getSortedSessions(workspace.id)) push(session);
-    }
-    return merged;
+    return filterArchivedWorkSessions(this.archivedSessions, matches).slice(
+      0,
+      ARCHIVED_CONVERSATIONS_LIMIT,
+    );
   }
 
   findSession(runId: string): { session: TaskRun; workspaceId: string | null } | null {
@@ -158,15 +151,33 @@ export class WorkSidebarStore {
     if (!getTransport().isDesktop() || this.recentLoading) return;
     this.recentLoading = true;
     try {
-      this.recentSessions = await withTimeout(
+      const sessions = await withTimeout(
         listRecentWorkSessions(RECENT_CONVERSATIONS_LIMIT),
         WORK_SESSION_LIST_TIMEOUT_MS,
         "读取最近 Work 对话超时",
       );
+      this.recentSessions = filterRecentWorkSessions(sessions, () => true);
     } catch (cause) {
       this.error = cause instanceof Error ? cause.message : String(cause);
     } finally {
       this.recentLoading = false;
+    }
+  }
+
+  async loadArchivedSessions(): Promise<void> {
+    if (!getTransport().isDesktop() || this.archivedLoading) return;
+    this.archivedLoading = true;
+    try {
+      const sessions = await withTimeout(
+        listArchivedWorkSessions(ARCHIVED_CONVERSATIONS_LIMIT),
+        WORK_SESSION_LIST_TIMEOUT_MS,
+        "读取已归档 Work 对话超时",
+      );
+      this.archivedSessions = filterArchivedWorkSessions(sessions, () => true);
+    } catch (cause) {
+      this.error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      this.archivedLoading = false;
     }
   }
 
@@ -453,6 +464,7 @@ export class WorkSidebarStore {
     void workWorkspaceStore.fetchWorkspaces();
     void workWorkspaceStore.fetchStandaloneSessions();
     void this.loadRecentSessions();
+    void this.loadArchivedSessions();
     void workWorkspaceStore.fetchArchivedCount();
     inboxStore.fetch(false);
     workTaskStore.fetchTasks();
@@ -515,7 +527,17 @@ export class WorkSidebarStore {
       }
       this.sessionsByWorkspace = next;
       workWorkspaceStore.setStandaloneSessions(applyRunMutation(this.standaloneSessions, mutation));
-      this.recentSessions = applyRunMutation(this.recentSessions, mutation);
+      const projection = applyWorkArchiveProjectionMutation(
+        { recentSessions: this.recentSessions, archivedSessions: this.archivedSessions },
+        mutation,
+        mutation.kind === "update" ? this.findSession(mutation.runId)?.session : undefined,
+      );
+      this.recentSessions = projection.recentSessions;
+      this.archivedSessions = projection.archivedSessions;
+      if (mutation.kind === "update" && mutation.patch.archived !== undefined) {
+        void this.loadArchivedSessions();
+        if (mutation.patch.archived === false) void this.loadRecentSessions();
+      }
       void workWorkspaceStore.fetchArchivedCount();
     };
 
@@ -542,6 +564,12 @@ export class WorkSidebarStore {
             ...this.sessionsByWorkspace,
             [workspaceId]: [detail.run, ...existing.filter((run) => run.id !== detail.run?.id)],
           };
+          const projection = applyWorkArchiveProjectionMutation(
+            { recentSessions: this.recentSessions, archivedSessions: this.archivedSessions },
+            { kind: "create", run: detail.run },
+          );
+          this.recentSessions = projection.recentSessions;
+          this.archivedSessions = projection.archivedSessions;
         } else {
           void this.loadSessions(workspaceId, true);
         }
@@ -552,10 +580,12 @@ export class WorkSidebarStore {
             detail.run,
             ...this.standaloneSessions.filter((run) => run.id !== detail.run?.id),
           ]);
-          this.recentSessions = [
-            detail.run,
-            ...this.recentSessions.filter((run) => run.id !== detail.run?.id),
-          ];
+          const projection = applyWorkArchiveProjectionMutation(
+            { recentSessions: this.recentSessions, archivedSessions: this.archivedSessions },
+            { kind: "create", run: detail.run },
+          );
+          this.recentSessions = projection.recentSessions;
+          this.archivedSessions = projection.archivedSessions;
         } else {
           void this.loadStandaloneSessions();
         }
@@ -570,6 +600,7 @@ export class WorkSidebarStore {
       const selectedId = page_.url.searchParams.get("workspace") ?? "";
       if (selectedId) void this.loadSessions(selectedId);
       void this.loadRecentSessions();
+      void this.loadArchivedSessions();
     };
 
     window.addEventListener(RUNS_CHANGED_EVENT, handleRunMutation);

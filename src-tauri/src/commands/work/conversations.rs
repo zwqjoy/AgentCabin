@@ -92,6 +92,19 @@ pub async fn work_list_recent_sessions(limit: Option<usize>) -> Result<Vec<TaskR
     .map_err(|error| format!("读取最近 Work 对话失败: {error}"))?
 }
 
+/// List archived Work conversations from the complete run metadata index.
+#[tauri::command]
+pub async fn work_list_archived_sessions(limit: Option<usize>) -> Result<Vec<TaskRun>, String> {
+    ensure_work_enabled()?;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        tokio::task::spawn_blocking(move || session::list_archived_sessions(limit.unwrap_or(50))),
+    )
+    .await
+    .map_err(|_| "读取已归档 Work 对话超时".to_string())?
+    .map_err(|error| format!("读取已归档 Work 对话失败: {error}"))?
+}
+
 /// Start a standalone Work task with a single message. The task runs in its
 /// own per-run directory under `standalone_tasks/<run_id>/`.
 #[tauri::command]

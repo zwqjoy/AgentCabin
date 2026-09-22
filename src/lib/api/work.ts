@@ -744,6 +744,10 @@ export function listRecentWorkSessions(limit = 20): Promise<TaskRun[]> {
   return invoke<TaskRun[]>("work_list_recent_sessions", { limit });
 }
 
+export function listArchivedWorkSessions(limit = 50): Promise<TaskRun[]> {
+  return invoke<TaskRun[]>("work_list_archived_sessions", { limit });
+}
+
 export function listStandaloneWorkArtifacts(runId: string): Promise<WorkArtifactSummary[]> {
   return invoke<WorkArtifactSummary[]>("work_list_standalone_artifacts", { runId });
 }
