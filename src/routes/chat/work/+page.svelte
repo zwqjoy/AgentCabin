@@ -38,7 +38,7 @@
   let route = $derived(parseWorkRouteState($page.url));
   let selectedId = $derived(route.workspaceId ?? "");
   let selectedRunId = $derived(route.runId ?? "");
-  let selectedView = $derived(route.legacyView ?? "");
+  let activePanel = $derived(route.panel);
   let newConversation = $derived(route.newConversation);
   let createOpen = $derived(route.createWorkspace);
   let freshWorkspace = $derived(route.fresh);
@@ -235,6 +235,30 @@
     void goto(target, { replaceState: true });
   }
 
+  // ── Auxiliary panel drawer (pending / automation / library / archived) ─────
+
+  function panelTitle(panel: NonNullable<typeof route.panel>): string {
+    switch (panel) {
+      case "pending":
+        return "待处理";
+      case "automation":
+        return "任务与自动化";
+      case "library":
+        return "素材库";
+      case "archived":
+        return "已归档对话";
+      case "files":
+        return "文件";
+    }
+  }
+
+  function closePanel() {
+    const url = new URL($page.url);
+    url.searchParams.delete("panel");
+    url.searchParams.delete("view");
+    void goto(url.pathname + url.search, { replaceState: true, noScroll: true });
+  }
+
   async function openFolderWorkspace() {
     try {
       const { open } = await import("$lib/platform/dialog");
@@ -365,7 +389,9 @@
       workspaceId: selectedId,
       runId: selectedRunId,
       newConversation,
-      legacyView: selectedView,
+      // Legacy `?view=` values now open auxiliary panels; they never change
+      // the product mode, so the controller always sees a conversation route.
+      legacyView: "",
     };
     untrack(() => {
       const adopted = controller.syncRoute(
@@ -691,30 +717,6 @@
             </div>
           </div>
         {/if}
-      {:else if selectedView === "inbox"}
-        <div
-          class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card/50 shadow-sm p-4 sm:p-5"
-        >
-          <WorkInboxPanel workspaceId="" {workspaces} />
-        </div>
-      {:else if selectedView === "tasks" || selectedView === "automation"}
-        <div
-          class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card/50 shadow-sm p-4 sm:p-5"
-        >
-          <WorkAutomationCenter workspaceId="" {workspaces} />
-        </div>
-      {:else if selectedView === "library"}
-        <div
-          class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card/50 shadow-sm"
-        >
-          <WorkMaterialsCenter {workspaces} />
-        </div>
-      {:else if selectedView === "archived"}
-        <div
-          class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-2xl border border-border/70 bg-card/50 shadow-sm"
-        >
-          <ArchivedChatsView realm="work" />
-        </div>
       {:else}
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
           <WorkHomeView
@@ -728,6 +730,60 @@
     {/if}
   </div>
 </div>
+
+{#if activePanel && activePanel !== "files" && workTransportSupported}
+  <div
+    class="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-[1px]"
+    role="dialog"
+    aria-modal="true"
+    aria-label={panelTitle(activePanel)}
+    tabindex="-1"
+    onclick={(event) => event.target === event.currentTarget && closePanel()}
+    onkeydown={(event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        closePanel();
+      }
+    }}
+  >
+    <aside
+      class="flex h-full w-full flex-col border-l border-border bg-card shadow-2xl sm:max-w-2xl"
+    >
+      <header
+        class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5"
+      >
+        <h2 class="text-sm font-semibold text-foreground">{panelTitle(activePanel)}</h2>
+        <button
+          type="button"
+          class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          aria-label="关闭"
+          onclick={closePanel}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg
+          >
+        </button>
+      </header>
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        {#if activePanel === "pending"}
+          <WorkInboxPanel workspaceId="" {workspaces} />
+        {:else if activePanel === "automation"}
+          <WorkAutomationCenter workspaceId="" {workspaces} />
+        {:else if activePanel === "library"}
+          <WorkMaterialsCenter {workspaces} />
+        {:else if activePanel === "archived"}
+          <ArchivedChatsView realm="work" />
+        {/if}
+      </div>
+    </aside>
+  </div>
+{/if}
 
 {#if createOpen && workTransportSupported}
   <div
