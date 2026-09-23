@@ -165,7 +165,7 @@ npm run electron:dev
 
 首次启动时，AgentCabin 会引导你完成：
 
-1. **运行时检测** — 检测托管的 Pi Agent 和 DSH 运行时，并在需要时提供配置引导
+1. **运行时检测** — 检测托管的 Pi Agent 运行时，并在需要时提供配置引导
 2. **认证** — 配置 OpenAI / ChatGPT 账号，或填写自定义 Provider 的 API Key
 3. **就绪** — 开始编程
 
@@ -189,7 +189,7 @@ AgentCabin 由安全的 Electron 桌面外壳和独立的 Rust Core 进程组成
 ```text
 Electron 宿主
 ├── Svelte 5 / SvelteKit 渲染层
-│   ├── Code 工作台：Pi Agent 与 DSH
+│   ├── Code 工作台：Pi Agent 与原生 Provider 桥接
 │   └── Work 工作台：任务、Inbox、策略、产物、恢复
 ├── preload bridge + 内嵌 Chromium / CDP 浏览器
 └── Rust Core 进程
@@ -201,7 +201,6 @@ Electron 宿主
 托管运行时闭包
 ├── Node.js 22.19.0 + pnpm 10.15.0
 ├── Pi 0.85.1（RPC）
-└── DSH 0.1.5-rc.2（ACP）
 ```
 
 **技术栈：**
@@ -219,7 +218,7 @@ Electron 宿主
 
 **Agent 通信：**
 
-每个会话都是由独立的 session actor 管理的长连接多轮进程。**Pi Agent** 使用长连接 JSONL RPC。**DSH** 使用托管的 Code/Work 配置和 Provider 桥接。Work 运行仅限桌面端，并在同一个本地 Core 之上增加任务状态、Inbox/审批、策略、产物、恢复和可选定时执行。
+每个会话都是由独立的 session actor 管理的长连接多轮进程。**Pi Agent** 使用长连接 JSONL RPC；其他原生 Provider 使用各自的桥接。Work 运行仅限桌面端，并在同一个本地 Core 之上增加任务状态、Inbox/审批、策略、产物、恢复和可选定时执行。
 
 **数据存储：**
 

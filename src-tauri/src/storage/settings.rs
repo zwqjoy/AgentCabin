@@ -1793,9 +1793,6 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
             .as_str()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
-        // DSH is cached for the same reason as the other local runtimes. A
-        // path edit must take effect on the very next Work/Code launch.
-        crate::agent::claude_stream::invalidate_dsh_path_cache();
     }
     if let Some(v) = patch.get("enabled_agents") {
         if v.is_null() {

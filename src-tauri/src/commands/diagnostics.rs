@@ -79,7 +79,6 @@ pub async fn check_agent_cli(agent: String) -> Result<CliCheckResult, String> {
         "codex" => "codex".to_string(),
         "pi" => crate::agent::claude_stream::resolve_pi_path(),
         "grok" => crate::agent::grok_session_actor::process::resolve_grok_path(),
-        "dsh" => crate::agent::claude_stream::resolve_dsh_path(),
         _ => return Err(format!("Unknown agent: {}", agent)),
     };
 

@@ -32,7 +32,7 @@ pub(crate) fn add_code_desktop_use_env(
 }
 
 /// Build the provider-compatible MCP projection for Code desktop/browser use.
-/// Pi Code loads the native extension directly, while Claude/Codex/Grok/DSH
+/// Pi Code loads the native extension directly, while Claude/Codex/Grok
 /// consume this same Computer Use V2 contract through their standard MCP tool
 /// surface. Browser-only sessions use the CDP backend inside the adapter and
 /// do not require the native desktop helper.

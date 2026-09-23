@@ -505,7 +505,7 @@ fn summary(
 ) -> WorkBrowserSummary {
     let browser_runtime = crate::work::browser_operator::runtime::status_with_paths(paths);
     let pi_runtime_available = config.enabled && configured && adapter_installed;
-    let dsh_runtime_available = config.enabled && configured && has_dsh_runtime();
+    let dsh_runtime_available = false; // Kept for older frontend clients.
     WorkBrowserSummary {
         enabled: config.enabled,
         provider: config.provider.clone(),
@@ -527,12 +527,6 @@ fn summary(
         auth_kind: auth_kind_for_provider(&config.provider).to_string(),
         allowed_hosts: config.allowed_hosts.clone(),
     }
-}
-
-fn has_dsh_runtime() -> bool {
-    let resolved = crate::agent::claude_stream::resolve_dsh_path();
-    std::path::Path::new(&resolved).is_file()
-        || crate::agent::claude_stream::which_binary("dsh").is_some()
 }
 
 fn health(

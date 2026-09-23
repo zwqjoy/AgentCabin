@@ -280,9 +280,6 @@ fn bundled_path_dirs() -> Vec<PathBuf> {
         if let Some(parent) = paths.pi.parent() {
             dirs.push(parent.to_path_buf());
         }
-        if let Some(parent) = paths.dsh.parent() {
-            dirs.push(parent.to_path_buf());
-        }
     }
     dirs
 }
@@ -892,99 +889,6 @@ pub(crate) fn bundled_pi_package_path(package_name: &str) -> Option<String> {
 pub fn invalidate_pi_path_cache() {
     *PI_PATH_CACHE.lock().unwrap() = None;
     log::debug!("[claude_stream] pi path cache invalidated");
-}
-
-static DSH_PATH_CACHE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-/// Resolve the full path to the dsh binary (DeepSeek Harness).
-pub(crate) fn resolve_dsh_path() -> String {
-    let mut cached = DSH_PATH_CACHE.lock().unwrap();
-    if let Some(ref path) = *cached {
-        return path.clone();
-    }
-    if std::env::var("AGENTCABIN_PACKAGED").ok().as_deref() == Some("1") {
-        let resolved = crate::agent::runtime_locator::resolve_dsh()
-            .unwrap_or_else(|error| format!("__agentcabin_missing_dsh__:{error}"));
-        *cached = Some(resolved.clone());
-        return resolved;
-    }
-    if let Some(custom) = crate::storage::settings::get_user_settings()
-        .dsh_path
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-    {
-        log::debug!(
-            "[claude_stream] using custom dsh path from settings: {}",
-            custom
-        );
-        *cached = Some(custom.clone());
-        return custom;
-    }
-    if let Ok(bundled) = crate::agent::runtime_locator::resolve_dsh() {
-        log::debug!("[claude_stream] using bundled DSH runtime: {}", bundled);
-        *cached = Some(bundled.clone());
-        return bundled;
-    }
-    if let Ok(env_val) = std::env::var("DSH_BINARY") {
-        let trimmed = env_val.trim();
-        if !trimmed.is_empty() {
-            log::debug!(
-                "[claude_stream] using dsh path from DSH_BINARY env: {}",
-                trimmed
-            );
-            *cached = Some(trimmed.to_string());
-            return trimmed.to_string();
-        }
-    }
-    let home = crate::storage::home_dir()
-        .filter(|h| !h.is_empty())
-        .map(PathBuf::from);
-
-    #[cfg(windows)]
-    let candidates = {
-        let mut bases = Vec::new();
-        if let Some(ref h) = home {
-            bases.push(h.join(".dsh").join("bin"));
-            bases.push(h.join(".local").join("bin"));
-        }
-        let names = ["dsh.cmd", "dsh.exe", "dsh.bat", "dsh"];
-        let mut cands = Vec::new();
-        for base in &bases {
-            for name in &names {
-                cands.push(base.join(name));
-            }
-        }
-        cands
-    };
-    #[cfg(not(windows))]
-    let candidates = {
-        let mut cands = Vec::new();
-        if let Some(ref h) = home {
-            cands.push(h.join(".dsh").join("bin").join("dsh"));
-            cands.push(h.join(".local").join("bin").join("dsh"));
-        }
-        cands.push(PathBuf::from("/usr/local/bin/dsh"));
-        cands
-    };
-
-    for c in &candidates {
-        if c.exists() {
-            let path_str = c.to_string_lossy().to_string();
-            log::debug!("[claude_stream] resolved dsh binary (cached): {}", path_str);
-            *cached = Some(path_str.clone());
-            return path_str;
-        }
-    }
-    log::debug!("[claude_stream] dsh binary not found in candidates, falling back to PATH lookup");
-    let fallback = which_binary("dsh").unwrap_or_else(|| "dsh".to_string());
-    *cached = Some(fallback.clone());
-    fallback
-}
-
-/// Clear the cached dsh binary path so the next `resolve_dsh_path()` re-scans.
-pub fn invalidate_dsh_path_cache() {
-    *DSH_PATH_CACHE.lock().unwrap() = None;
-    log::debug!("[claude_stream] dsh path cache invalidated");
 }
 
 #[cfg(test)]

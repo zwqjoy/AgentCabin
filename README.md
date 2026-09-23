@@ -165,7 +165,7 @@ npm run electron:dev
 
 On first launch, AgentCabin guides you through:
 
-1. **Runtime Detection** — Detects the managed Pi and DSH runtimes and offers setup when needed
+1. **Runtime Detection** — Detects the managed Pi runtime and offers setup when needed
 2. **Authentication** — OpenAI / ChatGPT account configuration or a custom Provider API key
 3. **Ready** — Start coding
 
@@ -189,7 +189,7 @@ AgentCabin is organized around a secure Electron desktop shell and a separate Ru
 ```text
 Electron host
 ├── Svelte 5 / SvelteKit renderer
-│   ├── Code workspace: Pi Agent and DSH
+│   ├── Code workspace: Pi Agent and native provider bridges
 │   └── Work workspace: tasks, Inbox, policies, artifacts, recovery
 ├── preload bridge + embedded Chromium / CDP browser
 └── Rust core process
@@ -201,7 +201,6 @@ Electron host
 Managed runtime closure
 ├── Node.js 22.19.0 + pnpm 10.15.0
 ├── Pi 0.85.1 (RPC)
-└── DSH 0.1.5-rc.2 (ACP)
 ```
 
 **Tech Stack:**
@@ -219,7 +218,7 @@ Managed runtime closure
 
 **Agent Communication:**
 
-Each session is a long-lived, multi-turn process managed by a per-run session actor. **Pi Agent** uses a long-lived JSONL RPC process. **DSH** uses managed Code/Work profiles and provider bridges. Work runs are desktop-only and add task state, inbox/approval flows, policies, artifacts, recovery, and optional scheduling on top of the same local core.
+Each session is a long-lived, multi-turn process managed by a per-run session actor. **Pi Agent** uses a long-lived JSONL RPC process. Other native providers use their own provider bridges. Work runs are desktop-only and add task state, inbox/approval flows, policies, artifacts, recovery, and optional scheduling on top of the same local core.
 
 **Data Storage:**
 

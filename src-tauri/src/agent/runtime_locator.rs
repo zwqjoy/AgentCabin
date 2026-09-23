@@ -1,5 +1,4 @@
-//! Application-owned runtime closure resolution. Packaged builds never fall
-//! back to a system Pi/DSH installation.
+//! Application-owned runtime closure resolution.
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
@@ -22,7 +21,6 @@ pub struct Version {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Runtimes {
     pub pi: Package,
-    pub dsh: Package,
 }
 #[derive(Debug, Clone, Deserialize)]
 pub struct Package {
@@ -36,7 +34,6 @@ pub struct RuntimePaths {
     pub manifest: RuntimeManifest,
     pub node: PathBuf,
     pub pi: PathBuf,
-    pub dsh: PathBuf,
     pub pnpm: PathBuf,
 }
 
@@ -125,7 +122,6 @@ pub fn bundled() -> Result<RuntimePaths, String> {
             "bin/node"
         }),
         pi: bin("pi"),
-        dsh: bin("dsh"),
         pnpm: bin("pnpm"),
         root,
         manifest,
@@ -133,14 +129,6 @@ pub fn bundled() -> Result<RuntimePaths, String> {
 }
 pub fn resolve_pi() -> Result<String, String> {
     let p = bundled()?.pi;
-    if p.is_file() {
-        Ok(p.to_string_lossy().into())
-    } else {
-        Err(format!("RuntimeClosureInvalid: missing {}", p.display()))
-    }
-}
-pub fn resolve_dsh() -> Result<String, String> {
-    let p = bundled()?.dsh;
     if p.is_file() {
         Ok(p.to_string_lossy().into())
     } else {
@@ -223,7 +211,6 @@ mod tests {
             assert!(resolve_npm_cli().is_ok(), "resolve_npm_cli must succeed");
             assert!(resolve_pnpm().is_ok(), "resolve_pnpm must succeed");
             assert!(resolve_pi().is_ok(), "resolve_pi must succeed");
-            assert!(resolve_dsh().is_ok(), "resolve_dsh must succeed");
         }
     }
 

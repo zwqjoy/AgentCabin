@@ -96,11 +96,9 @@ pub fn read_runtime_root(paths: &WorkPaths) -> Result<Value, String> {
 pub fn list_with_paths(paths: &WorkPaths) -> Result<Vec<WorkConnectorSummary>, String> {
     let root = read_root(paths)?;
     let pi_runtime_available = has_pi_adapter(paths)?;
-    // DSH Work registers the connector bridge as a native Cordis plugin, so it
-    // does not need Pi's npm adapter package. Keep the two readiness signals
-    // separate and retain the aggregate field for older clients.
-    let dsh_runtime_available = has_dsh_runtime();
-    let runtime_available = pi_runtime_available || dsh_runtime_available;
+    // Keep the removed DSH readiness field false for older frontend clients.
+    let dsh_runtime_available = false;
+    let runtime_available = pi_runtime_available;
     let adapter_installed = is_adapter_installed(paths);
     let Some(servers) = root
         .get("mcpServers")
@@ -730,12 +728,6 @@ fn has_pi_adapter(paths: &WorkPaths) -> Result<bool, String> {
                 })
             })
         }))
-}
-
-fn has_dsh_runtime() -> bool {
-    let resolved = crate::agent::claude_stream::resolve_dsh_path();
-    std::path::Path::new(&resolved).is_file()
-        || crate::agent::claude_stream::which_binary("dsh").is_some()
 }
 
 #[cfg(test)]
