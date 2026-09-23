@@ -527,6 +527,16 @@ async fn spawn_actor_with_launch(
                 }
             }
             let mut read_only_roots = vec![crate::work::paths::WorkPaths::app().work_profile_dir()];
+            // The bundled Pi launcher is a shell script that execs the
+            // application-managed Node binary from its sibling runtime
+            // directory. Seatbelt needs process-exec permission for that
+            // directory as well as file-read access; allowing only the Pi
+            // script itself makes Work fail with EPERM before RPC starts.
+            if let Ok(node_path) = crate::agent::runtime_locator::resolve_node() {
+                if let Some(node_dir) = PathBuf::from(node_path).parent() {
+                    read_only_roots.push(node_dir.to_path_buf());
+                }
+            }
             // Pi's common system packages are managed outside the isolated
             // Work profile. Work receives read-only access to that dependency
             // tree so native interaction extensions and their dependencies

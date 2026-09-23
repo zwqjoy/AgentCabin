@@ -47,8 +47,15 @@ pub fn resolve_new_work_runtime(
         .filter(|runtime| !runtime.is_empty());
 
     match configured_runtime {
+        Some("dsh") => {
+            // DSH Work was removed, but older settings can still name it.
+            // Preserve the user's ability to start Work by migrating this
+            // retired provider to the only supported Work runtime.
+            Ok(RuntimeProviderKind::Pi)
+        }
         Some(runtime) => RuntimeProviderKind::try_from_agent_str(runtime)
             .map_err(|error| format!("Invalid Work default runtime '{runtime}': {error}")),
+        None if legacy_profile.runtime == RuntimeProviderKind::Dsh => Ok(RuntimeProviderKind::Pi),
         None => Ok(legacy_profile.runtime),
     }
 }
@@ -110,14 +117,14 @@ mod tests {
     }
 
     #[test]
-    fn new_work_runtime_accepts_dsh_settings() {
+    fn new_work_runtime_migrates_retired_dsh_settings_to_pi() {
         let mut settings = crate::models::UserSettings::default();
         settings.work_default_runtime = Some("dsh".into());
 
         let runtime = resolve_new_work_runtime(&settings, &profile(RuntimeProviderKind::Pi))
-            .expect("dsh runtime should be recognized");
+            .expect("retired dsh runtime should fall back to Pi");
 
-        assert_eq!(runtime, RuntimeProviderKind::Dsh);
+        assert_eq!(runtime, RuntimeProviderKind::Pi);
     }
 
     #[test]
