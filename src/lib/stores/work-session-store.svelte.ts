@@ -17,10 +17,12 @@ import type { Attachment, PermissionSuggestion, TaskRun, TimelineEntry } from "$
 import type { WorkExecutionMode, WorkPreset } from "$lib/types/work";
 import type { EffectiveAgentCapabilities } from "$lib/utils/agent-capabilities";
 import {
-  DEFAULT_WORK_RUNTIME,
-  getWorkRuntimeClientOrReadOnly,
-  type WorkRuntimeClient,
-} from "$lib/work-runtime";
+  canCloneWorkSession,
+  canOpenWorkSessionTree,
+  getWorkComposerCapabilities,
+  isWorkDiagnosticTimelineEntry,
+  isWorkSubagentActivityEvent,
+} from "$lib/work/pi-work-runtime";
 
 const WORK_LOAD_TIMEOUT_MS = 15_000;
 // Stopping is a recovery action. Keep the composer/sidebar usable even when
@@ -44,14 +46,8 @@ export class WorkSessionStore {
 
   private requestVersion = 0;
 
-  constructor(defaultRuntime: string = DEFAULT_WORK_RUNTIME) {
-    const normalized = defaultRuntime.trim();
-    this.session.agent = normalized || DEFAULT_WORK_RUNTIME;
-  }
-
-  get runtimeClient(): WorkRuntimeClient {
-    const agent = this.session.run?.agent ?? this.session.agent ?? DEFAULT_WORK_RUNTIME;
-    return getWorkRuntimeClientOrReadOnly(agent);
+  constructor() {
+    this.session.agent = "pi";
   }
 
   private setCapabilityError(capability: "Steer" | "Follow-up"): void {
@@ -65,7 +61,7 @@ export class WorkSessionStore {
   }
 
   get composerCapabilities(): EffectiveAgentCapabilities {
-    return this.runtimeClient.getComposerCapabilities(this.session);
+    return getWorkComposerCapabilities(this.session);
   }
 
   get canSteer(): boolean {
@@ -89,18 +85,16 @@ export class WorkSessionStore {
   }
 
   get canClone(): boolean {
-    return this.runtimeClient.canClone(this.session);
+    return canCloneWorkSession(this.session);
   }
 
   get canOpenSessionTree(): boolean {
-    return this.runtimeClient.canOpenSessionTree(this.session);
+    return canOpenWorkSessionTree(this.session);
   }
 
   /** Work transcript projection: hide transport diagnostics before the UI sees them. */
   get visibleTimeline(): TimelineEntry[] {
-    return this.session.timeline.filter(
-      (entry) => !this.runtimeClient.isDiagnosticTimelineEntry(entry),
-    );
+    return this.session.timeline.filter((entry) => !isWorkDiagnosticTimelineEntry(entry));
   }
 
   /**
@@ -108,7 +102,7 @@ export class WorkSessionStore {
    */
   subscribeSubagentActivity(callback: () => void): () => void {
     return this.middleware.subscribeEvents((event) => {
-      if (this.runtimeClient.isSubagentActivityEvent(event)) callback();
+      if (isWorkSubagentActivityEvent(event)) callback();
     });
   }
 
@@ -314,7 +308,7 @@ export class WorkSessionStore {
     }
   }
 
-  /** Cancel only the active DSH turn and keep the provider session alive. */
+  /** Cancel the active Work turn and keep the provider session alive. */
   async cancelTurn(): Promise<void> {
     const runId = this.session.run?.id;
     if (!runId || !this.canCancelTurn || this.cancellingTurn) return;

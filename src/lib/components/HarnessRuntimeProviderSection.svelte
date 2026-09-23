@@ -12,8 +12,7 @@
     DEFAULT_ENABLED_RUNTIME_PROVIDERS,
     type RuntimeProviderId,
   } from "$lib/utils/agent-metadata";
-  import { isWorkRuntimeSupported } from "$lib/work-runtime";
-  import { DEFAULT_WORK_RUNTIME } from "$lib/work-runtime/types";
+
   import {
     fetchRuntimeProviderStatus,
     isRuntimeProviderReady,
@@ -131,8 +130,7 @@
           ? candidate
           : (enabledProviders[0] ?? "pi");
       } else {
-        selectedRuntime =
-          settings.work_default_runtime ?? legacyWorkRuntime ?? DEFAULT_WORK_RUNTIME;
+        selectedRuntime = settings.work_default_runtime ?? legacyWorkRuntime ?? "pi";
       }
     }
   });
@@ -203,7 +201,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {#each enabledProviders as pid (pid)}
         {@const meta = RUNTIME_PROVIDERS_CONFIG[pid]}
-        {@const isWorkUnsupported = mode === "work" && !isWorkRuntimeSupported(pid)}
+        {@const isWorkUnsupported = mode === "work" && pid !== "pi"}
         {@const isSelected = selectedRuntime === pid}
         {@const status = providerStatuses[pid] ?? { installed: true, authenticated: false }}
         <button

@@ -111,12 +111,11 @@ export class WorkSidebarStore {
     );
   }
 
-  /** Recent is an authoritative core projection, not a by-product of expanded trees. */
+  /** Recent standalone tasks (workspace-less) displayed in top sidebar section. */
   getRecentConversations(matches: (session: TaskRun) => boolean): TaskRun[] {
-    return filterRecentWorkSessions(this.recentSessions, matches).slice(
-      0,
-      RECENT_CONVERSATIONS_LIMIT,
-    );
+    return filterRecentWorkSessions(this.recentSessions, matches)
+      .filter((session) => !session.workspace_id)
+      .slice(0, RECENT_CONVERSATIONS_LIMIT);
   }
 
   getArchivedConversations(matches: (session: TaskRun) => boolean): TaskRun[] {

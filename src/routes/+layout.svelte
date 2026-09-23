@@ -1249,17 +1249,15 @@
   let recentCodeTasks = $derived.by(() =>
     buildProjectFolders(scopedRuns, favoriteRunIds, pinnedCwds, removedCwds, false)
       .flatMap((folder) =>
-        folder.conversations.map((conversation) => ({
-          ...conversation,
-          projectName:
-            conversation.latestRun.code_standalone_task || folder.isUncategorized
-              ? undefined
-              : cwdDisplayLabel(folder.cwd),
-          projectPath:
-            conversation.latestRun.code_standalone_task || folder.isUncategorized
-              ? undefined
-              : folder.cwd,
-        })),
+        folder.conversations
+          .filter(
+            (conversation) => folder.isUncategorized || conversation.latestRun.code_standalone_task,
+          )
+          .map((conversation) => ({
+            ...conversation,
+            projectName: undefined,
+            projectPath: undefined,
+          })),
       )
       .sort((left, right) =>
         (right.latestRun.last_activity_at ?? right.latestRun.started_at).localeCompare(

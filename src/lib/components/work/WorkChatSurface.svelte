@@ -4,13 +4,22 @@
   import { getContext, onMount, untrack } from "svelte";
   import * as api from "$lib/api";
   import {
-    DEFAULT_WORK_RUNTIME,
-    getWorkRuntimeClient,
-    getWorkRuntimeClientOrReadOnly,
-    createReadOnlyWorkRuntimeClient,
-    isWorkRuntimeSupported,
+    canCloneWorkSession,
+    canOpenWorkSessionTree,
+    getWorkAgentDisplayName,
+    getWorkModels,
+    getWorkSlashCommands,
+    getWorkStartingLabel,
+    isLegacyWorkRun,
+    isMissingPiWorkSessionError,
+    isPiWorkRuntimeConfirmation,
+    loadWorkModels,
+    loadWorkModelsLive,
+    loadWorkPreferences,
+    normalizeWorkQueuedText,
+    persistWorkEffort,
     type WorkRuntimePreferences,
-  } from "$lib/work-runtime";
+  } from "$lib/work/pi-work-runtime";
   import ConversationMessage from "$lib/components/ConversationMessage.svelte";
   import AssistantTurnHeader from "$lib/components/AssistantTurnHeader.svelte";
   import type { SelectedExpert } from "$lib/components/WorkBuddyCascadingMenu.svelte";
@@ -608,12 +617,12 @@
   let globalResources = $state<WorkResourceSummary[]>([]);
   let loadedResourceRuntime = $state("");
   let userSettings = $state<UserSettings | null>(null);
-  let effectiveWorkAgent = $derived(
-    session.run?.agent ??
-      session.agent ??
-      userSettings?.work_default_runtime ??
-      profile?.runtime ??
-      DEFAULT_WORK_RUNTIME,
+  let effectiveWorkAgent = $derived(session.run?.agent ?? session.agent ?? "pi");
+  let isLegacyRun = $derived(isLegacyWorkRun(session.run));
+  let runtimeClientError = $derived(
+    isLegacyRun
+      ? `当前 Work 会话属于已退役的 Runtime (${getWorkAgentDisplayName(session.run?.agent)})`
+      : null,
   );
   let activeProviderBinding = $derived.by(() => {
     return userSettings?.agent_provider_bindings?.[
@@ -635,21 +644,6 @@
       activeGlobalProvider?.models?.map((item) => item.id) ?? [],
     );
   });
-  let runtimeClientResolution = $derived.by(() => {
-    try {
-      return {
-        client: getWorkRuntimeClient(effectiveWorkAgent),
-        error: null,
-      };
-    } catch (e) {
-      return {
-        client: createReadOnlyWorkRuntimeClient(effectiveWorkAgent),
-        error: e instanceof Error ? e.message : String(e),
-      };
-    }
-  });
-  let runtimeClient = $derived(runtimeClientResolution.client);
-  let runtimeClientError = $derived(runtimeClientResolution.error);
   let globalProviderModelOptions = $derived.by((): CliModelInfo[] => {
     const list: CliModelInfo[] = [];
     for (const provider of userSettings?.global_providers ?? []) {
@@ -671,9 +665,7 @@
 
   let modelCatalog = $derived.by((): CliModelInfo[] => {
     const nativeModels =
-      session.run?.id && session.sessionModels.length > 0
-        ? session.sessionModels
-        : runtimeClient.getModels();
+      session.run?.id && session.sessionModels.length > 0 ? session.sessionModels : getWorkModels();
     // When global providers are configured, use them exclusively.
     // Native models are a fallback for when no custom providers exist.
     if (globalProviderModelOptions.length > 0) {
@@ -818,12 +810,7 @@
   );
   let hasRun = $derived(Boolean(session.run?.id));
   let canResume = $derived(
-    canResumeWorkSession(
-      session.run,
-      session.sessionAlive,
-      runtimeClient.capabilities.supportsResume,
-      conversationReadOnly,
-    ),
+    canResumeWorkSession(session.run, session.sessionAlive, !isLegacyRun, conversationReadOnly),
   );
   let canContinueWork = $derived(
     Boolean(
@@ -836,11 +823,7 @@
       !conversationReadOnly,
     ),
   );
-  let workSlashCommands = $derived(
-    session.sessionCommands.length > 0
-      ? session.sessionCommands
-      : runtimeClient.getSlashCommands(session),
-  );
+  let workSlashCommands = $derived(getWorkSlashCommands(session));
   let skillItems = $derived.by((): Array<{ name: string; description: string }> => {
     const byName = new Map<string, { name: string; description: string }>();
 
@@ -1183,7 +1166,7 @@
       tokensEstimated:
         !session.usage.modelUsage || Object.keys(session.usage.modelUsage).length === 0,
       model: session.run.model ?? session.model,
-      agent: session.run.agent ?? runtimeClient.getDefaultAgent(),
+      agent: session.run.agent ?? "pi",
       cliVersion: session.cliVersion,
       permissionMode: "",
       fastModeState: session.fastModeState,
@@ -1223,7 +1206,7 @@
     return null;
   });
   let calculatedStatusLabel = $derived.by(() => {
-    if (workSession.starting) return runtimeClient.getStartingLabel();
+    if (workSession.starting) return getWorkStartingLabel();
     if (currentPendingInteractions.length > 0) {
       return currentPendingInteractions.some(isQuestionInteraction) ? "等待你的回答" : "等待你处理";
     }
@@ -1243,12 +1226,12 @@
   });
   let pendingWorkConfirmations = $derived(
     [...session.pendingElicitations.values()].filter((elicitation) =>
-      runtimeClient.isRuntimeConfirmation(elicitation.mode),
+      isPiWorkRuntimeConfirmation(elicitation.mode),
     ).length,
   );
   let hasWorkInputRequest = $derived(
     [...session.pendingElicitations.values()].some(
-      (elicitation) => !runtimeClient.isRuntimeConfirmation(elicitation.mode),
+      (elicitation) => !isPiWorkRuntimeConfirmation(elicitation.mode),
     ),
   );
   let hostSubagentRecords = $state<WorkSubagentRecord[]>([]);
@@ -1889,7 +1872,7 @@
   });
 
   async function loadModels() {
-    await runtimeClient.loadModels();
+    await loadWorkModels();
   }
 
   async function loadGlobalResources(runtime = effectiveWorkAgent) {
@@ -2040,15 +2023,10 @@
             }
             const configuredRuntime =
               fetchedUserSettings?.work_default_runtime?.trim() || profile?.runtime?.trim();
-            const runtimeAgent = session.run?.agent ?? configuredRuntime ?? "pi";
-            // The constructor seeds the legacy/profile runtime. Replace that seed
-            // with the current user setting only while the conversation is fresh;
-            // an explicit user selection in the composer must remain authoritative.
             if (!session.run?.id && session.agent === "pi" && configuredRuntime) {
               session.agent = configuredRuntime;
             }
-            const preferencesClient = getWorkRuntimeClientOrReadOnly(runtimeAgent);
-            const preferences = await preferencesClient.loadRuntimePreferences().catch(() => null);
+            const preferences = await loadWorkPreferences().catch(() => null);
             if (preferences) runtimePreferences = preferences;
             currentEffort = preferences?.effort?.trim() || "medium";
             if (!session.run?.id) {
@@ -2096,7 +2074,7 @@
       void persistWorkspaceModelPreference({ effort }).catch(() => {});
     } else {
       try {
-        await runtimeClient.persistEffort(effort);
+        await persistWorkEffort(effort);
       } catch (cause) {
         workSession.error = cause instanceof Error ? cause.message : String(cause);
         return;
@@ -2171,7 +2149,7 @@
       await workSession.startMiddleware();
       if (!disposed) await workSession.load(workspace?.id ?? "", runId, !newConversation);
       if (!disposed && session.run?.id && session.sessionAlive) {
-        runtimeClient.loadModelsLive(session.run.id);
+        loadWorkModelsLive(session.run.id);
       }
       if (!disposed) {
         await applyWorkspaceDefaultModelIfNeeded();
@@ -2254,7 +2232,7 @@
           const run = await workSession.resume(prompt, attachments);
           adoptStartedRun(run, wsKey);
         } catch (cause) {
-          if (!runtimeClient.isMissingSessionError(cause)) throw cause;
+          if (!isMissingPiWorkSessionError(cause)) throw cause;
           const run = await workSession.start(
             prompt,
             session.model || undefined,
@@ -2291,7 +2269,7 @@
     const numTurns = Math.max(1, totalUserTurns - turnIndex);
 
     try {
-      const activeAgent = session.run?.agent ?? session.agent ?? runtimeClient.getDefaultAgent();
+      const activeAgent = session.run?.agent ?? session.agent ?? "pi";
       if (activeAgent === "codex" && session.run?.id) {
         try {
           await api.rollbackTurns(session.run.id, numTurns);
@@ -2307,7 +2285,7 @@
   }
 
   function handleQueueSend(text: string, attachments: Attachment[]) {
-    const queuedText = runtimeClient.normalizeQueuedText(text, workSlashCommands);
+    const queuedText = normalizeWorkQueuedText(text, workSlashCommands);
     void workSession.sendQueuedMessage(queuedText, attachments, "followUp").catch((error) => {
       workSession.error = (error as Error)?.message ?? String(error);
     });
@@ -3111,7 +3089,7 @@
               bind:selectedExpert
               onExpertClear={handleExpertClear}
               harness="work"
-              agent={runtimeClient.getDefaultAgent()}
+              agent="pi"
               capabilities={workComposerCapabilities}
               queueAvailable={workSession.canFollowUp}
               queueActionAvailable={workSession.canSteer}
@@ -3247,7 +3225,7 @@
                 timestamp: turn.userMessage.timestamp,
               }}
               attachments={turn.userMessage.attachments}
-              agent={runtimeClient.getDefaultAgent()}
+              agent="pi"
               isRunning={session.isRunning}
               onEdit={!session.isRunning && !conversationReadOnly
                 ? (newContent) =>
@@ -3293,7 +3271,7 @@
         {#if turn.processBlocks.length > 0 || turn.finalMessage || (turn.isRunning && isLatestTurn)}
           <AssistantTurnHeader
             timestamp={turn.finalMessage?.timestamp || turn.userMessage?.timestamp}
-            agent={runtimeClient.getDefaultAgent()}
+            agent="pi"
             displayName={CONVERSATION_ASSISTANT_NAME}
             expert={turn.userMessage
               ? parseExpertFromText(turn.userMessage.content).expert
@@ -3478,7 +3456,7 @@
     </button>
   {/if}
 
-  <WorkRuntimeSpecificSurface {session} provider={runtimeClient.provider} />
+  <WorkRuntimeSpecificSurface {session} provider="pi" />
 
   {#if unmirroredPendingTools.length > 0}
     <div
@@ -3557,7 +3535,7 @@
             harness="work"
             bind:selectedExpert
             onExpertClear={handleExpertClear}
-            agent={runtimeClient.getDefaultAgent()}
+            agent="pi"
             capabilities={workComposerCapabilities}
             queueAvailable={workSession.canFollowUp}
             queueActionAvailable={workSession.canSteer}

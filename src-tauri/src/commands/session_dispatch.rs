@@ -443,7 +443,7 @@ pub(crate) async fn assemble_work_context_plan_for_turn(
     let provider =
         crate::agent::capability_resolver::RuntimeProviderKind::try_from_agent_str(&run.agent)
             .map_err(|error| format!("Invalid Work runtime provider: {error}"))?;
-    crate::work::runtime::router::route(provider).map_err(String::from)?;
+    crate::work::runtime::get_pi_work_runtime(&run.agent).map_err(String::from)?;
     let capabilities = crate::agent::capability_resolver::CapabilityResolver::resolve(
         &crate::storage::data_dir(),
         crate::work::models::AppMode::Work,
@@ -1088,12 +1088,12 @@ pub(crate) async fn start_session_impl_with_overrides(
     }
 
     // --- WORK HARNESS DISPATCH (First-Level Authority) ---
-    // If this is a Work session, it enters WorkRuntimeRouter directly.
+    // If this is a Work session, it enters Pi Work Runtime directly.
     // It NEVER falls through to Code provider dispatch (Grok/Claude/Codex/Pi).
     if run.app_mode == crate::work::models::AppMode::Work {
         crate::work::profile::ensure_enabled()?;
         let adapter =
-            crate::work::runtime::router::route_agent_str(&run.agent).map_err(String::from)?;
+            crate::work::runtime::get_pi_work_runtime(&run.agent).map_err(String::from)?;
         return start_work_session_actor(
             emitter,
             sessions,
@@ -1106,7 +1106,7 @@ pub(crate) async fn start_session_impl_with_overrides(
             attachments,
             permission_mode_override.as_deref(),
             skills,
-            adapter.as_ref(),
+            adapter,
             launch_overrides,
         )
         .await;

@@ -318,7 +318,7 @@ describe("Work Session Store & State Transitions", () => {
   });
 
   it("cancels a running turn without stopping the provider session", async () => {
-    const store = new WorkSessionStore("pi");
+    const store = new WorkSessionStore();
     const run = {
       id: "run-pi-cancel",
       workspace_id: dummyWorkspace.id,
@@ -539,13 +539,13 @@ describe("Work Session Store & State Transitions", () => {
     expect(store.error).toContain("Steer");
   });
 
-  it("accepts an explicit Work runtime seed without using the Pi client", () => {
-    const store = new WorkSessionStore("fake");
+  it("treats legacy non-Pi Work run as read-only with disabled capabilities", () => {
+    const store = new WorkSessionStore();
+    store.session.run = { id: "legacy-dsh", agent: "dsh" } as never;
 
-    expect(store.session.agent).toBe("fake");
-    expect(store.runtimeClient.provider).toBe("fake");
     expect(store.composerCapabilities.runtime.steer).toBe(false);
     expect(store.canSteer).toBe(false);
+    expect(store.canClone).toBe(false);
   });
 
   it("keeps Pi transport diagnostics out of the Work timeline projection", async () => {

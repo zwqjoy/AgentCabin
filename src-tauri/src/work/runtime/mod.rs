@@ -13,7 +13,17 @@
 //!   - Grok    ❌  (UnsupportedWorkRuntime)
 
 pub mod pi;
-pub mod router;
+
+pub use pi::PiWorkRuntimeAdapter;
+
+pub fn get_pi_work_runtime(agent: &str) -> Result<&'static PiWorkRuntimeAdapter, WorkRuntimeError> {
+    let normalized = agent.trim().to_lowercase();
+    if normalized.is_empty() || normalized == "pi" {
+        Ok(&PiWorkRuntimeAdapter)
+    } else {
+        Err(WorkRuntimeError::UnsupportedAgent(agent.to_string()))
+    }
+}
 
 use std::collections::HashMap;
 use std::sync::Arc;

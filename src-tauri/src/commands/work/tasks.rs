@@ -231,7 +231,7 @@ pub async fn start_work_task_run_with_overrides(
             }
         },
     };
-    if let Err(error) = crate::work::runtime::router::route(provider) {
+    if let Err(error) = crate::work::runtime::get_pi_work_runtime(provider.as_str()) {
         return Err(mark_work_run_failed(
             paths,
             task_id,

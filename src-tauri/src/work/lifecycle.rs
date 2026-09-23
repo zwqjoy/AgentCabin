@@ -10,6 +10,7 @@ use crate::work::models::{
     WorkRecoveryAction, WorkRun, WorkRunRecovery, WorkRunStatus, WorkTaskState,
 };
 use crate::work::paths::WorkPaths;
+use crate::work::runtime::WorkRuntimeAdapter;
 use crate::work::tasks::TaskManager;
 
 #[derive(Debug, Clone)]
@@ -1161,7 +1162,7 @@ pub fn get_run_recovery(
             .session_id
             .as_deref()
             .and_then(crate::storage::runs::get_run)
-            .and_then(|meta| crate::work::runtime::router::route_agent_str(&meta.agent).ok())
+            .and_then(|meta| crate::work::runtime::get_pi_work_runtime(&meta.agent).ok())
             .is_some_and(|adapter| adapter.capabilities().supports_subagents);
         if supports_subagents {
             available_actions.insert(0, WorkRecoveryAction::RetrySubagent);

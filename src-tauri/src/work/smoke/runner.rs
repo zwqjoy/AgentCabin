@@ -91,7 +91,7 @@ pub async fn run_smoke_mode(app: AppHandle, config_path: String) -> i32 {
     println!("Timeout: {}s\n", config.timeout_secs);
 
     // Preflight checks
-    if let Err(e) = crate::work::runtime::router::route(RuntimeProviderKind::Pi) {
+    if let Err(e) = crate::work::runtime::get_pi_work_runtime("pi") {
         eprintln!("PRECHECK FAILED: Work runtime router does not support Pi: {e}");
         return 1;
     }

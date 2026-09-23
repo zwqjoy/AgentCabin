@@ -9,7 +9,7 @@
 //!   - PiRuntimeAdapter.prepare_runtime for the managed pi_home
 //!
 //! The Work Harness (session.rs, session_dispatch.rs) does NOT need to know
-//! any of these details; it calls `WorkRuntimeRouter::route(Pi)` and receives
+//! any of these details; it calls `get_pi_work_runtime()` and receives
 //! this adapter.
 
 use std::collections::HashMap;

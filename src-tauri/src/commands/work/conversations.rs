@@ -14,6 +14,7 @@ use crate::work::models::{
     InboxItemStatus, WorkPreset, WorkRecoveryAction, WorkRun, WorkRunProgressView, WorkRunRecovery,
     WorkRunStatus, WorkRunTrigger, WorkTask, WorkTaskSource,
 };
+use crate::work::runtime::WorkRuntimeAdapter;
 use crate::work::{artifacts, paths::WorkPaths, session, tasks::TaskManager, workspace};
 
 #[tauri::command]
@@ -549,7 +550,7 @@ pub(crate) async fn recover_work_run_locked(
                 .ok_or_else(|| "恢复 Run 没有关联可继续的 Work 会话".to_string())?;
             let session_meta = crate::storage::runs::get_run(session_id)
                 .ok_or_else(|| "未找到对应的 Work 会话".to_string())?;
-            let adapter = crate::work::runtime::router::route_agent_str(&session_meta.agent)
+            let adapter = crate::work::runtime::get_pi_work_runtime(&session_meta.agent)
                 .map_err(|e| format!("Work Runtime 不支持该会话: {e}"))?;
             if !adapter.capabilities().supports_subagents {
                 return Err(format!(

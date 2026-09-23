@@ -19,7 +19,7 @@ use crate::work::models::{
 };
 use crate::work::paths::WorkPaths;
 use crate::work::profile;
-use crate::work::runtime::router as work_runtime_router;
+use crate::work::runtime::{get_pi_work_runtime, WorkRuntimeAdapter};
 use crate::work::workspace;
 
 const DEFAULT_PERMISSION_MODE: &str = "default";
@@ -599,7 +599,7 @@ pub async fn start_work_session_with_overrides(
     };
     // Validate the provider before any provider-specific preparation runs.
     // This keeps an unsupported Work runtime from triggering Pi setup.
-    work_runtime_router::route(provider).map_err(String::from)?;
+    get_pi_work_runtime(provider.as_str()).map_err(String::from)?;
     let target = workspace::manager().open(workspace_id)?;
     let primary_work_root = workspace::manager().resolve_primary_work_root(&target)?;
     let work_root_str = primary_work_root.to_string_lossy().into_owned();
@@ -678,11 +678,11 @@ pub async fn start(
     paths.ensure_layout()?;
 
     let runtime_check = match runtime {
-        Some(provider) => work_runtime_router::route(provider)
+        Some(provider) => get_pi_work_runtime(provider.as_str())
             .map(|_| ())
             .map_err(String::from),
         None => profile::resolve_new_work_runtime_from_storage().and_then(|provider| {
-            work_runtime_router::route(provider)
+            get_pi_work_runtime(provider.as_str())
                 .map(|_| ())
                 .map_err(String::from)
         }),
@@ -730,7 +730,7 @@ pub async fn start_standalone(
     paths.ensure_layout()?;
     let provider = runtime.unwrap_or(profile::resolve_new_work_runtime_from_storage()?);
     // Validate the provider before creating the standalone task directory.
-    work_runtime_router::route(provider).map_err(String::from)?;
+    get_pi_work_runtime(provider.as_str()).map_err(String::from)?;
     let normalized = normalize_message(message)?;
 
     let id = Uuid::new_v4().to_string();
@@ -806,7 +806,7 @@ pub async fn continue_session(
     )?;
     // Validate that the source run's runtime is still supported in Work mode.
     // Fails closed if the agent string is unknown or unsupported.
-    let adapter = work_runtime_router::route_agent_str(&source.agent)
+    let adapter = get_pi_work_runtime(&source.agent)
         .map_err(|e| format!("Work Continue 不支持该 Runtime: {}", e))?;
     let provider = adapter.provider();
     if !adapter.capabilities().supports_continuation {
@@ -978,7 +978,7 @@ pub async fn resume(
 ) -> Result<TaskRun, String> {
     let mut run = ensure_work_run(run_id, None)?;
     // Validate runtime router & capabilities before creating or mutating any records
-    let adapter = work_runtime_router::route_agent_str(&run.agent)
+    let adapter = get_pi_work_runtime(&run.agent)
         .map_err(|e| format!("Work Resume 不支持该 Runtime: {e}"))?;
     if !adapter.capabilities().supports_resume {
         return Err(format!(
