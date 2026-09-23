@@ -111,11 +111,12 @@ export class WorkSidebarStore {
     );
   }
 
-  /** Recent standalone tasks (workspace-less) displayed in top sidebar section. */
+  /** Newest Work conversations across standalone tasks and workspaces. */
   getRecentConversations(matches: (session: TaskRun) => boolean): TaskRun[] {
-    return filterRecentWorkSessions(this.recentSessions, matches)
-      .filter((session) => !session.workspace_id)
-      .slice(0, RECENT_CONVERSATIONS_LIMIT);
+    return filterRecentWorkSessions(this.recentSessions, matches).slice(
+      0,
+      RECENT_CONVERSATIONS_LIMIT,
+    );
   }
 
   getArchivedConversations(matches: (session: TaskRun) => boolean): TaskRun[] {
@@ -465,7 +466,6 @@ export class WorkSidebarStore {
     void workWorkspaceStore.fetchStandaloneSessions();
     void this.loadRecentSessions();
     void this.loadArchivedSessions();
-    void workWorkspaceStore.fetchArchivedCount();
     inboxStore.fetch(false);
     workTaskStore.fetchTasks();
 
@@ -547,7 +547,6 @@ export class WorkSidebarStore {
         void this.loadArchivedSessions();
         if (mutation.patch.archived === false) void this.loadRecentSessions();
       }
-      void workWorkspaceStore.fetchArchivedCount();
     };
 
     const onSessionsChanged = (event: Event) => {

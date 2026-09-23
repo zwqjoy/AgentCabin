@@ -71,7 +71,6 @@
   import { PLATFORM_PRESETS } from "$lib/utils/platform-presets";
   import { platform } from "$lib/platform";
   import { loadAgentSettingsCache } from "$lib/stores/agent-settings-cache.svelte";
-  import { workWorkspaceStore } from "$lib/stores/work-workspace-store.svelte";
   import type { PlatformCredential } from "$lib/types";
   import { TeamStore } from "$lib/stores/team-store.svelte";
   import { getEventMiddleware } from "$lib/stores/event-middleware";
@@ -1268,12 +1267,6 @@
       .slice(0, 6),
   );
 
-  let archivedRunsCount = $derived(
-    isWorkPage
-      ? workWorkspaceStore.archivedSessionsCount
-      : scopedRuns.filter((run) => run.archived).length,
-  );
-
   // Selectable folders: real project folders (exclude Uncategorized)
   const selectableFolders = $derived(projectFolders.filter((f) => !f.isUncategorized));
 
@@ -2284,7 +2277,6 @@
                     : '/chat'}?view=archived"
                 label="已归档"
                 active={$page.url.searchParams.get("view") === "archived"}
-                badge={archivedRunsCount}
               >
                 {#snippet icon()}
                   <svg

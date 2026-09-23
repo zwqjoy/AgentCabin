@@ -1,9 +1,4 @@
-import {
-  listArchivedWorkspaces,
-  listStandaloneWorkSessions,
-  listWorkSessions,
-  listWorkspaces,
-} from "$lib/api/work";
+import { listArchivedWorkspaces, listStandaloneWorkSessions, listWorkspaces } from "$lib/api/work";
 import { getTransport } from "$lib/transport";
 import { withTimeout } from "$lib/utils/async-utils";
 import type { TaskRun } from "$lib/types";
@@ -16,7 +11,6 @@ export class WorkWorkspaceStore {
   workspaces = $state<WorkWorkspaceSummary[]>([]);
   archivedWorkspaces = $state<WorkWorkspaceSummary[]>([]);
   standaloneSessions = $state<TaskRun[]>([]);
-  archivedSessionsCount = $state(0);
 
   workspacesLoaded = $state(false);
   standaloneLoaded = $state(false);
@@ -162,41 +156,8 @@ export class WorkWorkspaceStore {
     }
   }
 
-  async fetchArchivedCount(): Promise<number> {
-    if (!this.isSupported()) {
-      this.archivedSessionsCount = 0;
-      return 0;
-    }
-    try {
-      const [activeWs, archivedWs, standalones] = await Promise.all([
-        listWorkspaces().catch(() => []),
-        listArchivedWorkspaces().catch(() => []),
-        listStandaloneWorkSessions().catch(() => []),
-      ]);
-      const wsSessionsList = await Promise.all(
-        [...activeWs, ...archivedWs].map(async (ws) => {
-          try {
-            return await listWorkSessions(ws.id);
-          } catch {
-            return [];
-          }
-        }),
-      );
-      const allSessions = [...standalones, ...wsSessionsList.flat()];
-      const count = allSessions.filter((s) => s.archived).length;
-      this.archivedSessionsCount = count;
-      return count;
-    } catch {
-      return this.archivedSessionsCount;
-    }
-  }
-
   async fetchAll(force = false): Promise<void> {
-    await Promise.allSettled([
-      this.fetchWorkspaces(force),
-      this.fetchStandaloneSessions(force),
-      this.fetchArchivedCount(),
-    ]);
+    await Promise.allSettled([this.fetchWorkspaces(force), this.fetchStandaloneSessions(force)]);
   }
 }
 
