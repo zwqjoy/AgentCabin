@@ -2301,10 +2301,10 @@
               {#if getTransport().isDesktop()}
                 <SidebarNavItem
                   href={isWorkPage
-                    ? '/chat/work?view=tasks'
+                    ? "/chat/work?view=tasks"
                     : isPiCodePage
-                      ? '/chat/pi?view=tasks'
-                      : '/chat?view=tasks'}
+                      ? "/chat/pi?view=tasks"
+                      : "/chat?view=tasks"}
                   label="任务"
                   active={$page.url.searchParams.get("view") === "tasks"}
                 >

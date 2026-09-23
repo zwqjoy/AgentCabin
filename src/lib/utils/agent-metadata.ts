@@ -4,12 +4,10 @@ import { hasAgentCapabilityProvider } from "$lib/utils/agent-capabilities";
 export const ALL_RUNTIME_PROVIDERS = ["pi", "codex", "claude", "grok", "dsh"] as const;
 export type RuntimeProviderId = (typeof ALL_RUNTIME_PROVIDERS)[number];
 
-/** Visible runtime providers in the UI (Codex, Claude Code, and Grok are hidden). */
-export const VISIBLE_RUNTIME_PROVIDERS: readonly RuntimeProviderId[] = ALL_RUNTIME_PROVIDERS.filter(
-  (pid) => pid !== "codex" && pid !== "claude" && pid !== "grok",
-);
+/** Visible runtime providers in the UI (only Pi Agent is visible in AgentCabin). */
+export const VISIBLE_RUNTIME_PROVIDERS: readonly RuntimeProviderId[] = ["pi"];
 
-export const DEFAULT_ENABLED_RUNTIME_PROVIDERS: readonly RuntimeProviderId[] = ["pi", "dsh"];
+export const DEFAULT_ENABLED_RUNTIME_PROVIDERS: readonly RuntimeProviderId[] = ["pi"];
 export const DEFAULT_RUNTIME_PROVIDER: RuntimeProviderId = "pi";
 
 export const NATIVE_AGENT_ORDER = ALL_RUNTIME_PROVIDERS;

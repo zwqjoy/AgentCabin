@@ -40,17 +40,28 @@ fn load_from_disk_and_cache() -> AllSettings {
                     let platform_changed = migrate_platform_credentials(&mut settings);
                     let global_changed = migrate_global_provider_settings(&mut settings);
                     let mut agents_changed = false;
+                    if settings.user.default_agent == "dsh" {
+                        settings.user.default_agent = "pi".to_string();
+                        agents_changed = true;
+                    }
+                    if settings.user.code_default_runtime.as_deref() == Some("dsh") {
+                        settings.user.code_default_runtime = Some("pi".to_string());
+                        agents_changed = true;
+                    }
+                    if settings.user.work_default_runtime.as_deref() == Some("dsh") {
+                        settings.user.work_default_runtime = Some("pi".to_string());
+                        agents_changed = true;
+                    }
                     if settings.user.enabled_agents.is_none() {
-                        settings.user.enabled_agents =
-                            Some(vec!["pi".to_string(), "dsh".to_string()]);
+                        settings.user.enabled_agents = Some(vec!["pi".to_string()]);
                         agents_changed = true;
                     } else if let Some(ref mut agents) = settings.user.enabled_agents {
+                        let original_len = agents.len();
+                        agents.retain(|a| a != "dsh");
                         if !agents.iter().any(|a| a == "pi") {
                             agents.insert(0, "pi".to_string());
-                            agents_changed = true;
                         }
-                        if !agents.iter().any(|a| a == "dsh") {
-                            agents.push("dsh".to_string());
+                        if agents.len() != original_len || !agents.iter().any(|a| a == "pi") {
                             agents_changed = true;
                         }
                     }

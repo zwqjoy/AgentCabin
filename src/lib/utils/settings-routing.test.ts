@@ -44,8 +44,8 @@ describe("Settings V2 routing & legacy tab compatibility", () => {
 
     expect(resolveSettingsRoute("pi")).toEqual({ tab: "runtimes", runtimeSubTab: "pi" });
     expect(resolveSettingsRoute("pi-common")).toEqual({ tab: "runtimes", runtimeSubTab: "pi" });
-    expect(resolveSettingsRoute("runtimes")).toEqual({ tab: "runtimes", runtimeSubTab: "dsh" });
-    expect(resolveSettingsRoute("runtime")).toEqual({ tab: "runtimes", runtimeSubTab: "dsh" });
+    expect(resolveSettingsRoute("runtimes")).toEqual({ tab: "runtimes", runtimeSubTab: "pi" });
+    expect(resolveSettingsRoute("runtime")).toEqual({ tab: "runtimes", runtimeSubTab: "pi" });
   });
 
   it("maps code carrier mode tabs correctly", () => {

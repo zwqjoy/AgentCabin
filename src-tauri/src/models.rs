@@ -595,7 +595,7 @@ fn default_agent_pi() -> String {
 }
 
 fn default_enabled_agents() -> Option<Vec<String>> {
-    Some(vec!["pi".to_string(), "dsh".to_string()])
+    Some(vec!["pi".to_string()])
 }
 
 fn default_auth_mode() -> String {
@@ -876,7 +876,7 @@ impl Default for UserSettings {
             pi_path: None,
             grok_path: None,
             dsh_path: None,
-            enabled_agents: Some(vec!["pi".to_string(), "dsh".to_string()]),
+            enabled_agents: Some(vec!["pi".to_string()]),
             code_default_runtime: None,
             work_default_runtime: None,
             worktree_root: None,

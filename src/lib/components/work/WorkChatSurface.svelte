@@ -47,7 +47,7 @@
     extractLatestThinkingLine,
   } from "$lib/utils/chat-presentation";
   import { isInteractionTool } from "$lib/utils/tool-activity-adapter";
-import type { BusToolItem, PiTodoState } from "$lib/types";
+  import type { BusToolItem, PiTodoState } from "$lib/types";
   import {
     assignSessionWorkspace,
     continueWorkSession,
@@ -189,29 +189,7 @@ import type { BusToolItem, PiTodoState } from "$lib/types";
 
   let isStandalone = $derived(!workspace);
 
-  let initialWorkRuntime = $derived(profile?.runtime?.trim() || DEFAULT_WORK_RUNTIME);
-  // Work currently has two real runtime adapters. Keep this list derived from
-  // the registered frontend adapters so the selector cannot advertise a
-  // provider that Work would only render as read-only.
-  const WORK_RUNTIME_PROVIDERS = ALL_RUNTIME_PROVIDERS.filter(isWorkRuntimeSupported);
   const workSession = new WorkSessionStore();
-
-  $effect(() => {
-    piTodoState = workSession.session.piTodoState;
-  });
-
-  $effect(() => {
-    // Seed the fresh composer from the legacy Work profile without making the
-    // constructor depend on a reactive prop snapshot. User settings and an
-    // existing Run remain authoritative below.
-    if (
-      !workSession.session.run?.id &&
-      workSession.session.agent === DEFAULT_WORK_RUNTIME &&
-      initialWorkRuntime !== DEFAULT_WORK_RUNTIME
-    ) {
-      workSession.session.agent = initialWorkRuntime;
-    }
-  });
   const keybindingStore = getContext<KeybindingStore>("keybindings");
   let promptRef: PromptInput | undefined = $state();
   let statusBarRef: SessionStatusBar | undefined = $state();
@@ -2062,11 +2040,11 @@ import type { BusToolItem, PiTodoState } from "$lib/types";
             }
             const configuredRuntime =
               fetchedUserSettings?.work_default_runtime?.trim() || profile?.runtime?.trim();
-            const runtimeAgent = session.run?.agent ?? configuredRuntime ?? initialWorkRuntime;
+            const runtimeAgent = session.run?.agent ?? configuredRuntime ?? "pi";
             // The constructor seeds the legacy/profile runtime. Replace that seed
             // with the current user setting only while the conversation is fresh;
             // an explicit user selection in the composer must remain authoritative.
-            if (!session.run?.id && session.agent === initialWorkRuntime && configuredRuntime) {
+            if (!session.run?.id && session.agent === "pi" && configuredRuntime) {
               session.agent = configuredRuntime;
             }
             const preferencesClient = getWorkRuntimeClientOrReadOnly(runtimeAgent);
@@ -2677,34 +2655,6 @@ import type { BusToolItem, PiTodoState } from "$lib/types";
       workSession.dispose();
     };
   });
-
-  async function handleWorkAgentChange(newAgent: string) {
-    if (hasRun || session.isRunning || session.sessionAlive) {
-      promptRef?.showToast(t("runtime_provider_switch_warning"), "info");
-      return;
-    }
-    if (!isWorkRuntimeSupported(newAgent)) {
-      promptRef?.showToast(`Work 暂不支持 ${newAgent} Runtime。`, "error");
-      return;
-    }
-    session.agent = newAgent;
-
-    // Runtime preferences belong to the selected fresh conversation. Reload
-    // them immediately so the runtime-specific effort/default state is ready
-    // before the first send; an explicitly selected model remains unchanged.
-    runtimePreferences = null;
-    currentEffort = "medium";
-    try {
-      const preferences = await getWorkRuntimeClient(newAgent).loadRuntimePreferences();
-      if (disposed || hasRun || session.agent !== newAgent) return;
-      runtimePreferences = preferences;
-      currentEffort = preferences.effort?.trim() || "medium";
-      await applyWorkspaceDefaultModelIfNeeded();
-      ensureModelSelection();
-    } catch (cause) {
-      console.warn("[work/ui] Failed to reload runtime preferences after switching", cause);
-    }
-  }
 </script>
 
 <section
@@ -3162,8 +3112,6 @@ import type { BusToolItem, PiTodoState } from "$lib/types";
               onExpertClear={handleExpertClear}
               harness="work"
               agent={runtimeClient.getDefaultAgent()}
-              enabledAgents={WORK_RUNTIME_PROVIDERS}
-              onAgentChange={handleWorkAgentChange}
               capabilities={workComposerCapabilities}
               queueAvailable={workSession.canFollowUp}
               queueActionAvailable={workSession.canSteer}
@@ -3610,8 +3558,6 @@ import type { BusToolItem, PiTodoState } from "$lib/types";
             bind:selectedExpert
             onExpertClear={handleExpertClear}
             agent={runtimeClient.getDefaultAgent()}
-            enabledAgents={WORK_RUNTIME_PROVIDERS}
-            onAgentChange={handleWorkAgentChange}
             capabilities={workComposerCapabilities}
             queueAvailable={workSession.canFollowUp}
             queueActionAvailable={workSession.canSteer}

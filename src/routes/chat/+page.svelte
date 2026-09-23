@@ -289,9 +289,7 @@
 
   function codeProjectCwdsFromRuns(runs: TaskRun[], realm: AppRealm): string[] {
     const folders = buildProjectFolders(
-      runs.filter(
-        (run) => !isWorkRun(run) && !run.remote_host_name && !run.code_standalone_task,
-      ),
+      runs.filter((run) => !isWorkRun(run) && !run.remote_host_name && !run.code_standalone_task),
       new Set<string>(),
       getSavedPinnedCwds(realm),
       typeof localStorage !== "undefined" ? loadRemovedCwds() : [],
@@ -1463,19 +1461,11 @@
     return result.length > 0 ? result : ["pi"];
   });
 
+  let isLegacyDshRun = $derived(store.run?.agent === "dsh");
+
   let effectiveAgent = $derived.by(() => {
     if (store.run?.agent) return store.run.agent;
-    if (currentHarness === "work") {
-      if (
-        store.agent === "claude" &&
-        settings?.work_default_runtime &&
-        settings.work_default_runtime !== "claude"
-      ) {
-        return settings.work_default_runtime;
-      }
-      return store.agent || settings?.work_default_runtime || "pi";
-    }
-    return store.agent || settings?.code_default_runtime || settings?.default_agent || "pi";
+    return "pi";
   });
   let effectiveCapabilities = $derived(store.capabilities);
   let goalPanelAvailable = $derived(
@@ -8210,6 +8200,28 @@
             </div>
           {/if}
 
+          {#if isLegacyDshRun}
+            <div
+              class="mb-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2 shadow-sm"
+              role="alert"
+            >
+              <svg
+                class="h-4 w-4 shrink-0 text-amber-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span
+                >此历史会话使用已移除的 DeepSeek Harness Runtime，仅支持查看，无法继续运行。</span
+              >
+            </div>
+          {/if}
+
           <!-- Key on run id so each chat gets a clean PromptInput, seeded from its own saved draft -->
           {#key store.run?.id ?? ""}
             <!-- Pi uses extension-owned Plan and permission controls; do not expose the generic
@@ -8224,11 +8236,12 @@
               capabilities={effectiveCapabilities}
               planModeActive={store.planModeActive}
               running={store.isActivelyRunning}
-              disabled={inputBlockedByPermission}
+              disabled={isLegacyDshRun || inputBlockedByPermission}
               pendingPermission={store.hasInlinePermission}
               hasRun={!!store.run || store.timeline.length > 0}
               sessionAlive={store.sessionAlive}
-              canResume={!store.sessionAlive &&
+              canResume={!isLegacyDshRun &&
+                !store.sessionAlive &&
                 canResumeNow(
                   store.run,
                   store.phase,

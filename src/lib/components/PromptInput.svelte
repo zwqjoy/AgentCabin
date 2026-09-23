@@ -2923,16 +2923,6 @@
     <!-- Context row (Codex style): the agent / project / workspace / branch chips sit in a
          muted strip above the input instead of being crowded into the bottom action bar. -->
     <div class="composer-context-row">
-      <AgentSelector
-        value={agent}
-        {enabledAgents}
-        {isRemote}
-        remoteSupported={capabilities?.runtime?.remote ?? true}
-        locked={hasRun || sessionAlive || running || !onAgentChange}
-        onchange={(a) => onAgentChange?.(a)}
-        compact
-      />
-
       {#if projectPicker}
         <div class="relative inline-flex items-center">
           {#if projectPicker.readOnly}

@@ -77,7 +77,7 @@ export function resolveSettingsRoute(
     tab === "runtime-providers" ||
     tab === "native-agents"
   ) {
-    return { tab: "runtimes", runtimeSubTab: "dsh" };
+    return { tab: "runtimes", runtimeSubTab: "pi" };
   }
 
   // Code carrier mode mapping

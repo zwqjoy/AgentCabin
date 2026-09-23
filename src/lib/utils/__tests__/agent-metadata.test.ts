@@ -45,8 +45,8 @@ describe("default runtime providers", () => {
       DEFAULT_RUNTIME_PROVIDER,
       VISIBLE_RUNTIME_PROVIDERS,
     } = await import("../agent-metadata");
-    expect(DEFAULT_ENABLED_RUNTIME_PROVIDERS).toEqual(["pi", "dsh"]);
+    expect(DEFAULT_ENABLED_RUNTIME_PROVIDERS).toEqual(["pi"]);
     expect(DEFAULT_RUNTIME_PROVIDER).toBe("pi");
-    expect(VISIBLE_RUNTIME_PROVIDERS).toEqual(["pi", "dsh"]);
+    expect(VISIBLE_RUNTIME_PROVIDERS).toEqual(["pi"]);
   });
 });

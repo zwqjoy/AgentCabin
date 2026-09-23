@@ -26,7 +26,7 @@ describe("AgentSelector Regression Test", () => {
     const result = render(AgentSelector, {
       props: {
         value: "pi",
-        enabledAgents: ["pi", "dsh"],
+        enabledAgents: ["pi"],
         locked: false,
         compact: true,
       },
@@ -34,8 +34,8 @@ describe("AgentSelector Regression Test", () => {
 
     expect(result.body).toContain("Pi Agent");
     expect(result.body).not.toContain("运行时:");
-    // Should have dropdown chevron when not locked and agents > 1
-    expect(result.body).toContain("<svg");
+    // In Pi-only workbench, single agent disables dropdown chevron
+    expect(result.body).not.toContain("<svg");
   });
 
   it("renders non-compact mode with prefix '运行时:'", () => {
@@ -69,12 +69,12 @@ describe("AgentSelector Regression Test", () => {
     expect(result.body).not.toContain("<svg");
   });
 
-  it("renders AgentSelector inside PromptInput when unlocked", () => {
+  it("does not render AgentSelector inside PromptInput (runtime selector removed from composer)", () => {
     const onAgentChange = vi.fn();
     const result = render(PromptInput, {
       props: {
         agent: "pi",
-        enabledAgents: ["pi", "dsh"],
+        enabledAgents: ["pi"],
         capabilities: getAgentCapabilities("pi"),
         hasRun: false,
         sessionAlive: false,
@@ -84,83 +84,7 @@ describe("AgentSelector Regression Test", () => {
       },
     });
 
-    expect(result.body).toContain("data-agent-selector");
-    expect(result.body).toContain("Pi Agent");
-  });
-
-  it("renders AgentSelector locked inside PromptInput when hasRun is true", () => {
-    const onAgentChange = vi.fn();
-    const result = render(PromptInput, {
-      props: {
-        agent: "pi",
-        enabledAgents: ["pi", "dsh"],
-        capabilities: getAgentCapabilities("pi"),
-        hasRun: true,
-        sessionAlive: false,
-        running: false,
-        onAgentChange,
-        onSend: vi.fn(),
-      },
-    });
-
-    expect(result.body).toContain("data-agent-selector");
-    expect(result.body).toContain("Pi Agent");
-    expect(result.body).toContain("当前会话已绑定 Pi Agent，新建会话后可切换运行时");
-  });
-
-  it("renders AgentSelector locked inside PromptInput when running is true", () => {
-    const onAgentChange = vi.fn();
-    const result = render(PromptInput, {
-      props: {
-        agent: "pi",
-        enabledAgents: ["pi", "dsh"],
-        capabilities: getAgentCapabilities("pi"),
-        hasRun: false,
-        sessionAlive: false,
-        running: true,
-        onAgentChange,
-        onSend: vi.fn(),
-      },
-    });
-
-    expect(result.body).toContain("data-agent-selector");
-    expect(result.body).toContain("当前会话已绑定 Pi Agent，新建会话后可切换运行时");
-  });
-
-  it("renders AgentSelector locked inside PromptInput when sessionAlive is true", () => {
-    const onAgentChange = vi.fn();
-    const result = render(PromptInput, {
-      props: {
-        agent: "pi",
-        enabledAgents: ["pi", "dsh"],
-        capabilities: getAgentCapabilities("pi"),
-        hasRun: false,
-        sessionAlive: true,
-        running: false,
-        onAgentChange,
-        onSend: vi.fn(),
-      },
-    });
-
-    expect(result.body).toContain("data-agent-selector");
-    expect(result.body).toContain("当前会话已绑定 Pi Agent，新建会话后可切换运行时");
-  });
-
-  it("renders AgentSelector locked when onAgentChange is not provided", () => {
-    const result = render(PromptInput, {
-      props: {
-        agent: "pi",
-        enabledAgents: ["pi", "dsh"],
-        capabilities: getAgentCapabilities("pi"),
-        hasRun: false,
-        sessionAlive: false,
-        running: false,
-        onSend: vi.fn(),
-      },
-    });
-
-    expect(result.body).toContain("data-agent-selector");
-    expect(result.body).toContain("当前会话已绑定 Pi Agent，新建会话后可切换运行时");
+    expect(result.body).not.toContain("data-agent-selector");
   });
 
   it("renders DeepSeek DSH correctly when selected", () => {
