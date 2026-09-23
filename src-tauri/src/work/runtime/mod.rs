@@ -7,12 +7,11 @@
 //!
 //! Current registrations:
 //!   - Pi     ✅  (PiWorkRuntimeAdapter)
-//!   - DSH    ✅  (DshWorkRuntimeAdapter)
+//!   - DSH    ❌  (UnsupportedWorkRuntime)
 //!   - Claude  ❌  (UnsupportedWorkRuntime)
 //!   - Codex   ❌  (UnsupportedWorkRuntime)
 //!   - Grok    ❌  (UnsupportedWorkRuntime)
 
-pub mod dsh;
 pub mod pi;
 pub mod router;
 

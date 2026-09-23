@@ -1,6 +1,5 @@
 pub mod claude;
 pub mod codex;
-pub mod dsh;
 pub mod grok;
 pub mod pi;
 
@@ -119,7 +118,23 @@ pub fn get_adapter(kind: RuntimeProviderKind) -> Box<dyn RuntimeProviderAdapter>
         RuntimeProviderKind::Codex => Box::new(codex::CodexRuntimeAdapter),
         RuntimeProviderKind::Grok => Box::new(grok::GrokRuntimeAdapter),
         RuntimeProviderKind::Pi => Box::new(pi::PiRuntimeAdapter),
-        RuntimeProviderKind::Dsh => Box::new(dsh::DshRuntimeAdapter),
+        RuntimeProviderKind::Dsh => Box::new(UnsupportedDshRuntimeAdapter),
+    }
+}
+
+pub struct UnsupportedDshRuntimeAdapter;
+
+impl RuntimeProviderAdapter for UnsupportedDshRuntimeAdapter {
+    fn kind(&self) -> RuntimeProviderKind {
+        RuntimeProviderKind::Dsh
+    }
+
+    fn prepare_runtime(&self, _caps: &EffectiveCapabilities) -> Result<RuntimeSpawnConfig, String> {
+        Err("DeepSeek Harness (DSH) runtime has been removed".to_string())
+    }
+
+    fn cleanup_runtime(&self, caps: &EffectiveCapabilities) -> Result<(), String> {
+        cleanup_managed_directory(&caps.managed_runtime_dir, "DSH runtime")
     }
 }
 

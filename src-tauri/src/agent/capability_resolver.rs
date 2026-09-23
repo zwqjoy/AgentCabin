@@ -1387,7 +1387,6 @@ mod tests {
             RuntimeProviderKind::Codex,
             RuntimeProviderKind::Grok,
             RuntimeProviderKind::Pi,
-            RuntimeProviderKind::Dsh,
         ] {
             let caps = CapabilityResolver::resolve(
                 root.path(),

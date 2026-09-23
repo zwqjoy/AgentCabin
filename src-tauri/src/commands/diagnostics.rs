@@ -1795,8 +1795,9 @@ mod tests {
     #[test]
     fn pi_version_gate_requires_0_84_4_or_newer() {
         assert!(!pi_version_supported("0.84.3"));
+        assert!(!pi_version_supported("0.85.0"));
         assert!(pi_version_supported("0.85.1"));
-        assert!(pi_version_supported("pi 0.85.0"));
+        assert!(pi_version_supported("pi 0.85.1"));
         assert!(pi_version_supported("v1.0.0"));
         assert!(!pi_version_supported("unknown"));
     }

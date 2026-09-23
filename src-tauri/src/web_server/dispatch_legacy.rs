@@ -1821,37 +1821,15 @@ pub async fn dispatch_command(
             Ok(json!(true))
         }
 
-        "list_dsh_plugins" => {
-            let plugins = crate::commands::dsh_plugins::list_dsh_plugins();
-            serde_json::to_value(plugins).map_err(|e| e.to_string())
-        }
+        "list_dsh_plugins" => Ok(serde_json::json!([])),
 
-        "toggle_dsh_plugin" => {
-            let plugin_id = extract_str(&params, "pluginId")?;
-            let enabled = extract_bool(&params, "enabled")?;
-            let manifest =
-                crate::commands::dsh_plugins::toggle_dsh_plugin(plugin_id.to_string(), enabled)?;
-            serde_json::to_value(manifest).map_err(|e| e.to_string())
-        }
+        "toggle_dsh_plugin" => Err("DSH plugins are no longer supported".to_string()),
 
-        "register_dsh_plugin" => {
-            let registration: crate::agent::dsh_plugins::DshPluginRegistration =
-                typed_param(&params, "registration")?;
-            let manifest = crate::commands::dsh_plugins::register_dsh_plugin(registration)?;
-            serde_json::to_value(manifest).map_err(|e| e.to_string())
-        }
+        "register_dsh_plugin" => Err("DSH plugins are no longer supported".to_string()),
 
-        "unregister_dsh_plugin" => {
-            let plugin_id = extract_str(&params, "pluginId")?;
-            crate::commands::dsh_plugins::unregister_dsh_plugin(plugin_id.to_string())?;
-            Ok(serde_json::json!(true))
-        }
+        "unregister_dsh_plugin" => Ok(serde_json::json!(true)),
 
-        "update_dsh_plugin" => {
-            let plugin_id = extract_str(&params, "pluginId")?;
-            let manifest = crate::commands::dsh_plugins::update_dsh_plugin(plugin_id.to_string())?;
-            serde_json::to_value(manifest).map_err(|e| e.to_string())
-        }
+        "update_dsh_plugin" => Err("DSH plugins are no longer supported".to_string()),
 
         // ── Provider testing (global settings screen) ──
         "test_global_provider" => {

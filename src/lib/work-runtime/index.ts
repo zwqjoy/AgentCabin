@@ -1,11 +1,9 @@
 import type { WorkRuntimeClient } from "./types";
 import { piWorkRuntimeClient } from "./pi";
-import { dshWorkRuntimeClient } from "./dsh";
 import { createReadOnlyWorkRuntimeClient } from "./read-only";
 
 export * from "./types";
 export * from "./pi";
-export * from "./dsh";
 export * from "./read-only";
 export * from "./fake";
 
@@ -20,9 +18,6 @@ export function getWorkRuntimeClient(provider?: string): WorkRuntimeClient {
   const normalized = provider?.trim().toLowerCase();
   if (!normalized || normalized === "pi") {
     return piWorkRuntimeClient;
-  }
-  if (normalized === "dsh") {
-    return dshWorkRuntimeClient;
   }
   throw new UnsupportedWorkRuntimeError(provider);
 }

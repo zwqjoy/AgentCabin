@@ -11,7 +11,6 @@
 
 use crate::agent::capability_resolver::RuntimeProviderKind;
 
-use super::dsh::DshWorkRuntimeAdapter;
 use super::pi::PiWorkRuntimeAdapter;
 use super::{WorkRuntimeAdapter, WorkRuntimeError};
 
@@ -25,7 +24,6 @@ pub fn route(
 ) -> Result<Box<dyn WorkRuntimeAdapter>, WorkRuntimeError> {
     match provider {
         RuntimeProviderKind::Pi => Ok(Box::new(PiWorkRuntimeAdapter)),
-        RuntimeProviderKind::Dsh => Ok(Box::new(DshWorkRuntimeAdapter)),
         other => Err(WorkRuntimeError::UnsupportedRuntime(other)),
     }
 }
@@ -89,9 +87,15 @@ mod tests {
     }
 
     #[test]
-    fn routes_dsh_to_dsh_adapter() {
-        let adapter = route(RuntimeProviderKind::Dsh).expect("DSH should be supported");
-        assert_eq!(adapter.provider(), RuntimeProviderKind::Dsh);
+    fn rejects_dsh_without_fallback() {
+        let err = route(RuntimeProviderKind::Dsh).expect_err("DSH Work is not supported");
+        assert!(
+            matches!(
+                err,
+                WorkRuntimeError::UnsupportedRuntime(RuntimeProviderKind::Dsh)
+            ),
+            "Expected UnsupportedRuntime(Dsh), got: {err}"
+        );
     }
 
     #[test]

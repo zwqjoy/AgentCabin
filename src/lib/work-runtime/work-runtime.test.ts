@@ -5,7 +5,6 @@ import {
   getWorkRuntimeClientOrReadOnly,
   UnsupportedWorkRuntimeError,
   piWorkRuntimeClient,
-  dshWorkRuntimeClient,
   FakeWorkRuntimeClient,
 } from "./index";
 
@@ -30,13 +29,8 @@ describe("Work Runtime Client Router", () => {
     expect(getWorkRuntimeClient("   ")).toBe(piWorkRuntimeClient);
   });
 
-  it("routes dsh to the DSH Work runtime client", () => {
-    const client = getWorkRuntimeClient("dsh");
-    expect(client).toBe(dshWorkRuntimeClient);
-    expect(client.provider).toBe("dsh");
-    expect(client.getDisplayName()).toBe("DeepSeek Harness (DSH)");
-    expect(client.capabilities.supportsResume).toBe(true);
-    expect(client.capabilities.supportsSubagents).toBe(false);
+  it("throws UnsupportedWorkRuntimeError for dsh without fallback to pi", () => {
+    expect(() => getWorkRuntimeClient("dsh")).toThrow(UnsupportedWorkRuntimeError);
   });
 
   it("throws UnsupportedWorkRuntimeError for claude without fallback to pi", () => {

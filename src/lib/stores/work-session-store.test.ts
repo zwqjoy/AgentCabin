@@ -344,21 +344,24 @@ describe("Work Session Store & State Transitions", () => {
     expect((store.session.run as { status?: string } | null)?.status).toBe("stopped");
   });
 
-  it("cancels a DSH turn without stopping the provider session", async () => {
-    const store = new WorkSessionStore("dsh");
+  it("cancels a running turn without stopping the provider session", async () => {
+    const store = new WorkSessionStore("pi");
     const run = {
-      id: "run-dsh-cancel",
+      id: "run-pi-cancel",
       workspace_id: dummyWorkspace.id,
       prompt: "输出一份长报告",
       status: "running" as const,
       app_mode: "work" as const,
-      agent: "dsh" as const,
+      agent: "pi" as const,
       execution_path: "session_actor" as const,
       cwd: "/path/to/workspace",
     };
     store.workspaceId = dummyWorkspace.id;
     store.session.run = run as never;
     store.session.phase = "running";
+    // sessionModeControl is false in Pi's static defaults; it must be negotiated
+    // via ACP session_init at runtime. Simulate that negotiation so canCancelTurn works.
+    store.session.sessionCapabilities = { protocol: { sessionModeControl: true } } as never;
     vi.mocked(cancelWorkTurn).mockResolvedValueOnce(undefined);
 
     expect(store.canCancelTurn).toBe(true);

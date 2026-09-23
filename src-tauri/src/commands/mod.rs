@@ -11,7 +11,6 @@ pub mod clipboard;
 pub mod codex_plugins;
 pub mod control;
 pub mod diagnostics;
-pub mod dsh_plugins;
 pub mod editors;
 pub mod events;
 pub mod export;

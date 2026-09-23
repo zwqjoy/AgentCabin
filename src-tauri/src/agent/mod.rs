@@ -8,8 +8,6 @@ pub mod codex_control;
 pub mod codex_parser;
 pub(crate) mod codex_subscription_bridge;
 pub mod control;
-pub mod dsh_plugins;
-pub mod dsh_session_actor;
 pub mod grok_session_actor;
 pub mod notify;
 pub(crate) mod pi_extensions;
