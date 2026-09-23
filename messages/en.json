@@ -2256,6 +2256,9 @@
   "todos_panelHeader": "Tasks",
   "todos_panelSummary": "{done}/{total} done",
   "todos_progress": "Step {current} / {total}",
+  "todos_completedProgress": "{done}/{total} done",
+  "todos_inProgress": "In progress",
+  "todos_allCompleted": "All tasks complete",
 
   "slashTasks_empty": "No background tasks in this session.",
   "slashTasks_notFound": "Task not found: {id}",
@@ -2445,7 +2448,6 @@
   "piExt_permissionSystemEnabled": "@gotgenes/pi-permission-system enabled",
   "piExt_permissionSystemDisabled": "@gotgenes/pi-permission-system disabled",
   "piExt_planModeCardDesc": "Read-only planning mode for Pi. Enter /plan to restrict tools to read-only exploration, ask structured questions via plan_mode_question, and submit plans via plan_mode_complete. No edit/write until plan is approved. Does not handle permission control or auto-continue.",
-  "piExt_todoCardDesc": "Phased, session-aware execution progress for Pi (@pi9/todo). Keeps phases and tasks visible above the editor, restores state across session branches, and re-injects the active plan after compaction.",
   "piExt_goalCardDesc": "Continuous goal-driven execution for Pi. Keeps the agent running across turns to achieve a defined objective, with pause/resume, blocked reporting, and goal_complete on success.",
   "piExt_rpivWebToolsCardDesc": "Pi web tools (@juicesharp/rpiv-web-tools) with configurable backends such as Exa. Returns search results directly, fetches pages through web_fetch including dynamic content, and can shallow-clone GitHub repositories into a local cache. Use /web-tools in Pi to configure Exa after installation.",
   "piExt_fffCardDesc": "High-performance file search extension for Pi (@ff-labs/pi-fff). Adds fffind and ffgrep tools for rapid fuzzy file matching and parallel searching (supports override mode for built-in tools).",

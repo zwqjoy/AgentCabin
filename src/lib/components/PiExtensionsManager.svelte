@@ -71,9 +71,14 @@
       pkg: "npm:@narumitw/pi-goal",
     },
     {
-      label: "待办进度 (Todo Track)",
-      description: "结构化追踪任务阶段与执行进度",
-      pkg: "npm:@pi9/todo",
+      label: "结构化提问 (Ask User Question)",
+      description: "需要用户决策时一次提交清晰、可回答的问题",
+      pkg: "npm:@juicesharp/rpiv-ask-user-question",
+    },
+    {
+      label: "任务进度 (Todo)",
+      description: "追踪多步任务，并在每一步完成后同步状态",
+      pkg: "npm:@juicesharp/rpiv-todo",
     },
     {
       label: "多智能体委派 (Subagents)",
@@ -94,6 +99,51 @@
       label: "批量编辑 (Multi Edit)",
       description: "跨文件、跨位置执行结构化批量 Patch",
       pkg: "npm:pi-mono-multi-edit",
+    },
+  ];
+
+  const WORK_NATIVE_FEATURES = [
+    {
+      label: "Work Runtime",
+      description: "隔离运行时、策略控制、Inbox 审批与成果交付",
+      pkg: "AgentCabin Work Core",
+      resident: true,
+    },
+    {
+      label: "结构化提问 (Ask User Question)",
+      description: "需要用户决策时一次提交清晰、可回答的问题",
+      pkg: "npm:@juicesharp/rpiv-ask-user-question",
+      resident: true,
+    },
+    {
+      label: "任务进度 (Todo)",
+      description: "追踪多步任务，并在每一步完成后同步状态",
+      pkg: "npm:@juicesharp/rpiv-todo",
+      resident: true,
+    },
+    {
+      label: "多智能体委派 (Subagents)",
+      description: "后台委派与协作，受 Work 沙箱和策略适配器约束",
+      pkg: "npm:pi-subagents + Work adapter",
+      resident: true,
+    },
+    {
+      label: "上下文用量 (Context Usage)",
+      description: "报告会话上下文窗口与当前用量",
+      pkg: "AgentCabin Context Usage",
+      resident: true,
+    },
+    {
+      label: "浏览器适配器 (Browser)",
+      description: "浏览器控制与网页操作工具",
+      pkg: "Work Browser adapter",
+      resident: false,
+    },
+    {
+      label: "MCP 适配器 (MCP)",
+      description: "将已启用的 MCP 服务接入 Work 会话",
+      pkg: "Work MCP adapter",
+      resident: false,
     },
   ];
 
@@ -465,7 +515,7 @@
         </span>
       </div>
       <p class="text-xs text-muted-foreground leading-relaxed">
-        这 8 项是官方/社区标准 npm 原生扩展，作为 AgentCabin 基础能力由系统接管。其中<strong
+        这 9 项是官方/社区标准 npm 原生扩展，作为 AgentCabin 基础能力由系统接管。其中<strong
           >代码智能 (LSP) 默认禁用以保证会话极速启动</strong
         >，支持按需开启；其余核心能力系统内置常驻。（Work 模式由 AgentCabin 自研沙箱与适配器接管）
       </p>
@@ -491,7 +541,7 @@
       </svg>
       <div>
         <span class="font-semibold text-amber-900 dark:text-amber-100">防冲突提醒：</span>
-        上述 8 项能力为 AgentCabin 底层内置常驻，<strong
+        上述 9 项能力为 AgentCabin 底层内置常驻，<strong
           >请勿在上方输入框或终端通过 <code
             class="rounded bg-amber-500/15 px-1 py-0.5 font-mono text-[11px]">pi install</code
           > 重复安装同类扩展</strong
@@ -576,6 +626,56 @@
               系统内置
             </span>
           {/if}
+        </div>
+      {/each}
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-border/70 bg-card/70 p-5 shadow-sm space-y-4">
+    <div class="flex flex-col gap-1.5">
+      <div class="flex flex-wrap items-center gap-2">
+        <h3 class="text-sm font-semibold text-foreground">AgentCabin 原生能力（Work 模式）</h3>
+        <span
+          class="inline-flex items-center rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-600 dark:text-purple-400"
+        >
+          Work 专属运行时
+        </span>
+        <span
+          class="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+        >
+          沙箱与能力显式隔离
+        </span>
+      </div>
+      <p class="text-xs text-muted-foreground leading-relaxed">
+        Work 使用独立 Pi profile，由 AgentCabin Work Runtime
+        注入运行时、交互、任务跟踪和委派能力；浏览器与 MCP 适配器在对应能力启用时加载。Code
+        专属的权限扩展、Plan、Goal、LSP、Context Prune 和 Multi Edit 不会进入 Work。
+      </p>
+    </div>
+
+    <div class="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+      {#each WORK_NATIVE_FEATURES as feature}
+        <div
+          class="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/50 p-3"
+        >
+          <div class="min-w-0 flex-1">
+            <span class="block text-xs font-medium text-foreground">{feature.label}</span>
+            <span class="mt-0.5 block truncate text-[10px] text-muted-foreground">
+              {feature.description}
+            </span>
+            <span
+              class="mt-1 inline-block max-w-full truncate rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground/80"
+            >
+              {feature.pkg}
+            </span>
+          </div>
+          <span
+            class="shrink-0 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium {feature.resident
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+              : 'border-border bg-muted/40 text-muted-foreground'}"
+          >
+            {feature.resident ? "系统内置" : "按需加载"}
+          </span>
         </div>
       {/each}
     </div>

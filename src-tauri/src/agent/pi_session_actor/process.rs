@@ -818,7 +818,6 @@ mod tests {
             pi_permission_system_enabled: false,
             pi_plan_mode_enabled: false,
             pi_goal_enabled: false,
-            pi_todo_enabled: false,
             pi_context_prune_enabled: false,
             pi_subagents_enabled: false,
             pi_multi_edit_enabled: false,
@@ -997,7 +996,6 @@ mod tests {
         settings.pi_permission_system_enabled = true;
         settings.pi_plan_mode_enabled = true;
         settings.pi_goal_enabled = true;
-        settings.pi_todo_enabled = true;
         settings.pi_context_prune_enabled = true;
         settings.pi_subagents_enabled = true;
         settings.pi_multi_edit_enabled = true;
@@ -1009,7 +1007,6 @@ mod tests {
             "npm:@gotgenes/pi-permission-system",
             "npm:@narumitw/pi-goal",
             "npm:@narumitw/pi-plan-mode",
-            "npm:@pi9/todo",
             "npm:pi-context-prune",
             "npm:pi-subagents",
             "npm:pi-mono-multi-edit",

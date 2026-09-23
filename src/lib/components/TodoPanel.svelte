@@ -8,7 +8,7 @@
   type Props = {
     /** Current task list (Tasks system or legacy TodoWrite). Empty hides the task hotspot. */
     tasks: PanelTask[];
-    /** Pi9 phased todo state. This is rendered natively instead of as a raw extension widget. */
+    /** rpiv-todo state rendered with AgentCabin's native UI. */
     piTodoState?: PiTodoState | null;
     /** Current-turn file changes shown from the trailing hotspot. */
     changeSummary?: UnifiedDiffSummary | null;
@@ -58,13 +58,12 @@
     todoItems.filter((task) => task.status === "completed" || task.status === "cancelled").length,
   );
   let totalCount = $derived(todoItems.length);
-  let currentStep = $derived.by(() => {
-    const activeIndex = todoItems.findIndex((task) => task.status === "in_progress");
-    if (activeIndex >= 0) return activeIndex + 1;
-    return totalCount > 0 ? Math.min(doneCount + 1, totalCount) : 0;
-  });
+  let progressPercent = $derived(totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0);
+  let activeTask = $derived(todoItems.find((task) => task.status === "in_progress") ?? null);
   let progressLabel = $derived(
-    hasTodo ? t("todos_progress", { current: String(currentStep), total: String(totalCount) }) : "",
+    hasTodo
+      ? t("todos_completedProgress", { done: String(doneCount), total: String(totalCount) })
+      : "",
   );
 
   let changeFiles = $derived(changeSummary?.files ?? []);
@@ -92,41 +91,87 @@
 {#if hasTodo || hasChanges}
   <div class="mx-auto w-full max-w-4xl px-4 pb-2">
     <div
-      class="mx-auto flex w-fit max-w-full items-center rounded-full border border-border bg-background/95 p-0.5 text-xs text-muted-foreground shadow-sm backdrop-blur"
+      class="mx-auto flex w-fit max-w-full items-center rounded-full border border-border/80 bg-card/95 p-1 text-xs text-muted-foreground shadow-md backdrop-blur"
     >
       {#if hasTodo}
         <div class="trigger-group relative" class:pinned={todoPinned}>
           <button
             type="button"
-            class="progress-trigger flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors hover:bg-muted/70 hover:text-foreground"
+            class="progress-trigger flex items-center gap-2 rounded-full px-3 py-1.5 transition-colors hover:bg-muted/70 hover:text-foreground"
             aria-haspopup="dialog"
             aria-expanded={todoPinned}
             onclick={() => (todoPinned = !todoPinned)}
           >
             <span
-              class="h-3 w-3 shrink-0 rounded-full border border-primary/40 {todoItems.some(
-                (task) => task.status === 'in_progress',
-              )
-                ? 'border-blue-500/70'
-                : ''}"
+              class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
               aria-hidden="true"
-            ></span>
-            <span class="whitespace-nowrap">{progressLabel}</span>
+            >
+              {#if doneCount === totalCount}
+                <svg
+                  viewBox="0 0 20 20"
+                  class="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  ><path d="m4 10 4 4 8-8" stroke-linecap="round" stroke-linejoin="round" /></svg
+                >
+              {:else}
+                <span
+                  class="h-1.5 w-1.5 rounded-full bg-primary {activeTask ? 'animate-pulse' : ''}"
+                ></span>
+              {/if}
+            </span>
+            <span class="whitespace-nowrap font-medium text-foreground"
+              >{t("todos_panelHeader")}</span
+            >
+            <span class="font-mono text-[11px] tabular-nums">{progressLabel}</span>
+            <span class="h-1.5 w-12 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+              <span
+                class="block h-full rounded-full bg-primary transition-[width] duration-300"
+                style={`width: ${progressPercent}%`}
+              ></span>
+            </span>
           </button>
 
           <div
             class="hover-popover absolute bottom-full left-0 z-50 w-[min(24rem,calc(100vw-2rem))] pb-2"
           >
             <div
-              class="overflow-hidden rounded-xl border border-border/80 bg-popover text-popover-foreground shadow-xl backdrop-blur-md"
+              class="overflow-hidden rounded-xl border border-border/70 bg-popover text-popover-foreground shadow-xl"
               role="dialog"
               aria-label={t("todos_panelHeader")}
             >
-              <div class="flex items-center gap-2 border-b border-border/70 px-3 py-2.5">
-                <span class="text-xs font-semibold">{t("todos_panelHeader")}</span>
-                <span class="ml-auto text-[11px] text-muted-foreground/70"
-                  >{doneCount}/{totalCount}</span
+              <div class="border-b border-border/60 px-3.5 py-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-[13px] font-semibold">{t("todos_panelHeader")}</span>
+                  <span
+                    class="ml-auto rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-medium text-primary"
+                    >{doneCount}/{totalCount}</span
+                  >
+                </div>
+                <div
+                  class="mt-2.5 h-1 overflow-hidden rounded-full bg-muted"
+                  role="progressbar"
+                  aria-label={t("todos_panelHeader")}
+                  aria-valuemin="0"
+                  aria-valuemax={totalCount}
+                  aria-valuenow={doneCount}
                 >
+                  <div
+                    class="h-full rounded-full bg-primary transition-[width] duration-300"
+                    style={`width: ${progressPercent}%`}
+                  ></div>
+                </div>
+                {#if activeTask}
+                  <p class="mt-2 truncate text-xs text-muted-foreground" title={activeTask.text}>
+                    <span class="mr-1.5 font-medium text-primary">{t("todos_inProgress")}</span>
+                    {activeTask.text}
+                  </p>
+                {:else if doneCount === totalCount}
+                  <p class="mt-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    {t("todos_allCompleted")}
+                  </p>
+                {/if}
               </div>
 
               <TaskChecklistCard tasks={[]} sections={todoSections} embedded />

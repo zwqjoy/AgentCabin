@@ -97,18 +97,23 @@
     {#if embedded || expanded}
       <div
         class={embedded
-          ? "max-h-[min(22rem,60vh)] space-y-3 overflow-y-auto"
+          ? "max-h-[min(19rem,55vh)] space-y-2 overflow-y-auto px-2.5 py-2"
           : "space-y-3 border-t border-border/60 bg-muted/20 px-4 py-3"}
       >
         {#each sections.length > 0 ? sections : [{ id: "tasks", title: "", tasks }] as section (section.id)}
-          <div class="space-y-2">
+          <div class="space-y-1">
             {#if section.title}<h3 class="text-xs font-semibold text-foreground/80">
                 {section.title}
               </h3>{/if}
             {#each section.tasks as task, index (task.id)}
-              <div class="flex items-start gap-3 text-sm leading-5">
+              <div
+                class="flex items-start gap-2.5 rounded-lg px-2 py-2 text-[13px] leading-[1.35rem] transition-colors hover:bg-muted/50 {task.status ===
+                'completed'
+                  ? 'bg-emerald-500/[0.035]'
+                  : ''}"
+              >
                 <span
-                  class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] {statusClass(
+                  class="mt-px flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border text-[10px] {statusClass(
                     task.status,
                   )}"
                   aria-label={task.status === "completed" || task.status === "cancelled"
@@ -127,19 +132,27 @@
                     {index + 1}
                   {/if}
                 </span>
-                <span
-                  class="min-w-0 flex-1 {task.status === 'completed' || task.status === 'cancelled'
-                    ? 'text-muted-foreground line-through'
-                    : 'text-foreground'}">{task.text}</span
-                >
-                {#if task.description}
-                  <span class="min-w-0 flex-1 text-xs text-muted-foreground"
-                    >{task.description}</span
-                  >
-                {/if}
-                {#if task.status === "in_progress"}
-                  <span class="shrink-0 text-xs font-medium text-primary">进行中</span>
-                {/if}
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start gap-2">
+                    <span
+                      class="min-w-0 flex-1 {task.status === 'completed' ||
+                      task.status === 'cancelled'
+                        ? 'text-muted-foreground/90'
+                        : 'text-foreground'}">{task.text}</span
+                    >
+                    {#if task.status === "in_progress"}
+                      <span
+                        class="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                        >进行中</span
+                      >
+                    {/if}
+                  </div>
+                  {#if task.description}
+                    <p class="mt-0.5 text-[11px] leading-4 text-muted-foreground/80">
+                      {task.description}
+                    </p>
+                  {/if}
+                </div>
               </div>
             {/each}
           </div>

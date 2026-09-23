@@ -2256,6 +2256,9 @@
   "todos_panelHeader": "任务",
   "todos_panelSummary": "{done}/{total} 完成",
   "todos_progress": "第 {current} / {total} 步",
+  "todos_completedProgress": "{done}/{total} 已完成",
+  "todos_inProgress": "进行中",
+  "todos_allCompleted": "全部完成",
 
   "slashTasks_empty": "当前会话没有后台任务。",
   "slashTasks_notFound": "未找到任务：{id}",
@@ -2445,7 +2448,6 @@
   "piExt_permissionSystemEnabled": "@gotgenes/pi-permission-system 已启用",
   "piExt_permissionSystemDisabled": "@gotgenes/pi-permission-system 已禁用",
   "piExt_planModeCardDesc": "Pi 的只读计划模式扩展。输入 /plan 进入只读探索，通过 plan_mode_question 提结构化问题，通过 plan_mode_complete 提交最终计划。计划批准前禁止 edit/write。不负责权限控制和自动续跑。",
-  "piExt_todoCardDesc": "Pi 的分阶段、会话感知任务进度扩展（@pi9/todo）。在编辑器上方持续显示阶段与任务，分支切换时恢复对应状态，并在 compact 后重新注入当前计划。",
   "piExt_goalCardDesc": "Pi 的持续目标驱动执行扩展。让 Agent 跨回合持续运行以实现定义目标，支持暂停/恢复、阻塞上报和完成时调用 goal_complete。是唯一的自动续跑控制器，不要与其他续跑扩展同时使用。",
   "piExt_rpivWebToolsCardDesc": "Pi 的联网工具扩展（@juicesharp/rpiv-web-tools）。可配置 Exa 等搜索后端，直接返回搜索结果并通过 web_fetch 抓取网页；支持需要动态渲染的内容，并可将 GitHub 仓库浅克隆到本地缓存供 Agent 查看。安装后在 Pi 中使用 /web-tools 配置 Exa。",
   "piExt_fffCardDesc": "Pi 的高性能文件搜索扩展（@ff-labs/pi-fff）。新增 fffind 与 ffgrep 工具提供极速模糊文件名匹配与多关键字并发搜索，显著提升大型项目定位效率（支持 override 模式替代内置工具）。",

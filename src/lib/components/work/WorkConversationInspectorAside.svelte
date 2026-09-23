@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import type { PiTodoState, SessionInfoData } from "$lib/types";
+  import type { SessionInfoData } from "$lib/types";
   import type {
     InboxItem,
     WorkArtifactStorageMode,
@@ -18,7 +18,6 @@
     open: boolean;
     onClose: () => void;
     sessionInfo: SessionInfoData | null;
-    piTodoState?: PiTodoState;
     progress: WorkProgressSnapshot | null;
     progressView?: WorkRunProgressView | null;
     recovery?: WorkRunRecovery | null;
@@ -44,7 +43,6 @@
     open,
     onClose,
     sessionInfo,
-    piTodoState = { phases: [] },
     progress,
     progressView = null,
     recovery = null,
@@ -339,7 +337,6 @@
         <div class="h-full w-full overflow-hidden">
           <WorkConversationInspector
             {sessionInfo}
-            {piTodoState}
             {progress}
             {progressView}
             {recovery}

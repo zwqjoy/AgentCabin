@@ -2298,12 +2298,16 @@
       description: "实施前的只读方案设计",
     },
     {
-      label: "Todo progress",
-      description: "实施过程中的分阶段进度（已有 todo 扩展时保持关闭）",
-    },
-    {
       label: "Goal tracking",
       description: "跨回合自主运行与目标达成",
+    },
+    {
+      label: "Ask User Question",
+      description: "需要用户决策时提交结构化问题",
+    },
+    {
+      label: "Todo progress",
+      description: "多步任务清单与逐项完成状态",
     },
     {
       label: "Subagents delegation",
@@ -2320,6 +2324,51 @@
     {
       label: "Multi edit",
       description: "多文件、多位置批量 Patch 编辑",
+    },
+  ];
+
+  const WORK_NATIVE_FEATURES = [
+    {
+      label: "Work Runtime",
+      description: "隔离运行时、策略控制、Inbox 审批与成果交付",
+      source: "AgentCabin Work Core",
+      mode: "常驻",
+    },
+    {
+      label: "Ask User Question",
+      description: "需要用户决策时提交结构化问题",
+      source: "@juicesharp/rpiv-ask-user-question",
+      mode: "常驻",
+    },
+    {
+      label: "Todo progress",
+      description: "多步任务清单与逐项完成状态",
+      source: "@juicesharp/rpiv-todo",
+      mode: "常驻",
+    },
+    {
+      label: "Subagents",
+      description: "受 Work 策略约束的后台委派与协作",
+      source: "pi-subagents + Work adapter",
+      mode: "常驻",
+    },
+    {
+      label: "Context usage",
+      description: "显示当前会话上下文使用情况",
+      source: "AgentCabin Context Usage",
+      mode: "常驻",
+    },
+    {
+      label: "Browser tools",
+      description: "浏览器控制与网页操作适配器",
+      source: "Work Browser adapter",
+      mode: "按需加载",
+    },
+    {
+      label: "MCP adapter",
+      description: "连接已启用的 MCP 工具服务",
+      source: "Work MCP adapter",
+      mode: "按需加载",
     },
   ];
 
@@ -5243,7 +5292,7 @@
         <div>
           <p class="text-xs font-semibold text-foreground">Native Pi 原生能力（Code 模式）</p>
           <p class="mt-0.5 text-[11px] text-muted-foreground">
-            这 8 项能力为 AgentCabin 基础扩展能力，Pi Code 启动时自动注入加载。其中代码智能 (LSP)
+            这 9 项能力为 AgentCabin 基础扩展能力，Pi Code 启动时自动注入加载。其中代码智能 (LSP)
             默认禁用以保证极速启动，可前往 Pi Agent
             设置按需启用；其余核心能力系统内置常驻。请勿重复手动安装同名扩展以防冲突。
           </p>
@@ -5280,6 +5329,42 @@
           {/each}
         </div>
       </div>
+    </div>
+
+    <div class="space-y-6" class:hidden={activeTab !== "pi-extensions" || pluginScope !== "work"}>
+      <section class="rounded-xl border border-border/80 bg-card p-4 space-y-3">
+        <div>
+          <p class="text-xs font-semibold text-foreground">Native Pi 原生能力（Work 模式）</p>
+          <p class="mt-0.5 text-[11px] text-muted-foreground">
+            Work 使用独立的 Pi profile，只加载下列 Work 运行时能力；浏览器和 MCP
+            适配器在对应能力启用时加载。
+          </p>
+        </div>
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {#each WORK_NATIVE_FEATURES as feature}
+            <div
+              class="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2"
+            >
+              <div class="min-w-0">
+                <span class="block text-xs text-foreground">{feature.label}</span>
+                <span class="block truncate text-[10px] text-muted-foreground"
+                  >{feature.description}</span
+                >
+                <code
+                  class="mt-1 block truncate rounded bg-muted/60 px-1.5 py-0.5 text-[9px] text-muted-foreground"
+                  >{feature.source}</code
+                >
+              </div>
+              <span
+                class="shrink-0 rounded-md border px-2 py-1 text-[10px] font-medium {feature.mode ===
+                '常驻'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                  : 'border-border bg-muted/40 text-muted-foreground'}">{feature.mode}</span
+              >
+            </div>
+          {/each}
+        </div>
+      </section>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->

@@ -77,7 +77,6 @@ pub struct AdapterSettings {
     pub pi_permission_system_enabled: bool,
     pub pi_plan_mode_enabled: bool,
     pub pi_goal_enabled: bool,
-    pub pi_todo_enabled: bool,
     pub pi_context_prune_enabled: bool,
     pub pi_subagents_enabled: bool,
     pub pi_multi_edit_enabled: bool,
@@ -283,11 +282,6 @@ pub fn build_adapter_settings(
     } else {
         false
     };
-    let pi_todo_enabled = if agent.agent == "pi" {
-        agent.pi_todo_enabled.unwrap_or(false)
-    } else {
-        false
-    };
     let pi_context_prune_enabled = if agent.agent == "pi" {
         agent.pi_context_prune_enabled.unwrap_or(false)
     } else {
@@ -349,7 +343,6 @@ pub fn build_adapter_settings(
         pi_permission_system_enabled,
         pi_plan_mode_enabled,
         pi_goal_enabled,
-        pi_todo_enabled,
         pi_context_prune_enabled,
         pi_subagents_enabled,
         pi_multi_edit_enabled,
@@ -573,7 +566,6 @@ mod tests {
             pi_permission_system_enabled: false,
             pi_plan_mode_enabled: false,
             pi_goal_enabled: false,
-            pi_todo_enabled: false,
             pi_context_prune_enabled: false,
             pi_subagents_enabled: false,
             pi_multi_edit_enabled: false,

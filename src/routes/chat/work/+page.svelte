@@ -23,7 +23,7 @@
   import WorkAutomationCenter from "$lib/components/work/WorkAutomationCenter.svelte";
   import WorkMaterialsCenter from "$lib/components/work/WorkMaterialsCenter.svelte";
   import ArchivedChatsView from "$lib/components/ArchivedChatsView.svelte";
-  import type { PiTodoState, SessionInfoData } from "$lib/types";
+  import type { SessionInfoData } from "$lib/types";
   import type {
     InboxItem,
     WorkArtifactStorageMode,
@@ -57,7 +57,6 @@
   );
   // ── Conversation surface bindables ─────────────────────────────────────────
   let sessionInfo = $state<SessionInfoData | null>(null);
-  let piTodoState = $state<PiTodoState>({ phases: [] });
   let progress = $state<WorkProgressSnapshot | null>(null);
   let progressView = $state<WorkRunProgressView | null>(null);
   let pendingInteractions = $state<InboxItem[]>([]);
@@ -522,7 +521,6 @@
                   {artifacts}
                   onArtifactsChanged={refreshArtifacts}
                   bind:sessionInfo
-                  bind:piTodoState
                   bind:progress
                   bind:progressView
                   bind:conversationArchived
@@ -537,7 +535,6 @@
               open={showConversationInspector}
               onClose={() => (showConversationInspector = false)}
               {sessionInfo}
-              {piTodoState}
               {progress}
               {progressView}
               readOnly={conversationArchived}
@@ -677,7 +674,6 @@
                       workWorkspaceStore.updateWorkspace(ws);
                     }}
                     bind:sessionInfo
-                    bind:piTodoState
                     bind:progress
                     bind:progressView
                     bind:conversationArchived
@@ -694,7 +690,6 @@
                 open={showConversationInspector}
                 onClose={() => (showConversationInspector = false)}
                 {sessionInfo}
-                {piTodoState}
                 {progress}
                 {progressView}
                 {recovery}

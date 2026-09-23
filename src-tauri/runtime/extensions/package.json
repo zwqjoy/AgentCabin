@@ -13,7 +13,6 @@
     "@narumitw/pi-goal": "0.54.4",
     "@narumitw/pi-lsp": "0.49.7",
     "@narumitw/pi-plan-mode": "0.56.0",
-    "@pi9/todo": "0.3.7",
     "pi-context-prune": "1.4.0",
     "pi-mcp-adapter": "2.22.0",
     "pi-mono-multi-edit": "2.0.0",

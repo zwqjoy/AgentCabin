@@ -37,6 +37,7 @@
   import ConversationMarkdown from "$lib/components/ConversationMarkdown.svelte";
   import PermissionPanel from "$lib/components/PermissionPanel.svelte";
   import PromptInput from "$lib/components/PromptInput.svelte";
+  import TodoPanel from "$lib/components/TodoPanel.svelte";
   import ChatSearchToolbar from "$lib/components/ChatSearchToolbar.svelte";
   import ConversationTurnRail from "$lib/components/ConversationTurnRail.svelte";
   import ChatReasoningBlock from "$lib/components/chat/ChatReasoningBlock.svelte";
@@ -56,7 +57,7 @@
     extractLatestThinkingLine,
   } from "$lib/utils/chat-presentation";
   import { isInteractionTool } from "$lib/utils/tool-activity-adapter";
-  import type { BusToolItem, PiTodoState } from "$lib/types";
+  import type { BusToolItem } from "$lib/types";
   import {
     assignSessionWorkspace,
     continueWorkSession,
@@ -159,7 +160,6 @@
     sessionAlive?: boolean;
     conversationArchived?: boolean;
     pendingInteractions?: InboxItem[];
-    piTodoState?: PiTodoState;
     workspaces?: WorkWorkspaceSummary[];
     onCreateWorkspace?: () => void;
     onOpenFolderWorkspace?: () => void;
@@ -189,12 +189,15 @@
     sessionAlive = $bindable(false),
     conversationArchived = $bindable(false),
     pendingInteractions = $bindable<InboxItem[]>([]),
-    piTodoState = $bindable<PiTodoState>({ phases: [] }),
     onStopSession = $bindable(() => {}),
     onToggleInspector,
     inspectorOpen = false,
     onExportArtifact,
   }: Props = $props();
+
+  const toggleAppSidebar = getContext<(() => void) | undefined>("toggleSidebar");
+  const getAppSidebarOpen = getContext<(() => boolean) | undefined>("isSidebarOpen");
+  let appSidebarOpen = $derived(getAppSidebarOpen?.() ?? true);
 
   let isStandalone = $derived(!workspace);
 
@@ -2644,6 +2647,8 @@
     agent={effectiveWorkAgent}
     model={session.model}
     running={session.sessionAlive}
+    onToggleSidebar={toggleAppSidebar}
+    sidebarOpen={appSidebarOpen}
     cwd={isStandalone ? "" : workspace?.name || session.sessionCwd || workspace?.root || ""}
     mode={session.run ? "Stream" : ""}
     {modelOptions}
@@ -3489,6 +3494,10 @@
   {/if}
 
   {#if hasTranscript}
+    <TodoPanel
+      tasks={session.todoPanelVisible ? session.panelTasks : []}
+      piTodoState={session.todoPanelVisible ? session.piTodoState : null}
+    />
     <div
       class="shrink-0 bg-background px-4 pb-3 pt-2 sm:px-6"
       class:pointer-events-none={conversationReadOnly}

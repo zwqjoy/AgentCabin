@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { PiTodoState } from "$lib/types";
   import type {
     InboxItem,
     RunHealth,
@@ -17,7 +16,6 @@
   import { isQuestionInteraction } from "$lib/utils/work-interactions";
   import { workToolLabel } from "$lib/utils/work-activity";
   import WorkGoalCard from "./WorkGoalCard.svelte";
-  import TaskChecklistCard from "$lib/components/TaskChecklistCard.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { verifyWorkGoal, triggerWorkGoalRepair } from "$lib/api/work";
 
@@ -32,7 +30,6 @@
     showHeader?: boolean;
     showArtifactSummary?: boolean;
     pendingInteractions?: InboxItem[];
-    piTodoState?: PiTodoState;
   }
 
   let {
@@ -46,7 +43,6 @@
     showHeader = true,
     showArtifactSummary = true,
     pendingInteractions = [],
-    piTodoState = { phases: [] },
   }: Props = $props();
 
   const phaseLabels: Record<WorkProgressPhase, string> = {
@@ -109,18 +105,6 @@
   let phaseLabel = $derived(phaseLabels[phase] ?? "等待下一步");
   let phaseClass = $derived(phaseClasses[phase] ?? "bg-muted text-muted-foreground");
   let tasks = $derived(progressView ? progressView.steps : (resolvedSnapshot?.tasks ?? []));
-  let piTodoSections = $derived(
-    piTodoState.phases.map((phase, phaseIndex) => ({
-      id: `pi-todo-phase-${phaseIndex}`,
-      title: phase.name,
-      tasks: phase.tasks.map((task, taskIndex) => ({
-        id: `pi-todo-${phaseIndex}-${taskIndex}`,
-        text: task.name,
-        description: task.description,
-        status: task.status,
-      })),
-    })),
-  );
   let completedTasks = $derived(tasks.filter((task) => task.status === "completed").length);
   let deliveredArtifacts = $derived(
     artifacts.filter((artifact) => artifact.status === "delivered").length,
@@ -971,19 +955,6 @@
       >
         {resolvedSnapshot.error}
       </p>
-    </div>
-  {/if}
-
-  <!-- Steps List -->
-  {#if tasks.length > 0}
-    <div class="mt-4">
-      <TaskChecklistCard {tasks} />
-    </div>
-  {/if}
-
-  {#if piTodoSections.some((section) => section.tasks.length > 0)}
-    <div class="mt-4">
-      <TaskChecklistCard tasks={[]} sections={piTodoSections} title="Pi Todo" />
     </div>
   {/if}
 

@@ -291,7 +291,6 @@ mod tests {
             pi_permission_system_enabled: false,
             pi_plan_mode_enabled: false,
             pi_goal_enabled: false,
-            pi_todo_enabled: false,
             pi_context_prune_enabled: false,
             pi_subagents_enabled: false,
             pi_multi_edit_enabled: false,

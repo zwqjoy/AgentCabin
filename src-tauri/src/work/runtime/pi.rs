@@ -525,7 +525,6 @@ fn isolate_work_pi_features(settings: &mut AdapterSettings) {
     settings.pi_permission_system_enabled = false;
     settings.pi_plan_mode_enabled = false;
     settings.pi_goal_enabled = false;
-    settings.pi_todo_enabled = false;
     settings.pi_context_prune_enabled = false;
     settings.pi_subagents_enabled = false;
     settings.pi_multi_edit_enabled = false;

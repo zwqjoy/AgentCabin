@@ -974,9 +974,6 @@ pub struct AgentSettings {
     /// Pi `-e npm:@narumitw/pi-goal` — load the Goal extension independently.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pi_goal_enabled: Option<bool>,
-    /// Pi `-e npm:@pi9/todo` — load the phased todo extension.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pi_todo_enabled: Option<bool>,
     /// Pi `-e npm:pi-context-prune` — load optional context pruning. Disabled by default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pi_context_prune_enabled: Option<bool>,
@@ -1024,7 +1021,6 @@ impl AgentSettings {
             web_search: None,
             pi_plan_mode_enabled: None,
             pi_goal_enabled: None,
-            pi_todo_enabled: None,
             pi_context_prune_enabled: None,
             pi_subagents_enabled: None,
             pi_multi_edit_enabled: None,

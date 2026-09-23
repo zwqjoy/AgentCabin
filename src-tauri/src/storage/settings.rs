@@ -2026,9 +2026,6 @@ fn apply_agent_patch(settings: &mut AgentSettings, patch: &serde_json::Value) {
     if let Some(v) = patch.get("pi_goal_enabled") {
         settings.pi_goal_enabled = if v.is_null() { None } else { v.as_bool() };
     }
-    if let Some(v) = patch.get("pi_todo_enabled") {
-        settings.pi_todo_enabled = if v.is_null() { None } else { v.as_bool() };
-    }
     if let Some(v) = patch.get("pi_context_prune_enabled") {
         settings.pi_context_prune_enabled = if v.is_null() { None } else { v.as_bool() };
     }
