@@ -32,29 +32,31 @@ const BRIDGE_SCRIPT = `<script ${BRIDGE_MARKER}>
   var timer = 0;
   var RESIZE_DELAY = 16;
 
-  function pixels(value) {
-    var parsed = parseFloat(value);
-    return isFinite(parsed) ? parsed : 0;
-  }
+  var recentHeights = [];
 
   function naturalHeight() {
     var body = document.body;
-    if (!body) return 0;
-    // Neutralize viewport-derived heights so the measurement reflects the
-    // content itself instead of the current frame height.
+    var doc = document.documentElement;
+    if (!body || !doc) return 0;
+    // Neutralize viewport-derived heights and contain collapsed margins so the
+    // measurement reflects the content itself instead of the current frame height.
     var probe = document.createElement("style");
-    probe.textContent = "html,body{height:auto !important;min-height:0 !important}";
-    var root = document.head || document.documentElement;
+    probe.textContent =
+      "html,body{height:auto !important;min-height:0 !important}html{display:flow-root !important}";
+    var root = document.head || doc;
     root.appendChild(probe);
-    var bodyRect = body.getBoundingClientRect();
-    var style = window.getComputedStyle(body);
-    var bottom = bodyRect.bottom;
-    var children = body.children;
-    for (var i = 0; i < children.length; i += 1) {
-      var rect = children[i].getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) bottom = Math.max(bottom, rect.bottom);
+    var height = doc.offsetHeight;
+    if (height <= 0) {
+      var bodyRect = body.getBoundingClientRect();
+      var bottom = bodyRect.bottom;
+      var children = body.children;
+      for (var i = 0; i < children.length; i += 1) {
+        if (children[i] === probe) continue;
+        var rect = children[i].getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) bottom = Math.max(bottom, rect.bottom);
+      }
+      height = bottom - bodyRect.top;
     }
-    var height = bottom - bodyRect.top + pixels(style.marginTop) + pixels(style.marginBottom);
     probe.remove();
     return height;
   }
@@ -68,6 +70,20 @@ const BRIDGE_SCRIPT = `<script ${BRIDGE_MARKER}>
   function send(height) {
     var rounded = Math.round(height);
     if (rounded < 1 || Math.abs(rounded - lastHeight) < 1) return;
+    if (recentHeights.indexOf(rounded) !== -1) {
+      // Oscillation detected: bouncing back to a previously sent height.
+      // Lock to the maximum height to prevent layout vibration and scroll loops.
+      var maxHeight = Math.max(rounded, lastHeight);
+      growthBlocked = true;
+      shrinkBlocked = true;
+      if (maxHeight !== lastHeight) {
+        lastHeight = maxHeight;
+        window.parent.postMessage({ type: MESSAGE, height: maxHeight }, "*");
+      }
+      return;
+    }
+    recentHeights.push(rounded);
+    if (recentHeights.length > 5) recentHeights.shift();
     lastHeight = rounded;
     window.parent.postMessage({ type: MESSAGE, height: rounded }, "*");
   }
@@ -95,9 +111,11 @@ const BRIDGE_SCRIPT = `<script ${BRIDGE_MARKER}>
       send(target);
       return;
     }
-    growthTarget = -1;
     if (shrinkBlocked) return;
-    send(naturalHeight());
+    var natural = naturalHeight();
+    // Do not shrink back to a height where we previously overflowed
+    if (growthTarget > 0 && natural < growthTarget) return;
+    send(natural);
   }
 
   function schedule() {

@@ -49,13 +49,30 @@
     measured.src === document ? measured.height : PREVIEW_DEFAULT_HEIGHT,
   );
 
+  let recentParentHeights: number[] = [];
+  $effect(() => {
+    // Reset oscillation history when the rendered document changes
+    void document;
+    recentParentHeights = [];
+  });
+
   // The sandboxed frame reports its own content height so the preview hugs the
   // chart instead of leaving a blank band below it.
   function handleFrameHeight(event: MessageEvent) {
     if (event.source !== frameEl?.contentWindow) return;
     const height = parsePreviewHeightMessage(event.data);
     if (height !== null) {
-      measured = { src: document, height: Math.max(PREVIEW_MIN_HEIGHT, height) };
+      const target = Math.max(PREVIEW_MIN_HEIGHT, height);
+      if (measured.src === document && Math.abs(measured.height - target) < 1) return;
+      if (recentParentHeights.includes(target)) {
+        // Oscillation guard in host: lock to maximum height to stop layout vibration
+        const locked = Math.max(target, measured.height);
+        measured = { src: document, height: locked };
+        return;
+      }
+      recentParentHeights.push(target);
+      if (recentParentHeights.length > 5) recentParentHeights.shift();
+      measured = { src: document, height: target };
     }
   }
 

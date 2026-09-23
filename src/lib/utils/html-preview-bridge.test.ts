@@ -49,4 +49,10 @@ describe("inline HTML preview height bridge", () => {
       expect(parsePreviewHeightMessage(payload)).toBeNull();
     }
   });
+
+  it("includes flow-root margin containment and oscillation guard in the bridge script", () => {
+    const injected = injectPreviewBridge("<p>test</p>");
+    expect(injected).toContain("display:flow-root !important");
+    expect(injected).toContain("recentHeights");
+  });
 });
