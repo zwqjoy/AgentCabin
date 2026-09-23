@@ -30,7 +30,7 @@
 
   const meta = $derived(RUNTIME_PROVIDERS_CONFIG[providerId]);
   const isEnabled = $derived((settings?.enabled_agents ?? ["pi"]).includes(providerId));
-  const isWorkSupported = $derived(providerId === "pi" || providerId === "dsh");
+  const isWorkSupported = $derived(providerId === "pi");
 
   async function loadStatus() {
     try {

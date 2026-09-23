@@ -1,11 +1,25 @@
 <script lang="ts">
-  import { WORK_AUTOMATION_TEMPLATES, type WorkAutomationTemplate } from "$lib/data/work-starters";
+  import {
+    WORK_AUTOMATION_TEMPLATES,
+    CODE_AUTOMATION_TEMPLATES,
+    type WorkAutomationTemplate,
+  } from "$lib/data/work-starters";
 
   interface Props {
+    mode?: "work" | "code";
     onSelectTemplate: (template: WorkAutomationTemplate) => void;
   }
 
-  let { onSelectTemplate }: Props = $props();
+  let { mode = "work", onSelectTemplate }: Props = $props();
+
+  const templates = $derived(
+    mode === "code" ? CODE_AUTOMATION_TEMPLATES : WORK_AUTOMATION_TEMPLATES,
+  );
+  const subtitle = $derived(
+    mode === "code"
+      ? "从高频开发场景模板一键创建定时或周期性任务"
+      : "从高频业务场景模板一键创建定时或周期性任务",
+  );
 </script>
 
 <div class="rounded-xl border border-border/70 bg-card/40 p-4">
@@ -13,13 +27,13 @@
     <div>
       <h3 class="text-xs font-semibold text-foreground">快速新建任务</h3>
       <p class="mt-0.5 text-[11px] text-muted-foreground">
-        从高频业务场景模板一键创建定时或周期性任务
+        {subtitle}
       </p>
     </div>
   </div>
 
   <div class="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-    {#each WORK_AUTOMATION_TEMPLATES as template (template.id)}
+    {#each templates as template (template.id)}
       <button
         type="button"
         class="group flex flex-col justify-between rounded-lg border border-border/60 bg-card/80 p-3 text-left transition-all hover:border-primary/60 hover:bg-primary/5 hover:shadow-xs"

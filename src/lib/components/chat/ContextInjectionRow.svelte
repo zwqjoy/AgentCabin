@@ -27,14 +27,14 @@
   );
 </script>
 
-<div class="dsh-context-root" data-open={open ? "true" : undefined}>
+<div class="context-injection-root" data-open={open ? "true" : undefined}>
   <button
     type="button"
-    class="dsh-context-header"
+    class="context-injection-header"
     onclick={() => (open = !open)}
     aria-expanded={open}
   >
-    <span class="dsh-context-chevron" class:dsh-context-chevron-open={open}>
+    <span class="context-injection-chevron" class:context-injection-chevron-open={open}>
       <svg class="size-3" viewBox="0 0 16 16" fill="currentColor">
         <path
           d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z"
@@ -42,7 +42,7 @@
       </svg>
     </span>
 
-    <span class="dsh-context-icon">
+    <span class="context-injection-icon">
       {#if type === "system_prompt"}
         <svg
           class="size-3.5"
@@ -81,37 +81,37 @@
       {/if}
     </span>
 
-    <span class="dsh-context-title">{displayTitle}</span>
+    <span class="context-injection-title">{displayTitle}</span>
 
     {#if source}
-      <span class="dsh-context-sep" aria-hidden="true"></span>
-      <span class="dsh-context-source">{source}</span>
+      <span class="context-injection-sep" aria-hidden="true"></span>
+      <span class="context-injection-source">{source}</span>
     {/if}
   </button>
 
   {#if open && (content || summary)}
-    <div class="dsh-context-body">
+    <div class="context-injection-body">
       {#if summary && summary !== content}
-        <div class="dsh-context-summary-detail">{summary}</div>
+        <div class="context-injection-summary-detail">{summary}</div>
       {/if}
       {#if content}
-        <pre class="dsh-context-pre">{content}</pre>
+        <pre class="context-injection-pre">{content}</pre>
       {/if}
     </div>
   {/if}
 </div>
 
 <style>
-  .dsh-context-root {
+  .context-injection-root {
     min-width: 0;
     padding: 2px 0;
   }
 
-  .dsh-context-root[data-open] {
+  .context-injection-root[data-open] {
     padding-bottom: 4px;
   }
 
-  .dsh-context-header {
+  .context-injection-header {
     width: 100%;
     min-width: 0;
     color: inherit;
@@ -127,12 +127,12 @@
     transition: background 0.15s;
   }
 
-  .dsh-context-header:hover {
-    background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
+  .context-injection-header:hover {
+    background: hsl(var(--muted) / 0.5);
   }
 
-  .dsh-context-chevron {
-    color: var(--dsw-alias-label-tertiary, #8b909a);
+  .context-injection-chevron {
+    color: hsl(var(--muted-foreground));
     flex: none;
     display: inline-flex;
     align-items: center;
@@ -141,28 +141,28 @@
     transition: transform 0.15s;
   }
 
-  .dsh-context-chevron-open {
+  .context-injection-chevron-open {
     transform: rotate(90deg);
   }
 
-  .dsh-context-icon {
-    color: var(--dsw-alias-label-tertiary, #8b909a);
+  .context-injection-icon {
+    color: hsl(var(--muted-foreground));
     flex: none;
     display: inline-flex;
     align-items: center;
     margin-right: 6px;
   }
 
-  .dsh-context-title {
+  .context-injection-title {
     font-size: 13px;
-    line-height: calc(20px + var(--dsh-content-font-delta, 0px));
-    color: var(--dsw-alias-label-tertiary, #8b909a);
+    line-height: 20px;
+    color: hsl(var(--muted-foreground));
     font-weight: 400;
     flex: none;
   }
 
-  .dsh-context-sep {
-    background: var(--dsw-alias-label-caption, #a0a5af);
+  .context-injection-sep {
+    background: hsl(var(--muted-foreground) / 0.4);
     border-radius: 1px;
     flex: none;
     width: 2px;
@@ -171,38 +171,44 @@
     opacity: 0.7;
   }
 
-  .dsh-context-source {
+  .context-injection-source {
     min-width: 0;
-    color: var(--dsw-alias-label-tertiary, #8b909a);
+    color: hsl(var(--muted-foreground));
     font-size: 13px;
-    line-height: calc(20px + var(--dsh-content-font-delta, 0px));
+    line-height: 20px;
     text-overflow: ellipsis;
     white-space: nowrap;
     flex: none;
     overflow: hidden;
   }
 
-  .dsh-context-summary-detail {
+  .context-injection-summary-detail {
     margin-bottom: 6px;
     font-weight: 500;
-    color: var(--dsw-alias-label-secondary, #5c626d);
+    color: hsl(var(--foreground));
   }
 
-  .dsh-context-body {
+  .context-injection-body {
     box-sizing: border-box;
     width: calc(100% - 22px);
     max-height: 141px;
     margin: 4px 0 0 22px;
-    background: var(--dsw-alias-markdown-code-block, #f5f6f8);
-    color: var(--dsw-alias-label-tertiary, #8b909a);
-    font: 400 11px / 16px var(--ds-font-family-code, monospace);
+    background: hsl(var(--muted) / 0.4);
+    color: hsl(var(--muted-foreground));
+    font:
+      400 11px / 16px ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      Monaco,
+      Consolas,
+      monospace;
     border-radius: 8px;
     padding: 8px 12px;
     overflow: auto;
-    border: 0.5px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
+    border: 1px solid hsl(var(--border) / 0.5);
   }
 
-  .dsh-context-pre {
+  .context-injection-pre {
     margin: 0;
     white-space: pre-wrap;
     word-break: break-word;

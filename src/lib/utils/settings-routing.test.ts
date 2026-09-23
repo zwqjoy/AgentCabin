@@ -39,8 +39,9 @@ describe("Settings V2 routing & legacy tab compatibility", () => {
     expect(resolveSettingsRoute("native-grok")).toEqual({ tab: "runtimes", runtimeSubTab: "grok" });
     expect(resolveSettingsRoute("grok")).toEqual({ tab: "runtimes", runtimeSubTab: "grok" });
 
-    expect(resolveSettingsRoute("native-dsh")).toEqual({ tab: "runtimes", runtimeSubTab: "dsh" });
-    expect(resolveSettingsRoute("dsh")).toEqual({ tab: "runtimes", runtimeSubTab: "dsh" });
+    // Legacy: "native-dsh" and "dsh" redirect to Pi Agent tab
+    expect(resolveSettingsRoute("native-dsh")).toEqual({ tab: "runtimes", runtimeSubTab: "pi" });
+    expect(resolveSettingsRoute("dsh")).toEqual({ tab: "runtimes", runtimeSubTab: "pi" });
 
     expect(resolveSettingsRoute("pi")).toEqual({ tab: "runtimes", runtimeSubTab: "pi" });
     expect(resolveSettingsRoute("pi-common")).toEqual({ tab: "runtimes", runtimeSubTab: "pi" });

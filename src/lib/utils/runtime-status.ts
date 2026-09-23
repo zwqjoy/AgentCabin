@@ -157,18 +157,6 @@ export async function fetchRuntimeProviderStatus(
             ? undefined
             : "未检测到 Pi CLI";
       return withEffectiveReadiness({ installed, authenticated: installed, reason }, managed);
-    } else if (pid === "dsh") {
-      const cli = await api
-        .checkAgentCli("dsh")
-        .catch((): CliCheckResult => ({ found: false, agent: "dsh" }));
-      return withEffectiveReadiness(
-        {
-          installed: cli.found,
-          authenticated: cli.found,
-          reason: cli.found ? undefined : "未检测到 DSH CLI",
-        },
-        managed,
-      );
     } else {
       // claude
       const cli = await api

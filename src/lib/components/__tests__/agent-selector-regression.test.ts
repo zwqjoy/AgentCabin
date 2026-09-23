@@ -87,18 +87,17 @@ describe("AgentSelector Regression Test", () => {
     expect(result.body).not.toContain("data-agent-selector");
   });
 
-  it("renders DeepSeek DSH correctly when selected", () => {
+  it("renders legacy DeepSeek DSH correctly when selected", () => {
     const result = render(AgentSelector, {
       props: {
         value: "dsh",
-        enabledAgents: ["pi", "dsh"],
+        enabledAgents: ["pi"],
         locked: false,
         compact: true,
       },
     });
 
-    expect(result.body).toContain("DeepSeek Harness (DSH)");
-    expect(result.body).not.toContain("运行时:");
+    expect(result.body).toContain("DeepSeek Harness (不可用)");
   });
 
   describe("Lock semantics and rules", () => {

@@ -3,15 +3,15 @@
 </p>
 
 <p align="center">
-  <strong>AgentCabin Desktop — Pi and DSH desktop for AI coding agents</strong>
+  <strong>AgentCabin Desktop — Local-first AI workbench powered by Pi Agent</strong>
 </p>
 
 <p align="center">
-  An open-source Electron + Rust desktop app for <a href="https://github.com/earendil-works/pi">Pi Coding Agent</a> and <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness (DSH)</a> — a local-first AI coding agent workspace for Pi desktop, DSH desktop, and other agent runtimes.
+  An open-source Electron + Rust desktop application powered by <a href="https://github.com/earendil-works/pi">Pi Coding Agent</a> — providing Code and Work modes for interactive development, autonomous workflows, and local-first AI paired programming.
 </p>
 
 <p align="center">
-  Looking for a <strong>Pi desktop</strong>, <strong>DSH desktop</strong>, or an <strong>AI coding agent workspace</strong>? AgentCabin is built for that use case.
+  Looking for a <strong>Pi desktop</strong> or an <strong>AI coding agent workspace</strong>? AgentCabin is built for that use case.
 </p>
 
 <p align="center">
@@ -35,15 +35,15 @@
 
 ## What is AgentCabin Desktop?
 
-AgentCabin Desktop brings AI coding agents out of scattered terminal sessions and into one persistent desktop workspace. It combines chat, files, tool output, browser previews, session history, runtime management, and long-running Work tasks in a native app while keeping your project data **local by default**.
+AgentCabin Desktop brings AI coding agents out of scattered terminal sessions and into one persistent desktop workspace powered by Pi Agent. It combines chat, files, tool output, browser previews, session history, runtime management, and long-running Work tasks in a native app while keeping your project data **local by default**.
 
-It is designed for people who want a visual desktop frontend for Pi, DSH, and compatible AI coding runtimes without moving their repositories into a hosted service. Remote model APIs still require network access; AgentCabin itself has no cloud backend.
+It is designed for people who want a visual desktop frontend for Pi Agent and compatible AI model providers without moving their repositories into a hosted service. Remote model APIs (including DeepSeek, Anthropic, OpenAI, and compatible endpoints) still require network access; AgentCabin itself has no cloud backend.
 
-Common search terms: `AgentCabin`, `Pi`, `Pi Agent`, `Pi Coding Agent`, `Pi desktop`, `DeepSeek`, `DeepSeek Harness`, `DSH`, `DSH desktop`, `AI agent desktop`, `AI coding agent desktop`, `Electron coding agent`, and `local-first coding workspace`.
+Common search terms: `AgentCabin`, `Pi`, `Pi Agent`, `Pi Coding Agent`, `Pi desktop`, `AI agent desktop`, `AI coding agent desktop`, `Electron coding agent`, and `local-first coding workspace`.
 
 ## Search keywords
 
-AgentCabin is an open-source desktop app for Pi Coding Agent and DeepSeek Harness (DSH). It is also a Pi desktop, DSH desktop, Electron AI coding agent, and local-first developer workspace.
+AgentCabin is an open-source desktop app for Pi Coding Agent. It is a Pi desktop, Electron AI coding agent, and local-first developer workspace.
 
 ### At a glance
 
@@ -51,21 +51,15 @@ AgentCabin is an open-source desktop app for Pi Coding Agent and DeepSeek Harnes
 |---|---|
 | Product | AgentCabin Desktop |
 | Category | Open-source AI coding agent desktop / local-first developer workspace |
-| Runtimes | Pi Coding Agent and DeepSeek Harness (DSH) |
+| Agent Engine | Pi Coding Agent |
 | Modes | Code for interactive development; Work for durable tasks, approvals, recovery, artifacts, and scheduling |
+| Runtime Closure | Node.js 22.19.0, Pi 0.85.1, pnpm 10.15.0 |
 | Stack | Electron, Svelte 5, SvelteKit, Rust, TypeScript |
 | License | Apache License 2.0 |
 
-| Agent | Support | Default |
-|-------|---------|---------|
-| [Pi Agent](https://github.com/earendil-works/pi) | Supported — app-managed long-lived RPC actor with Skills, Prompts, Extensions & MCP | **On** |
-| [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) | Supported — Code and Work profiles through the managed DSH runtime | **On** |
-
-> A fresh installation enables **Pi Agent** and **DeepSeek Harness (DSH)**. Pi remains the default Code runtime; switch runtimes from **Settings > Runtime Providers**.
-
 > **Packaged builds include the application-owned runtime closure.**
 >
-> The current closure pins Node.js 22.19.0, Pi 0.85.1, DSH 0.1.5-rc.2, pnpm 10.15.0, and the Pi extensions required for the Code/Work experience. Development builds can also use the prepared local runtime tree.
+> The current closure pins Node.js 22.19.0, Pi 0.85.1, pnpm 10.15.0, and the Pi extensions required for the Code/Work experience. Development builds can also use the prepared local runtime tree.
 >
 > The official packaged target is **macOS on Apple Silicon** (`arm64`), with a minimum macOS version of 13.0. Windows and Linux remain source-level / community targets.
 

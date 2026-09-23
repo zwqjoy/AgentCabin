@@ -11,42 +11,38 @@
     codexContent?: Snippet;
     claudeContent?: Snippet;
     grokContent?: Snippet;
-    dshContent?: Snippet;
     piContent?: Snippet;
   }
 
   let {
     settings,
-    activeSubTab = "dsh",
+    activeSubTab = "pi",
     onSubTabChange = () => {},
     onUpdateSettings,
     codexContent,
     claudeContent,
     grokContent,
-    dshContent,
     piContent,
   }: Props = $props();
 
-  // Codex、Claude Code、Grok 暂时隐藏（官方客户端已足够），保留 DSH 和 Pi Agent
+  // Only Pi Agent is shown; Codex, Claude Code, Grok remain hidden behind official clients.
   const SUB_TABS: Array<{ id: RuntimeSubTab; label: string; dotClass: string }> = [
     // { id: "codex", label: "Codex", dotClass: "bg-emerald-500" },
     // { id: "claude", label: "Claude Code", dotClass: "bg-amber-500" },
     // { id: "grok", label: "Grok", dotClass: "bg-violet-500" },
-    { id: "dsh", label: "DeepSeek (DSH)", dotClass: "bg-cyan-500" },
     { id: "pi", label: "Pi Agent", dotClass: "bg-purple-500" },
   ];
 </script>
 
 <div class="space-y-6">
-  <!-- Runtime Providers Header & Sub-tabs -->
+  <!-- Agent Settings Header & Sub-tabs -->
   <div class="space-y-4">
     <div>
       <h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-        Runtime 运行时
+        Agent 运行时
       </h2>
       <p class="mt-1 text-xs text-muted-foreground">
-        管理原生 Agent 运行时与独立执行环境，配置 DeepSeek (DSH) 与 Pi Agent 的认证、模型、沙箱及
-        CLI。
+        管理 Pi Agent 运行时的认证、模型、沙箱及 CLI 配置。
       </p>
     </div>
 
@@ -83,10 +79,6 @@
     {:else if activeSubTab === "grok"}
       {#if grokContent}
         {@render grokContent()}
-      {/if}
-    {:else if activeSubTab === "dsh"}
-      {#if dshContent}
-        {@render dshContent()}
       {/if}
     {:else if activeSubTab === "pi"}
       {#if piContent}

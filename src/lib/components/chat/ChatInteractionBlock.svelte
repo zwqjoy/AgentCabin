@@ -3,7 +3,7 @@
   import type { TaskNotificationItem } from "$lib/stores/session-store.svelte";
   import InlineToolCard from "$lib/components/InlineToolCard.svelte";
 
-  import DshApprovalCard from "$lib/dsh-ui/DshApprovalCard.svelte";
+  import ApprovalCard from "./ApprovalCard.svelte";
 
   let {
     tool,
@@ -86,7 +86,7 @@
 </script>
 
 {#if isPurePermission && !showPermissionInPanel}
-  <DshApprovalCard
+  <ApprovalCard
     toolName={tool.tool_name}
     command={commandText}
     argsRaw={rawArgs}

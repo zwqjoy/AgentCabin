@@ -20,8 +20,7 @@
       Work 自主工作流模式
     </h2>
     <p class="mt-1 text-xs text-muted-foreground">
-      专为自主长程任务打造的工作载体，支持 Pi Work 与 DSH Work
-      智能调度、全局办公规则及工具能力投射。
+      专为自主长程任务打造的工作载体，支持 Pi Work 智能调度、全局办公规则及工具能力投射。
     </p>
   </div>
 

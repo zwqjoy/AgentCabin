@@ -3,14 +3,12 @@
  * Automated Packaged Runtimes Behavioral Smoke Test
  *
  * Verifies end-to-end:
- * 1. Runtime Closure integrity (manifest, bundled Node, npm, pnpm, Pi, DSH).
+ * 1. Runtime Closure integrity (manifest, bundled Node, npm, pnpm, Pi).
  * 2. Pi Code RPC startup and response.
  * 3. Pi Work isolated RPC startup.
  * 4. Pi Extension installation & uninstallation using bundled Node/npm.
- * 5. DSH Code profile execution.
- * 6. DSH Work (acp) profile execution.
- * 7. DSH Plugin physical installation & uninstallation via bundled pnpm.
- * 8. Zero orphan processes lingering after completion.
+ * 5. No DSH runtime present in packaged closure.
+ * 6. Zero orphan processes lingering after completion.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -64,13 +62,12 @@ const runtimeRoot = findRuntimeRoot();
 console.log(`\n=== 1. Validating Runtime Closure at: ${runtimeRoot} ===`);
 
 const manifest = JSON.parse(readFileSync(join(runtimeRoot, "runtime-manifest.json"), "utf8"));
-console.log(`Manifest: Pi ${manifest.runtimes.pi.version}, DSH ${manifest.runtimes.dsh.version}, Node ${manifest.node.version}, pnpm ${manifest.pnpm.version}`);
+console.log(`Manifest: Pi ${manifest.runtimes.pi.version}, Node ${manifest.node.version}, pnpm ${manifest.pnpm.version}`);
 
 const isWin = process.platform === "win32";
 const nodeBin = resolve(runtimeRoot, isWin ? "node/node.exe" : "node/bin/node");
 const pnpmBin = resolve(runtimeRoot, isWin ? "pnpm/bin/pnpm.cmd" : "pnpm/bin/pnpm");
 const piBin = resolve(runtimeRoot, isWin ? "pi/bin/pi.cmd" : "pi/bin/pi");
-const dshBin = resolve(runtimeRoot, isWin ? "dsh/bin/dsh.cmd" : "dsh/bin/dsh");
 
 const npmCli = resolve(
   runtimeRoot,
@@ -84,7 +81,6 @@ for (const [name, path] of [
   ["npm-cli", npmCli],
   ["pnpm", pnpmBin],
   ["pi", piBin],
-  ["dsh", dshBin],
 ]) {
   if (!existsSync(path)) {
     throw new Error(`Missing required binary/script: ${name} at ${path}`);
@@ -92,12 +88,17 @@ for (const [name, path] of [
 }
 console.log("✓ All bundled binaries and scripts present");
 
+// Assert no DSH runtime was accidentally packaged
+if (existsSync(join(runtimeRoot, "dsh"))) {
+  throw new Error("RuntimeClosureInvalid: DSH runtime directory found in packaged closure — DSH must not be bundled");
+}
+console.log("✓ No DSH runtime present in packaged closure (expected)");
+
 // Construct augmented PATH putting bundled tools first
 const bundledBinDirs = [
   resolve(runtimeRoot, isWin ? "node" : "node/bin"),
   resolve(runtimeRoot, isWin ? "pnpm/bin" : "pnpm/bin"),
   resolve(runtimeRoot, isWin ? "pi/bin" : "pi/bin"),
-  resolve(runtimeRoot, isWin ? "dsh/bin" : "dsh/bin"),
 ];
 const augmentedPath = `${bundledBinDirs.join(isWin ? ";" : ":")}${isWin ? ";" : ":"}${process.env.PATH || ""}`;
 
@@ -240,184 +241,8 @@ async function testPiExtensionInstall() {
   console.log("✓ Pi extension removed successfully");
 }
 
-async function testDshAcpProtocol(dshHome) {
-  const child = spawn(dshBin, ["--profile", "acp"], {
-    shell: isWin,
-    env: {
-      ...process.env,
-      PATH: augmentedPath,
-      DSH_HOME: dshHome,
-    },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-
-  trackedPids.add(child.pid);
-
-  let output = "";
-  child.stdout.on("data", (chunk) => {
-    output += chunk.toString("utf8");
-  });
-
-  let initReceived = false;
-  let sessionReceived = false;
-
-  // 1. Send initialize
-  child.stdin.write(
-    JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: { readTextFile: false, writeTextFile: false },
-          terminal: false,
-        },
-        clientInfo: {
-          name: "agentcabin-smoke",
-          version: manifest.appVersion || "4.1.0",
-        },
-      },
-    }) + "\n"
-  );
-
-  await new Promise((res, rej) => {
-    const timeout = setTimeout(() => {
-      try {
-        child.kill("SIGKILL");
-      } catch {}
-      rej(new Error(`DSH ACP protocol smoke timed out. Output so far: ${output}`));
-    }, 15000);
-
-    const check = setInterval(() => {
-      const lines = output.split("\n");
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const msg = JSON.parse(trimmed);
-          if (msg.id === 1 && msg.result && msg.result.protocolVersion === 1) {
-            if (!initReceived) {
-              initReceived = true;
-              // 2. Send session/new
-              child.stdin.write(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id: 2,
-                  method: "session/new",
-                  params: {
-                    cwd: dshHome,
-                    mcpServers: [],
-                  },
-                }) + "\n"
-              );
-            }
-          }
-          if (msg.id === 2 && msg.result && msg.result.sessionId) {
-            sessionReceived = true;
-            clearInterval(check);
-            clearTimeout(timeout);
-            try {
-              child.stdin.end();
-            } catch {}
-            try {
-              child.kill("SIGTERM");
-            } catch {}
-            res();
-            return;
-          }
-        } catch {}
-      }
-    }, 100);
-
-    child.on("exit", (code) => {
-      clearInterval(check);
-      clearTimeout(timeout);
-      if (sessionReceived) {
-        res();
-      } else {
-        rej(new Error(`DSH ACP exited early (code ${code}). Output:\n${output}`));
-      }
-    });
-  });
-
-  console.log("✓ DSH ACP offline protocol (initialize & session/new) succeeded");
-}
-
-async function testDshProfiles() {
-  console.log("\n=== 4. Testing DSH Profiles & Protocols (Code sdk-minimal & Work acp) ===");
-  const dshHome = createTempDir("dsh-home");
-
-  console.log("Testing DSH Code profile (sdk-minimal)...");
-  const codeRes = runSync(dshBin, ["--profile", "sdk-minimal", "--dump-config"], {
-    env: {
-      DSH_HOME: dshHome,
-    },
-  });
-  if (!codeRes.stdout.includes("sdk-minimal")) {
-    throw new Error("DSH sdk-minimal profile dump did not contain sdk-minimal");
-  }
-  console.log("✓ DSH Code profile dumped valid configuration");
-
-  console.log("Testing DSH Work profile (acp)...");
-  const workRes = runSync(dshBin, ["--profile", "acp", "--dump-config"], {
-    env: {
-      DSH_HOME: dshHome,
-    },
-  });
-  if (!workRes.stdout.includes("acp") && !workRes.stdout.includes("dsh-base")) {
-    throw new Error("DSH acp profile dump failed");
-  }
-  console.log("✓ DSH Work profile dumped valid configuration");
-
-  console.log("Testing DSH ACP offline handshake (initialize & session/new)...");
-  await testDshAcpProtocol(dshHome);
-}
-
-async function testDshPluginInstall() {
-  console.log("\n=== 5. Testing DSH Plugin Physical Installation & Removal ===");
-  const dshHome = createTempDir("dsh-plugin");
-
-  console.log("Running 'dsh plugin --profile sdk-minimal add is-sorted'...");
-  runSync(dshBin, ["plugin", "--profile", "sdk-minimal", "add", "is-sorted"], {
-    env: {
-      DSH_HOME: dshHome,
-    },
-  });
-
-  const installedDir = join(dshHome, "profiles/sdk-minimal/node_modules/is-sorted/package.json");
-  if (!existsSync(installedDir)) {
-    throw new Error(`DSH plugin add did not materialize package at ${installedDir}`);
-  }
-  console.log("✓ DSH plugin package materialized in profile node_modules");
-
-  console.log("Running 'dsh plugin --profile sdk-minimal update is-sorted'...");
-  runSync(dshBin, ["plugin", "--profile", "sdk-minimal", "update", "is-sorted"], {
-    env: {
-      DSH_HOME: dshHome,
-    },
-  });
-
-  if (!existsSync(installedDir)) {
-    throw new Error("DSH plugin update removed or corrupted package files");
-  }
-  console.log("✓ DSH plugin package updated successfully and remained intact");
-
-  console.log("Running 'dsh plugin --profile sdk-minimal remove is-sorted'...");
-  runSync(dshBin, ["plugin", "--profile", "sdk-minimal", "remove", "is-sorted"], {
-    env: {
-      DSH_HOME: dshHome,
-    },
-  });
-
-  if (existsSync(installedDir)) {
-    throw new Error("DSH plugin remove did not clean up package files");
-  }
-  console.log("✓ DSH plugin package removed and cleaned up");
-}
-
 async function verifyNoOrphans() {
-  console.log("\n=== 6. Verifying Zero Orphan Processes ===");
+  console.log("\n=== 4. Verifying Zero Orphan Processes ===");
   for (let i = 0; i < 20; i++) {
     let alive = 0;
     for (const pid of trackedPids) {
@@ -456,8 +281,6 @@ async function main() {
       "--no-context-files",
     ]);
     await testPiExtensionInstall();
-    await testDshProfiles();
-    await testDshPluginInstall();
     await verifyNoOrphans();
 
     console.log("\n🎉 ALL PACKAGED RUNTIME CLOSURE SMOKE CHECKS PASSED SUCCESSFULLY!\n");

@@ -214,14 +214,6 @@ export const SETTINGS_SEARCH_INDEX: SearchIndexItem[] = [
     group: "Runtime 运行时",
   },
   {
-    id: "runtimes-dsh",
-    tab: "runtimes",
-    section: "dsh",
-    title: "DeepSeek (DSH) 原生运行时设置",
-    keywords: ["dsh", "deepseek", "harness", "深度求索", "runtime"],
-    group: "Runtime 运行时",
-  },
-  {
     id: "runtimes-pi",
     tab: "runtimes",
     section: "pi",
@@ -270,7 +262,7 @@ export const SETTINGS_SEARCH_INDEX: SearchIndexItem[] = [
     tab: "work",
     section: "overview",
     title: "Work 自主工作流模式设置",
-    keywords: ["work", "workflow", "autonomous", "pi work", "dsh work", "工作流", "自主"],
+    keywords: ["work", "workflow", "autonomous", "pi work", "工作流", "自主"],
     group: "Work 模式",
   },
   {

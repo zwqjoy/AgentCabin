@@ -1,8 +1,20 @@
 import { hasAgentCapabilityProvider } from "$lib/utils/agent-capabilities";
 
-/** Shared display order for Runtime Providers: Pi Agent, Codex, Claude Code, Grok, DSH. */
-export const ALL_RUNTIME_PROVIDERS = ["pi", "codex", "claude", "grok", "dsh"] as const;
+/** Shared display order for active Runtime Providers: Pi Agent, Codex, Claude Code, Grok. */
+export const ALL_RUNTIME_PROVIDERS = ["pi", "codex", "claude", "grok"] as const;
 export type RuntimeProviderId = (typeof ALL_RUNTIME_PROVIDERS)[number];
+
+/**
+ * Legacy runtime IDs retained only for history display and deserialization.
+ * These are NOT active providers and must NOT appear in runtime selectors or settings.
+ */
+export const LEGACY_RUNTIME_IDS = ["dsh"] as const;
+export type LegacyRuntimeId = (typeof LEGACY_RUNTIME_IDS)[number];
+
+/** Returns true if the agent id is a known legacy runtime (DSH etc.) */
+export function isLegacyRuntimeId(agent: string): boolean {
+  return (LEGACY_RUNTIME_IDS as readonly string[]).includes(agent);
+}
 
 /** Visible runtime providers in the UI (only Pi Agent is visible in AgentCabin). */
 export const VISIBLE_RUNTIME_PROVIDERS: readonly RuntimeProviderId[] = ["pi"];
@@ -53,13 +65,6 @@ export const RUNTIME_PROVIDERS_CONFIG: Record<RuntimeProviderId, RuntimeProvider
     dotClass: "bg-violet-500",
     desc: "xAI Grok 高性能编码运行时，支持 ACP 协议与流式交互",
   },
-  dsh: {
-    id: "dsh",
-    name: "DeepSeek Harness (DSH)",
-    color: "bg-cyan-500",
-    dotClass: "bg-cyan-500",
-    desc: "DeepSeek Harness 智能开发运行时，支持 JSON-RPC 协议与多模式分发",
-  },
 };
 
 /** Canonical labels for agent IDs. IDs remain internal; these labels are UI-only. */
@@ -68,6 +73,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   codex: "Codex",
   claude: "Claude Code",
   grok: "Grok",
+  // Legacy: DSH was removed as an active runtime. Label retained for history display.
   dsh: "DeepSeek Harness",
 };
 

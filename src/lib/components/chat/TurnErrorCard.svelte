@@ -25,22 +25,22 @@
   }
 </script>
 
-<div class="dsh-turn-error-row" role="status">
-  <span class="dsh-state-dot dsh-state-dot-error" aria-hidden="true"></span>
-  <div class="dsh-turn-error-copy">
-    <span class="dsh-turn-error-title">{t("dsh_message_turnError")}</span>
-    <span class="dsh-turn-error-message">{message || t("dsh_command_failed")}</span>
+<div class="turn-error-row" role="status">
+  <span class="state-dot state-dot-error" aria-hidden="true"></span>
+  <div class="turn-error-copy">
+    <span class="turn-error-title">{t("dsh_message_turnError")}</span>
+    <span class="turn-error-message">{message || t("dsh_command_failed")}</span>
   </div>
-  <div class="dsh-turn-error-actions">
+  <div class="turn-error-actions">
     {#if code !== undefined && code !== null && String(code).trim() !== ""}
       <button
         type="button"
-        class="dsh-turn-error-code"
+        class="turn-error-code"
         title={copied ? t("settings_debug_copied") : t("common_copy")}
         onclick={handleCopyCode}
       >
         <code>{code}</code>
-        <span class="dsh-copy-indicator" aria-hidden="true">
+        <span class="copy-indicator" aria-hidden="true">
           {#if copied}
             <svg class="size-3 text-emerald-500" viewBox="0 0 16 16" fill="currentColor">
               <path
@@ -49,7 +49,7 @@
             </svg>
           {:else}
             <svg
-              class="size-3 text-[var(--dsw-alias-label-tertiary)]"
+              class="size-3 text-muted-foreground"
               viewBox="0 0 16 16"
               fill="none"
               stroke="currentColor"
@@ -63,7 +63,7 @@
       </button>
     {/if}
     {#if onRetry}
-      <button type="button" class="dsh-turn-retry-btn" onclick={onRetry}>
+      <button type="button" class="turn-retry-btn" onclick={onRetry}>
         <svg
           class="size-3.5"
           viewBox="0 0 16 16"
@@ -84,9 +84,9 @@
 </div>
 
 <style>
-  .dsh-turn-error-row {
-    font-size: var(--dsh-content-font-size-secondary, 13px);
-    line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  .turn-error-row {
+    font-size: 13px;
+    line-height: 20px;
     display: grid;
     grid-template-columns: 10px minmax(0, 1fr) auto;
     align-items: start;
@@ -94,7 +94,7 @@
     padding: 6px 0;
   }
 
-  .dsh-state-dot {
+  .state-dot {
     width: 7px;
     height: 7px;
     border-radius: 9999px;
@@ -102,42 +102,41 @@
     flex-shrink: 0;
   }
 
-  .dsh-state-dot-error {
-    background-color: var(--dsw-alias-state-error-primary, #ef4444);
-    box-shadow: 0 0 0 2px
-      color-mix(in srgb, var(--dsw-alias-state-error-primary, #ef4444) 20%, transparent);
+  .state-dot-error {
+    background-color: hsl(var(--destructive, 0 84.2% 60.2%));
+    box-shadow: 0 0 0 2px hsl(var(--destructive, 0 84.2% 60.2%) / 0.2);
   }
 
-  .dsh-turn-error-copy {
+  .turn-error-copy {
     overflow-wrap: anywhere;
     min-width: 0;
   }
 
-  .dsh-turn-error-title {
-    color: var(--dsw-alias-state-error-primary, #ef4444);
+  .turn-error-title {
+    color: hsl(var(--destructive, 0 84.2% 60.2%));
     margin-right: 6px;
     font-weight: 600;
   }
 
-  .dsh-turn-error-message {
-    color: var(--dsw-alias-label-secondary, #5c626d);
+  .turn-error-message {
+    color: hsl(var(--muted-foreground));
   }
 
-  .dsh-turn-error-actions {
+  .turn-error-actions {
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .dsh-turn-error-code {
+  .turn-error-code {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 2px 6px;
-    background: var(--dsw-alias-markdown-inline-code, rgba(0, 0, 0, 0.05));
-    border: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+    background: hsl(var(--muted) / 0.5);
+    border: 1px solid hsl(var(--border) / 0.5);
     border-radius: 4px;
-    color: var(--dsw-alias-label-tertiary, #8b909a);
+    color: hsl(var(--muted-foreground));
     font-size: 11px;
     cursor: pointer;
     transition:
@@ -145,31 +144,31 @@
       border-color 0.15s;
   }
 
-  .dsh-turn-error-code:hover {
-    background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.08));
-    border-color: var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.2));
+  .turn-error-code:hover {
+    background: hsl(var(--muted));
+    border-color: hsl(var(--border));
   }
 
-  .dsh-turn-error-code code {
-    font-family: var(--ds-font-family-code, monospace);
+  .turn-error-code code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   }
 
-  .dsh-turn-retry-btn {
+  .turn-retry-btn {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 2px 8px;
     border-radius: 6px;
-    background: 0 0;
-    border: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
-    color: var(--dsw-alias-label-secondary, #5c626d);
+    background: transparent;
+    border: 1px solid hsl(var(--border));
+    color: hsl(var(--muted-foreground));
     font-size: 12px;
     cursor: pointer;
     transition: all 0.15s;
   }
 
-  .dsh-turn-retry-btn:hover {
-    background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
-    color: var(--dsw-alias-label-primary, #0f1115);
+  .turn-retry-btn:hover {
+    background: hsl(var(--muted) / 0.5);
+    color: hsl(var(--foreground));
   }
 </style>

@@ -5,10 +5,10 @@
   import ChatActivityItem from "./ChatActivityItem.svelte";
   import ChatReasoningBlock from "./ChatReasoningBlock.svelte";
   import ChatInteractionBlock from "./ChatInteractionBlock.svelte";
-  import TurnStatus from "$lib/dsh-ui/TurnStatus.svelte";
-  import DshTurnErrorCard from "$lib/dsh-ui/DshTurnErrorCard.svelte";
-  import DshMaxTokensCard from "$lib/dsh-ui/DshMaxTokensCard.svelte";
-  import DshRetryCard from "$lib/dsh-ui/DshRetryCard.svelte";
+  import TurnStatus from "./TurnStatus.svelte";
+  import TurnErrorCard from "./TurnErrorCard.svelte";
+  import MaxTokensCard from "./MaxTokensCard.svelte";
+  import RetryCard from "./RetryCard.svelte";
 
   let {
     turn,
@@ -233,10 +233,10 @@
     </div>
   {/if}
 
-  <!-- DSH Retry State Row -->
+  <!-- Retry State Row -->
   {#if retryInfo}
     <div class="mt-2">
-      <DshRetryCard
+      <RetryCard
         retry={retryInfo.retry}
         maximum={retryInfo.maximum}
         delayMs={retryInfo.delayMs}
@@ -247,17 +247,17 @@
     </div>
   {/if}
 
-  <!-- DSH Turn Error Card -->
+  <!-- Turn Error Card -->
   {#if error}
     <div class="mt-2">
-      <DshTurnErrorCard message={error.message} code={error.code} {onRetry} />
+      <TurnErrorCard message={error.message} code={error.code} {onRetry} />
     </div>
   {/if}
 
-  <!-- DSH Max Tokens Truncation Card -->
+  <!-- Max Tokens Truncation Card -->
   {#if maxTokens}
     <div class="mt-2">
-      <DshMaxTokensCard {onContinue} />
+      <MaxTokensCard {onContinue} />
     </div>
   {/if}
 </div>

@@ -45,7 +45,7 @@
   }
 
   function isEnabled(pid: string): boolean {
-    const list = settings.enabled_agents ?? ["codex", "claude", "pi", "dsh", "grok"];
+    const list = settings.enabled_agents ?? ["codex", "claude", "pi", "grok"];
     return list.includes(pid);
   }
 

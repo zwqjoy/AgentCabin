@@ -65,20 +65,13 @@ const installRuntime = (name, spec, overrides = undefined) => {
   run(npm, ["install", "--prefix", prefix, "--omit=dev", "--no-audit", "--no-fund", spec]);
 };
 installRuntime("pi", `${manifest.runtimes.pi.package}@${manifest.runtimes.pi.version}`);
-installRuntime("dsh", `${manifest.runtimes.dsh.package}@${manifest.runtimes.dsh.version}`, {
-  "@deepseek-ai/dsh-client-ui-sidebar-documentpreview": "0.1.5-rc.2",
-});
 installRuntime("pnpm", `pnpm@${manifest.pnpm.version}`);
 if (process.platform !== "win32") {
-  for (const name of ["pi", "dsh", "pnpm"]) mkdir(join(out, name, "bin"));
+  for (const name of ["pi", "pnpm"]) mkdir(join(out, name, "bin"));
   const node = `$(CDPATH= cd -- "$(dirname -- "$0")/../../node/bin" && pwd)/node`;
   writeFileSync(
     join(out, "pi/bin/pi"),
     `#!/bin/sh\nexec "${node}" "$(dirname -- "$0")/../node_modules/${manifest.runtimes.pi.package}/${manifest.runtimes.pi.entrypoint}" "$@"\n`,
-  );
-  writeFileSync(
-    join(out, "dsh/bin/dsh"),
-    `#!/bin/sh\nexec "${node}" "$(dirname -- "$0")/../node_modules/${manifest.runtimes.dsh.package}/${manifest.runtimes.dsh.entrypoint}" "$@"\n`,
   );
   writeFileSync(
     join(out, "pnpm/bin/pnpm"),
@@ -87,13 +80,11 @@ if (process.platform !== "win32") {
   run("chmod", [
     "+x",
     join(out, "pi/bin/pi"),
-    join(out, "dsh/bin/dsh"),
     join(out, "pnpm/bin/pnpm"),
   ]);
 } else {
   for (const [name, pkg, entry] of [
     ["pi", manifest.runtimes.pi.package, manifest.runtimes.pi.entrypoint],
-    ["dsh", manifest.runtimes.dsh.package, manifest.runtimes.dsh.entrypoint],
   ]) {
     mkdir(join(out, name, "bin"));
     writeFileSync(

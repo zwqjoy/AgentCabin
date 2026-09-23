@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { TurnUsage } from "$lib/stores/types";
   import type { TimelineEntry } from "$lib/types";
-  import { formatTokens, formatCacheHitPercent, formatRunDuration } from "$lib/utils/dsh-format";
+  import { formatTokens, formatCacheHitPercent, formatRunDuration } from "$lib/utils/chat-format";
   import { currentLocale } from "$lib/i18n/index.svelte";
 
   let {

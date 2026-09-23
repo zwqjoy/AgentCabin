@@ -1,4 +1,4 @@
-export type RuntimeSubTab = "codex" | "claude" | "grok" | "dsh" | "pi";
+export type RuntimeSubTab = "codex" | "claude" | "grok" | "pi";
 export type CodeSubTab = "carrier" | "worktrees";
 
 export type SettingsTab =
@@ -65,8 +65,9 @@ export function resolveSettingsRoute(
   if (tab === "native-grok" || tab === "grok") {
     return { tab: "runtimes", runtimeSubTab: "grok" };
   }
+  // Legacy: "native-dsh" and "dsh" deep-links redirect to Pi Agent tab (DSH was removed)
   if (tab === "native-dsh" || tab === "dsh") {
-    return { tab: "runtimes", runtimeSubTab: "dsh" };
+    return { tab: "runtimes", runtimeSubTab: "pi" };
   }
   if (tab === "pi-common" || tab === "pi" || tab === "pi-agent") {
     return { tab: "runtimes", runtimeSubTab: "pi" };

@@ -61,17 +61,17 @@
 
 {#if open}
   <!-- Drawer backdrop (mobile / overlay) -->
-  <div class="dsh-drawer-backdrop" role="presentation" onclick={onClose}></div>
+  <div class="chat-drawer-backdrop" role="presentation" onclick={onClose}></div>
 
   <!-- Drawer container -->
-  <aside class="dsh-drawer-root" aria-label={t("dsh_details_title")}>
-    <div class="dsh-drawer-header">
-      <div class="dsh-drawer-title">
+  <aside class="chat-drawer-root" aria-label={t("dsh_details_title")}>
+    <div class="chat-drawer-header">
+      <div class="chat-drawer-title">
         {toolName ? `${t("dsh_details_title")}: ${toolName}` : t("dsh_details_title")}
       </div>
       <button
         type="button"
-        class="dsh-drawer-close"
+        class="chat-drawer-close"
         aria-label={t("dsh_details_close")}
         onclick={onClose}
       >
@@ -86,35 +86,35 @@
       </button>
     </div>
 
-    <div class="dsh-drawer-body">
+    <div class="chat-drawer-body">
       {#if !toolName && !formattedArgs && !formattedResult}
-        <div class="dsh-drawer-empty">{t("dsh_details_empty")}</div>
+        <div class="chat-drawer-empty">{t("dsh_details_empty")}</div>
       {:else}
         <!-- Input section -->
         {#if formattedArgs}
-          <section class="dsh-drawer-section">
-            <div class="dsh-drawer-section-header">
-              <div class="dsh-drawer-section-label">{t("dsh_details_input")}</div>
+          <section class="chat-drawer-section">
+            <div class="chat-drawer-section-header">
+              <div class="chat-drawer-section-label">{t("dsh_details_input")}</div>
               <button
                 type="button"
-                class="dsh-drawer-copy-btn"
+                class="chat-drawer-copy-btn"
                 onclick={() => handleCopy("input", formattedArgs)}
               >
                 {copiedSection === "input" ? t("settings_debug_copied") : t("common_copy")}
               </button>
             </div>
-            <pre class="dsh-drawer-code"><code>{formattedArgs}</code></pre>
+            <pre class="chat-drawer-code"><code>{formattedArgs}</code></pre>
           </section>
         {/if}
 
         <!-- Output section -->
-        <section class="dsh-drawer-section">
-          <div class="dsh-drawer-section-header">
-            <div class="dsh-drawer-section-label">{t("dsh_details_output")}</div>
+        <section class="chat-drawer-section">
+          <div class="chat-drawer-section-header">
+            <div class="chat-drawer-section-label">{t("dsh_details_output")}</div>
             {#if formattedResult}
               <button
                 type="button"
-                class="dsh-drawer-copy-btn"
+                class="chat-drawer-copy-btn"
                 onclick={() => handleCopy("output", formattedResult)}
               >
                 {copiedSection === "output" ? t("settings_debug_copied") : t("common_copy")}
@@ -123,16 +123,16 @@
           </div>
 
           {#if isRunning}
-            <div class="dsh-drawer-running">
-              <span class="dsh-drawer-spinner" aria-hidden="true"></span>
+            <div class="chat-drawer-running">
+              <span class="chat-drawer-spinner" aria-hidden="true"></span>
               <span>{t("dsh_details_running")}</span>
             </div>
           {:else if formattedResult}
-            <pre class="dsh-drawer-code" data-error={isError ? "true" : undefined}><code
+            <pre class="chat-drawer-code" data-error={isError ? "true" : undefined}><code
                 >{formattedResult}</code
               ></pre>
           {:else}
-            <div class="dsh-drawer-empty">{t("dsh_details_empty")}</div>
+            <div class="chat-drawer-empty">{t("dsh_details_empty")}</div>
           {/if}
         </section>
       {/if}
@@ -141,7 +141,7 @@
 {/if}
 
 <style>
-  .dsh-drawer-backdrop {
+  .chat-drawer-backdrop {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.2);
@@ -149,23 +149,23 @@
     z-index: 90;
   }
 
-  .dsh-drawer-root {
+  .chat-drawer-root {
     position: fixed;
     top: 0;
     right: 0;
     bottom: 0;
     width: min(460px, 90vw);
-    border-left: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
-    background: var(--dsw-alias-bg-base, #ffffff);
+    border-left: 1px solid hsl(var(--border));
+    background: hsl(var(--background));
     flex-direction: column;
     height: 100%;
     display: flex;
     z-index: 91;
     box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
-    animation: dsh-drawer-enter 0.2s ease-out;
+    animation: chat-drawer-enter 0.2s ease-out;
   }
 
-  @keyframes dsh-drawer-enter {
+  @keyframes chat-drawer-enter {
     from {
       transform: translateX(100%);
     }
@@ -174,8 +174,8 @@
     }
   }
 
-  .dsh-drawer-header {
-    border-bottom: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  .chat-drawer-header {
+    border-bottom: 1px solid hsl(var(--border));
     justify-content: space-between;
     align-items: center;
     gap: 8px;
@@ -184,8 +184,8 @@
     flex-shrink: 0;
   }
 
-  .dsh-drawer-title {
-    color: var(--dsw-alias-label-primary, #0f1115);
+  .chat-drawer-title {
+    color: hsl(var(--foreground));
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 14px;
@@ -194,10 +194,10 @@
     overflow: hidden;
   }
 
-  .dsh-drawer-close {
+  .chat-drawer-close {
     width: 28px;
     height: 28px;
-    color: var(--dsw-alias-label-secondary, #5c626d);
+    color: hsl(var(--muted-foreground));
     cursor: pointer;
     background: transparent;
     border: none;
@@ -208,61 +208,61 @@
     transition: background 0.15s;
   }
 
-  .dsh-drawer-close:hover {
-    background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
-    color: var(--dsw-alias-label-primary, #0f1115);
+  .chat-drawer-close:hover {
+    background: hsl(var(--muted) / 0.5);
+    color: hsl(var(--foreground));
   }
 
-  .dsh-drawer-body {
+  .chat-drawer-body {
     flex: 1;
     min-height: 0;
     padding: 14px 16px;
     overflow-y: auto;
   }
 
-  .dsh-drawer-empty {
-    color: var(--dsw-alias-label-tertiary, #8b909a);
+  .chat-drawer-empty {
+    color: hsl(var(--muted-foreground));
     padding: 12px 0;
     font-size: 13px;
     line-height: 20px;
     text-align: center;
   }
 
-  .dsh-drawer-section {
+  .chat-drawer-section {
     margin-bottom: 18px;
   }
 
-  .dsh-drawer-section-header {
+  .chat-drawer-section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 6px;
   }
 
-  .dsh-drawer-section-label {
-    color: var(--dsw-alias-label-secondary, #5c626d);
+  .chat-drawer-section-label {
+    color: hsl(var(--muted-foreground));
     font-size: 12px;
     font-weight: 600;
     line-height: 18px;
   }
 
-  .dsh-drawer-copy-btn {
+  .chat-drawer-copy-btn {
     font-size: 11px;
-    color: var(--dsw-alias-label-tertiary, #8b909a);
+    color: hsl(var(--muted-foreground));
     background: transparent;
     border: none;
     cursor: pointer;
     transition: color 0.15s;
   }
 
-  .dsh-drawer-copy-btn:hover {
-    color: var(--dsw-alias-brand-primary, #4d6bfe);
+  .chat-drawer-copy-btn:hover {
+    color: hsl(var(--primary));
   }
 
-  .dsh-drawer-code {
-    background: var(--dsw-alias-markdown-code-block, #f5f6f8);
-    font-family: var(--ds-font-family-code, monospace);
-    color: var(--dsw-alias-label-primary, #0f1115);
+  .chat-drawer-code {
+    background: hsl(var(--muted) / 0.5);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    color: hsl(var(--foreground));
     white-space: pre-wrap;
     word-break: break-word;
     border-radius: 8px;
@@ -272,37 +272,33 @@
     line-height: 18px;
     max-height: 280px;
     overflow-y: auto;
-    border: 0.5px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
+    border: 1px solid hsl(var(--border) / 0.5);
   }
 
-  .dsh-drawer-code[data-error="true"] {
-    color: var(--dsw-alias-state-error-primary, #ef4444);
-    border-color: color-mix(
-      in srgb,
-      var(--dsw-alias-state-error-primary, #ef4444) 30%,
-      transparent
-    );
+  .chat-drawer-code[data-error="true"] {
+    color: hsl(var(--destructive, 0 84.2% 60.2%));
+    border-color: hsl(var(--destructive, 0 84.2% 60.2%) / 0.3);
   }
 
-  .dsh-drawer-running {
+  .chat-drawer-running {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 10px 0;
-    color: var(--dsw-alias-brand-primary, #4d6bfe);
+    color: hsl(var(--primary));
     font-size: 13px;
   }
 
-  .dsh-drawer-spinner {
+  .chat-drawer-spinner {
     width: 14px;
     height: 14px;
-    border: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary, #4d6bfe) 25%, transparent);
-    border-top-color: var(--dsw-alias-brand-primary, #4d6bfe);
+    border: 2px solid hsl(var(--primary) / 0.25);
+    border-top-color: hsl(var(--primary));
     border-radius: 50%;
-    animation: dsh-drawer-spin 0.7s linear infinite;
+    animation: chat-drawer-spin 0.7s linear infinite;
   }
 
-  @keyframes dsh-drawer-spin {
+  @keyframes chat-drawer-spin {
     to {
       transform: rotate(360deg);
     }

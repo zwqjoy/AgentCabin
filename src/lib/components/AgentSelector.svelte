@@ -108,7 +108,6 @@
     codex: "codex",
     claude: "claude",
     grok: "grok",
-    dsh: "native-dsh",
   };
 
   function select(id: string) {

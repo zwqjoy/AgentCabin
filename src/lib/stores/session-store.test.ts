@@ -8000,57 +8000,6 @@ describe("Pi composer queue", () => {
   });
 });
 
-describe("DSH composer queue", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("flushes queued follow-ups after DSH becomes idle", async () => {
-    const store = new SessionStore();
-    store.agent = "dsh";
-    store.run = makeRun("dsh-queue", { agent: "dsh" });
-    store.phase = "running";
-
-    await store.sendQueuedMessage("继续补充细节", [], "followUp");
-
-    expect(store.queuedMessages).toHaveLength(1);
-    expect(api.sendSessionMessage).not.toHaveBeenCalled();
-
-    store.applyEvent({ type: "run_state", run_id: "dsh-queue", state: "idle" } as BusEvent);
-    await vi.waitFor(() => expect(api.sendSessionMessage).toHaveBeenCalledTimes(1));
-
-    expect(api.sendSessionMessage).toHaveBeenLastCalledWith("dsh-queue", "继续补充细节", undefined);
-    expect(store.queuedMessages).toHaveLength(0);
-  });
-
-  it("supports immediate steer for a queued DSH message", async () => {
-    const store = new SessionStore();
-    store.agent = "dsh";
-    store.run = makeRun("dsh-steer", { agent: "dsh" });
-    store.phase = "running";
-
-    vi.mocked(api.steerSessionMessage).mockImplementationOnce(async () => {
-      store.applyEvent({
-        type: "user_message",
-        run_id: "dsh-steer",
-        text: "[Steer] 改成更短的版本",
-      } as BusEvent);
-    });
-
-    await store.sendQueuedMessage("改成更短的版本", [], "followUp");
-    const queuedId = store.queuedMessages[0].id;
-    await store.steerQueuedMessage(queuedId);
-
-    expect(api.steerSessionMessage).toHaveBeenCalledWith("dsh-steer", "改成更短的版本", undefined);
-    expect(store.queuedMessages).toHaveLength(0);
-    expect(store.timeline.filter((entry) => entry.kind === "user")).toHaveLength(1);
-    expect(store.timeline[0]).toMatchObject({
-      kind: "user",
-      content: "改成更短的版本",
-    });
-  });
-});
-
 describe("Pi Extension UI Host Store behavior", () => {
   it("clears host surfaces and one-shot extension state on reset", () => {
     const store = new SessionStore();

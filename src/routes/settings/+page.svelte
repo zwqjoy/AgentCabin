@@ -49,7 +49,6 @@
   } from "$lib/utils/codex-subscription";
   import { getSavedRealm, getSavedPiSubMode, getRealmHref } from "$lib/stores/app-mode.svelte";
   import { t, currentLocale } from "$lib/i18n/index.svelte";
-  import DshPluginPanel from "$lib/components/DshPluginPanel.svelte";
   import SettingToggle from "$lib/components/SettingToggle.svelte";
   import AgentCliStatusCard from "$lib/components/AgentCliStatusCard.svelte";
   import CodexFeaturesSettings from "$lib/components/CodexFeaturesSettings.svelte";
@@ -103,7 +102,7 @@
   const urlCategory = $page.url.searchParams.get("category");
   const initialRoute = resolveSettingsRoute(urlTab, urlCategory);
   let activeTab = $state<SettingsTab>(initialRoute.tab);
-  let activeRuntimeSubTab = $state<RuntimeSubTab>(initialRoute.runtimeSubTab ?? "dsh");
+  let activeRuntimeSubTab = $state<RuntimeSubTab>(initialRoute.runtimeSubTab ?? "pi");
 
   function handleBack() {
     const realm = getSavedRealm();
@@ -177,7 +176,7 @@
       case "work":
         return "管理自主工作流执行引擎、长程任务守则与工具投射。";
       case "runtimes":
-        return "配置与管理 DeepSeek 与 Pi Agent 等原生运行时引擎环境。";
+        return "配置与管理 Pi Agent 等原生运行时引擎环境。";
       case "models":
         return "统一配置自定义第三方 API 供应商与 ChatGPT 官方订阅凭据。";
       case "doctor":
@@ -818,10 +817,7 @@
   let piPathSaved = $state(false);
   let grokPathInput = $state("");
   let grokPathSaved = $state(false);
-  let dshPathInput = $state("");
-  let dshPathSaved = $state(false);
-  let dshCmdCopied = $state(false);
-  let cliAgentTab = $state<"all" | "claude" | "codex" | "pi" | "grok" | "dsh">("all");
+  let cliAgentTab = $state<"all" | "claude" | "codex" | "pi" | "grok">("all");
 
   // ── Worktree settings ──
   let worktreeAdvancedOpen = $state(urlTab === "worktrees");
@@ -837,7 +833,6 @@
       codexPathInput = settings.codex_path ?? "";
       piPathInput = settings.pi_path ?? "";
       grokPathInput = settings.grok_path ?? "";
-      dshPathInput = settings.dsh_path ?? "";
       worktreeRootInput = settings.worktree_root ?? "";
       worktreeBranchPrefixInput = settings.worktree_branch_prefix || "";
       worktreeCleanupLimitInput = settings.worktree_cleanup_limit || 15;
@@ -919,19 +914,6 @@
       dbg("settings", "grok_path saved", { path: next });
     } catch (e) {
       dbgWarn("settings", "saveGrokPath failed", e);
-    }
-  }
-
-  async function saveDshPath() {
-    const next = dshPathInput.trim();
-    if ((settings?.dsh_path ?? "") === next) return;
-    try {
-      settings = await api.updateUserSettings({ dsh_path: next });
-      dshPathSaved = true;
-      setTimeout(() => (dshPathSaved = false), 1500);
-      dbg("settings", "dsh_path saved", { path: next });
-    } catch (e) {
-      dbgWarn("settings", "saveDshPath failed", e);
     }
   }
 
@@ -1788,7 +1770,6 @@
     codex: { installed: true, authenticated: false },
     claude: { installed: true, authenticated: false },
     grok: { installed: true, authenticated: false },
-    dsh: { installed: true, authenticated: false },
   });
 
   async function refreshRuntimeStatuses() {
@@ -1886,7 +1867,6 @@
           codexContent={codexSnippet}
           claudeContent={claudeSnippet}
           grokContent={grokSnippet}
-          dshContent={dshSnippet}
           piContent={piSnippet}
         />
       {/if}
@@ -2657,137 +2637,6 @@
       />
     </Card>
     <GrokCliConfigCard />
-  </div>
-
-  <!-- ═══ 4.1 Runtime Provider: DeepSeek Harness (DSH) ═══ -->
-{/snippet}
-
-{#snippet dshSnippet()}
-  <div class="space-y-6">
-    <ScopeBanner
-      title="DeepSeek Harness"
-      category={t("settings_nav_nativeAgents")}
-      description={t("settings_scope_nativeDshDesc")}
-      tag="Runtime Provider"
-      tagColor="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20"
-    />
-
-    <RuntimeProviderUnifiedCards
-      providerId="dsh"
-      providerName="DeepSeek Harness (DSH)"
-      {settings}
-      onNavigate={(tab) => openSettingsTab(tab as SettingsTab)}
-    />
-
-    <AgentCliStatusCard agent="dsh" title="DeepSeek Harness" />
-
-    <DshPluginPanel />
-
-    <!-- 官方 CLI 安装向导卡片 -->
-    <Card class="space-y-4 p-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            官方 CLI 安装
-          </h2>
-          <p class="mt-1 text-xs text-muted-foreground">
-            DeepSeek Harness (DSH) 官方发布于 npm。请在终端执行以下命令进行全局安装：
-          </p>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2 rounded-lg border bg-muted/30 p-3 font-mono text-xs">
-        <code class="flex-1 select-all text-foreground">npm install -g @deepseek-ai/dsh</code>
-        <button
-          type="button"
-          class="rounded-md border border-border/80 bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-all hover:bg-accent"
-          onclick={() => {
-            void navigator.clipboard.writeText("npm install -g @deepseek-ai/dsh");
-            dshCmdCopied = true;
-            setTimeout(() => (dshCmdCopied = false), 2000);
-          }}
-        >
-          {dshCmdCopied ? "已复制 ✓" : "复制命令"}
-        </button>
-      </div>
-
-      <div class="flex items-center gap-2 text-xs text-muted-foreground">
-        <span class="h-1.5 w-1.5 rounded-full bg-cyan-500 shrink-0"></span>
-        <span>环境要求：Node.js 18+。安装完成后请点击上方卡片的“刷新”按钮。</span>
-      </div>
-    </Card>
-
-    <Card class="space-y-3 p-6">
-      <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("settings_cliConfig_launch")}
-        </h2>
-        {#if dshPathSaved}
-          <span class="flex items-center gap-1 text-xs text-emerald-500 animate-fade-in">
-            <svg
-              class="h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg
-            >
-            {t("settings_general_saved")}
-          </span>
-        {/if}
-      </div>
-      <div>
-        <p class="text-sm font-medium">{t("settings_cliConfig_dshPath")}</p>
-        <p class="text-xs text-muted-foreground">
-          {t("settings_cliConfig_dshPathDesc")}
-        </p>
-      </div>
-      <input
-        type="text"
-        bind:value={dshPathInput}
-        onblur={saveDshPath}
-        onkeydown={(event) => {
-          if (event.key === "Enter") (event.target as HTMLInputElement).blur();
-        }}
-        placeholder="dsh"
-        spellcheck="false"
-        autocapitalize="off"
-        autocomplete="off"
-        class="w-full rounded-md border bg-transparent px-3 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
-      />
-    </Card>
-
-    <!-- 托管 Provider 路由配置 -->
-    {#if settings}
-      <Card class="p-6 space-y-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              模型与 Provider 路由
-            </h2>
-            <p class="mt-1 text-xs text-muted-foreground">
-              DSH 会话通过 AgentCabin 托管 Provider 协议（OpenAI / Anthropic
-              兼容）接入模型，并动态注入到 DSH SDK 隔离环境中。
-            </p>
-          </div>
-          {#if agentSaveNotice === "dsh"}
-            <span class="flex items-center gap-1 text-xs text-emerald-500 animate-fade-in">
-              <svg
-                class="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg
-              >
-              {t("settings_general_saved")}
-            </span>
-          {/if}
-        </div>
-      </Card>
-    {/if}
   </div>
 
   <!-- ═══ 5. Runtime Provider: Pi Agent ═══ -->

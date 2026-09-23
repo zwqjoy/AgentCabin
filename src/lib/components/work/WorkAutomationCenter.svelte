@@ -34,9 +34,11 @@
   interface Props {
     workspaceId?: string;
     workspaces?: WorkWorkspaceSummary[];
+    mode?: "work" | "code";
+    activeProjectId?: string;
   }
 
-  let { workspaceId = "", workspaces = [] }: Props = $props();
+  let { workspaceId = "", workspaces = [], mode = "work", activeProjectId = "" }: Props = $props();
 
   const localTimezone = (() => {
     try {
@@ -83,15 +85,23 @@
   let rawTasks = $derived(
     workspaceId
       ? workTaskStore.tasks.filter((t) => t.workspaceId === workspaceId && t.status !== "archived")
-      : workTaskStore.tasks.filter((t) => t.status !== "archived"),
+      : mode === "code"
+        ? workTaskStore.tasks.filter(
+            (t) => t.status !== "archived" && workspaces.some((ws) => ws.id === t.workspaceId),
+          )
+        : workTaskStore.tasks.filter((t) => t.status !== "archived"),
   );
 
   let quickStats = $derived<AutomationQuickStats>(computeAutomationQuickStats(rawTasks));
-  let pageTitle = $derived(isGlobalView ? "任务" : "工作空间任务");
+  let pageTitle = $derived(isGlobalView ? "任务" : mode === "code" ? "项目任务" : "工作空间任务");
   let pageDescription = $derived(
     isGlobalView
-      ? "管理任务；需要定时运行时在任务中开启调度"
-      : "管理当前工作空间的任务，需要时开启定时调度",
+      ? mode === "code"
+        ? "管理 Code 任务；需要在定时运行时在任务中开启调度"
+        : "管理任务；需要定时运行时在任务中开启调度"
+      : mode === "code"
+        ? "管理当前项目的 Code 任务，需要时开启定时调度"
+        : "管理当前工作空间的任务，需要时开启定时调度",
   );
 
   let filteredTasks = $derived(
@@ -272,7 +282,11 @@
     newWeeklyDays = template?.days ?? [1];
     newCustomCron = "";
     newRequiredArtifacts = "";
-    newSelectedWorkspaceId = workspaceId || (workspaces[0]?.id ?? "");
+    newSelectedWorkspaceId =
+      workspaceId ||
+      (activeProjectId && workspaces.some((w) => w.id === activeProjectId)
+        ? activeProjectId
+        : (workspaces[0]?.id ?? ""));
     showModal = true;
   }
 
@@ -463,7 +477,7 @@
   {/if}
 
   <!-- Templates -->
-  <WorkAutomationTemplates onSelectTemplate={(t) => openCreateModal(t)} />
+  <WorkAutomationTemplates {mode} onSelectTemplate={(t) => openCreateModal(t)} />
 
   <!-- Filter & Search Toolbar -->
   {#if actionError}
@@ -543,9 +557,13 @@
       class="flex h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 p-8 text-center text-xs text-muted-foreground"
     >
       <span class="text-2xl">🤖</span>
-      <span class="mt-2 font-medium">没有匹配的任务</span>
+      <span class="mt-2 font-medium">
+        {mode === "code" ? "没有匹配的 Code 任务" : "没有匹配的任务"}
+      </span>
       <p class="mt-1 text-[11px] opacity-75">
-        点击上方「新建任务」或从推荐场景中直接套用模板创建。
+        {mode === "code"
+          ? "点击上方「新建任务」或从推荐场景中直接套用模板创建 Code 任务。"
+          : "点击上方「新建任务」或从推荐场景中直接套用模板创建。"}
       </p>
     </div>
   {:else}
@@ -605,10 +623,18 @@
       <div class="flex items-start justify-between gap-4">
         <div>
           <h2 class="text-base font-semibold text-foreground">
-            {editingTask ? "编辑任务" : "新建任务"}
+            {editingTask
+              ? mode === "code"
+                ? "编辑 Code 任务"
+                : "编辑任务"
+              : mode === "code"
+                ? "新建 Code 任务"
+                : "新建任务"}
           </h2>
           <p class="mt-0.5 text-xs text-muted-foreground">
-            配置任务的目标、执行指令、定时调度与产物验收标准
+            {mode === "code"
+              ? "配置 Code 任务的目标、执行指令、定时调度与产物验收标准"
+              : "配置任务的目标、执行指令、定时调度与产物验收标准"}
           </p>
         </div>
         <button
@@ -630,7 +656,7 @@
         {#if isGlobalView && !editingTask}
           <div>
             <label class="block text-xs font-medium text-muted-foreground mb-1" for="ws-select">
-              所属工作空间
+              {mode === "code" ? "所属项目" : "所属工作空间"}
             </label>
             <select
               id="ws-select"
@@ -651,7 +677,9 @@
           <input
             id="task-title"
             class="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
-            placeholder="例如：每日全网竞品价格监控并生成周报"
+            placeholder={mode === "code"
+              ? "例如：每日定时运行自动化测试套件"
+              : "例如：每日全网竞品价格监控并生成周报"}
             bind:value={newTitle}
             required
           />
@@ -675,7 +703,9 @@
             id="task-instructions"
             rows="3"
             class="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
-            placeholder="描述 Agent 每次运行时要执行的操作和关注重点…"
+            placeholder={mode === "code"
+              ? "描述 Agent 每次运行时在项目中要执行的操作和关注重点…"
+              : "描述 Agent 每次运行时要执行的操作和关注重点…"}
             bind:value={newInstructions}
           ></textarea>
         </div>
@@ -799,7 +829,9 @@
             id="req-artifacts"
             rows="2"
             class="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
-            placeholder="例如：output/weekly-report.pdf\noutput/data.xlsx"
+            placeholder={mode === "code"
+              ? "例如：output/weekly-dev-report.md, output/test-summary.md"
+              : "例如：output/weekly-report.pdf\\noutput/data.xlsx"}
             bind:value={newRequiredArtifacts}
           ></textarea>
         </div>

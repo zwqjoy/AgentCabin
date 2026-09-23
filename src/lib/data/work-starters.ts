@@ -118,3 +118,46 @@ export const WORK_AUTOMATION_TEMPLATES: WorkAutomationTemplate[] = [
     time: "08:45",
   },
 ];
+
+export const CODE_AUTOMATION_TEMPLATES: WorkAutomationTemplate[] = [
+  {
+    id: "weekly-dev-report",
+    icon: "📝",
+    title: "每周研发周报",
+    description: "整理本周代码提交与进展，提炼功能变更和遗留问题",
+    instructions:
+      "整理当前项目目录中的本周 Git 提交和代码变更记录，按完成功能、存在缺陷、下周开发计划三部分生成一份研发周报，并保存到 output/weekly-dev-report.md。",
+    scheduleKind: "weekdays",
+    time: "17:30",
+  },
+  {
+    id: "daily-code-check",
+    icon: "🔍",
+    title: "每日代码与构建检查",
+    description: "运行静态检查和测试套件，排查错误与潜在隐患",
+    instructions:
+      "读取项目目录中的最新代码变动，执行项目的构建与自动化测试，检查是否有报错、警告或测试未通过项，提炼重点并保存结果到 output/daily-code-check.md。",
+    scheduleKind: "daily",
+    time: "09:00",
+  },
+  {
+    id: "data-refresh-tests",
+    icon: "📊",
+    title: "定期运行测试与指标",
+    description: "自动化执行测试套件，汇总质量指标与覆盖率",
+    instructions:
+      "在项目目录中运行自动化测试与覆盖率统计，检查异常和失败用例，更新关键质量指标，并生成一份报告保存到 output/test-summary.md。",
+    scheduleKind: "daily",
+    time: "18:00",
+  },
+  {
+    id: "tech-debt-review",
+    icon: "🧹",
+    title: "依赖与待办技术债审查",
+    description: "排查依赖漏洞、过期版本及代码中的 TODO",
+    instructions:
+      "扫描项目中的依赖项与代码中未完成的 TODO/FIXME 待办事项，梳理存在安全隐患的依赖包与技术债务清单，保存到 output/tech-debt-review.md。",
+    scheduleKind: "weekdays",
+    time: "09:30",
+  },
+];

@@ -3003,10 +3003,7 @@ export class SessionStore {
       const executionPath =
         this.agent === "codex"
           ? undefined
-          : this.agent === "pi" ||
-              this.agent === "grok" ||
-              this.agent === "dsh" ||
-              this.useStreamSession
+          : this.agent === "pi" || this.agent === "grok" || this.useStreamSession
             ? "session_actor"
             : "pipe_exec";
       // Persist the composer's model for Codex even while the frontend still thinks it is on
@@ -3027,8 +3024,8 @@ export class SessionStore {
       );
       const startupEffort = effort?.trim();
       if (startupEffort) {
-        // Persist before spawning the actor. Pi/DSH read the run-level effort while building
-        // their launch settings, so writing it after startSession would miss the first request.
+        // Persist before spawning the actor. Pi reads the run-level effort while building
+        // launch settings, so writing it after startSession would miss the first request.
         await api.updateRunEffort(run.id, startupEffort);
         run = { ...run, effort: startupEffort };
       }
@@ -3405,7 +3402,7 @@ export class SessionStore {
       index < 0 ||
       !this.capabilities.runtime.steer ||
       !this.run ||
-      !["claude", "pi", "dsh"].includes(this.run.agent) ||
+      !["claude", "pi"].includes(this.run.agent) ||
       !this.sessionAlive
     ) {
       return;
@@ -3449,7 +3446,7 @@ export class SessionStore {
     if (
       this.queueFlushInFlight ||
       !this.run ||
-      !["claude", "pi", "dsh"].includes(this.run.agent) ||
+      !["claude", "pi"].includes(this.run.agent) ||
       !this.sessionAlive ||
       this.queuedMessages.length === 0
     ) {
@@ -3463,7 +3460,7 @@ export class SessionStore {
         // The composer queue is deliberately flushed only after the previous turn is idle.
         // Pi's native follow_up RPC is for enqueueing while a turn is still streaming; using it
         // after idle can persist the user message without starting the next model turn. The
-        // generic actor send path starts a fresh turn for Pi, DSH, and Claude alike.
+        // generic actor send path starts a fresh turn for Pi and Claude alike.
         await api.sendSessionMessage(
           runId,
           item.text,

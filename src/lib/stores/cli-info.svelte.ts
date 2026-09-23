@@ -235,7 +235,6 @@ export async function loadGrokModels(force = false): Promise<void> {
  * - Codex → live Codex app-server catalog.
  * - Pi → Pi `--list-models` / live RPC catalog.
  * - Grok → Grok Build `grok models` catalog.
- * - DSH → Managed global provider platform models.
  */
 export function getModelsForAgent(
   agent: string,
@@ -252,7 +251,7 @@ export function getModelsForAgent(
     return getPiModels().length > 0 ? getPiModels() : platform;
   }
   if (agent === "grok") return getGrokModels();
-  if (agent === "dsh") return platform;
+  if (agent === "dsh") return platform; // Legacy compatibility
   if (opts.merge) return [...platform, ...getCliModels()];
   return platform.length > 0 ? platform : getCliModels();
 }

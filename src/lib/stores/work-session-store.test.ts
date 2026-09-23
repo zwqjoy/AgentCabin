@@ -199,33 +199,6 @@ describe("Work Session Store & State Transitions", () => {
     expect(store.session.timeline.some((e) => e.kind === "user" && e.content === "2")).toBe(true);
   });
 
-  it("passes the selected DSH runtime when starting a fresh Work session", async () => {
-    const store = new WorkSessionStore("dsh");
-    store.workspaceId = dummyWorkspace.id;
-    const mockRun = {
-      id: "run-work-dsh",
-      workspace_id: dummyWorkspace.id,
-      status: "pending" as const,
-      app_mode: "work" as const,
-      agent: "dsh" as const,
-      execution_path: "session_actor" as const,
-      cwd: "/path/to/workspace",
-    };
-
-    vi.mocked(startWorkSession).mockResolvedValueOnce(mockRun as never);
-
-    await store.start("用 DSH 执行");
-
-    expect(startWorkSession).toHaveBeenCalledWith(
-      dummyWorkspace.id,
-      "用 DSH 执行",
-      undefined,
-      undefined,
-      "office",
-      "dsh",
-    );
-  });
-
   it("hydrates the started Work run without replacing the optimistic prompt", async () => {
     const store = new WorkSessionStore();
     store.workspaceId = dummyWorkspace.id;

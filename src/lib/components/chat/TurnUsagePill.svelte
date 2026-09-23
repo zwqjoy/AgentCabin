@@ -6,7 +6,7 @@
     formatCacheHitPercent,
     formatRunDuration,
     formatLatencySeconds,
-  } from "$lib/utils/dsh-format";
+  } from "$lib/utils/chat-format";
   import { currentLocale } from "$lib/i18n/index.svelte";
 
   let {

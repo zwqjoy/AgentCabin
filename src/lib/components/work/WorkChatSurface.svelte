@@ -34,9 +34,9 @@
   import ChatAssistantMessage from "$lib/components/chat/ChatAssistantMessage.svelte";
   import ChatProcessStream from "$lib/components/chat/ChatProcessStream.svelte";
   import ChatSessionStatsLine from "$lib/components/chat/ChatSessionStatsLine.svelte";
-  import ToBottomButton from "$lib/dsh-ui/ToBottomButton.svelte";
-  import DshDetailsDrawer from "$lib/dsh-ui/DshDetailsDrawer.svelte";
-  import DshContextInjectionRow from "$lib/dsh-ui/DshContextInjectionRow.svelte";
+  import ToBottomButton from "$lib/components/chat/ToBottomButton.svelte";
+  import DetailsDrawer from "$lib/components/chat/DetailsDrawer.svelte";
+  import ContextInjectionRow from "$lib/components/chat/ContextInjectionRow.svelte";
   import ChatInteractionBlock from "$lib/components/chat/ChatInteractionBlock.svelte";
   import WorkPendingActionItem from "$lib/components/work/WorkPendingActionItem.svelte";
   import WorkInlineInteraction from "$lib/components/work/WorkInlineInteraction.svelte";
@@ -3274,10 +3274,10 @@
           {/each}
         {/if}
 
-        <!-- DSH Context Injection (Work Workspace) -->
+        <!-- Context Injection (Work Workspace) -->
         {#if turnIdx === 0}
           <div class="chat-content-width pb-1.5">
-            <DshContextInjectionRow
+            <ContextInjectionRow
               type="injection"
               title="上下文"
               source={workspace?.name || "Work"}
@@ -3448,7 +3448,7 @@
       {/if}
     {/if}
     <ToBottomButton visible={!isAutoScroll} onClick={scrollTranscriptToBottom} />
-    <DshDetailsDrawer
+    <DetailsDrawer
       open={dshDetailsDrawerState.open}
       toolName={dshDetailsDrawerState.toolName}
       args={dshDetailsDrawerState.args}

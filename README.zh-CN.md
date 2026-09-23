@@ -3,15 +3,15 @@
 </p>
 
 <p align="center">
-  <strong>AgentCabin Desktop —— Pi 与 DSH 的 AI 编程 Agent 桌面端</strong>
+  <strong>AgentCabin Desktop —— 由 Pi Agent 驱动的本地优先 AI 编程工作台</strong>
 </p>
 
 <p align="center">
-  一个开源的 Electron + Rust 桌面应用，支持 <a href="https://github.com/earendil-works/pi">Pi Coding Agent</a> 和 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness (DSH)</a>，面向 Pi 桌面端、DSH 桌面端和其他 AI 编程 Agent 运行时。
+  一个由 <a href="https://github.com/earendil-works/pi">Pi Coding Agent</a> 驱动的开源 Electron + Rust 桌面应用 —— 提供 Code（极客开发）与 Work（自主工作流）两种工作模式，面向本地优先的 AI 结对编程体验。
 </p>
 
 <p align="center">
-  如果你正在寻找 <strong>Pi 桌面端</strong>、<strong>DSH 桌面端</strong>或<strong>AI 编程 Agent 工作台</strong>，AgentCabin 就是为这个场景构建的。
+  如果你正在寻找 <strong>Pi 桌面端</strong>或<strong>AI 编程 Agent 工作台</strong>，AgentCabin 就是为这个场景构建的。
 </p>
 
 <p align="center">
@@ -35,15 +35,15 @@
 
 ## AgentCabin Desktop 是什么？
 
-AgentCabin Desktop 把分散在终端会话中的 AI 编程 Agent 带入一个持久化桌面工作台。它将聊天、文件、工具输出、浏览器预览、会话历史、运行时管理和长期 Work 任务整合在原生应用中，同时默认保持项目数据**本地存储**。
+AgentCabin Desktop 把分散在终端会话中的 AI 编程 Agent 带入一个持久化桌面工作台，全面由 Pi Agent 驱动。它将聊天、文件、工具输出、浏览器预览、会话历史、运行时管理和长期 Work 任务整合在原生应用中，同时默认保持项目数据**本地存储**。
 
-它适合希望在桌面 UI 中使用 Pi、DSH 和兼容 AI 编程运行时，同时又不希望把代码仓库迁移到托管服务中的开发者。调用远程模型 API 仍然需要联网；AgentCabin 本身没有云端后台。
+它适合希望在桌面 UI 中使用 Pi Agent 和兼容 AI 模型提供方（包括 DeepSeek、Anthropic、OpenAI 等标准兼容端点），同时又不希望把代码仓库迁移到托管服务中的开发者。调用远程模型 API 仍然需要联网；AgentCabin 本身没有云端后台。
 
-常用检索关键词：`AgentCabin`、`Pi`、`Pi Agent`、`Pi Coding Agent`、`Pi desktop`、`DeepSeek`、`DeepSeek Harness`、`DSH`、`DSH desktop`、`AI agent desktop`、`AI coding agent desktop`、`Electron coding agent`、`local-first coding workspace`。
+常用检索关键词：`AgentCabin`、`Pi`、`Pi Agent`、`Pi Coding Agent`、`Pi desktop`、`AI agent desktop`、`AI coding agent desktop`、`Electron coding agent`、`local-first coding workspace`。
 
 ## 检索关键词
 
-AgentCabin 是一个面向 Pi Coding Agent 和 DeepSeek Harness (DSH) 的开源桌面应用，也可以理解为 Pi 桌面端、DSH 桌面端、Electron AI 编程 Agent 工作台和本地优先开发工作台。
+AgentCabin 是一个面向 Pi Coding Agent 的开源桌面应用，也可以理解为 Pi 桌面端、Electron AI 编程 Agent 工作台和本地优先开发工作台。
 
 ### 项目概览
 
@@ -51,21 +51,15 @@ AgentCabin 是一个面向 Pi Coding Agent 和 DeepSeek Harness (DSH) 的开源�
 |---|---|
 | 产品 | AgentCabin Desktop |
 | 类别 | 开源 AI 编程 Agent 桌面端 / 本地优先开发工作台 |
-| 运行时 | Pi Coding Agent、DeepSeek Harness (DSH) |
+| Agent 引擎 | Pi Coding Agent |
 | 模式 | Code：交互式开发；Work：持久任务、审批、恢复、产物和定时执行 |
+| 运行时闭包 | Node.js 22.19.0、Pi 0.85.1、pnpm 10.15.0 |
 | 技术栈 | Electron、Svelte 5、SvelteKit、Rust、TypeScript |
 | 许可证 | Apache License 2.0 |
 
-| Agent | 支持情况 | 默认状态 |
-|-------|---------|---------|
-| [Pi Agent](https://github.com/earendil-works/pi) | 已适配 —— 应用托管的长连接 RPC Actor，支持 Skills、Prompts、Extensions 和 MCP | **开启** |
-| [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) | 已适配 —— 通过托管的 DSH 运行时支持 Code 与 Work 配置 | **开启** |
-
-> 全新安装时默认开启 **Pi Agent** 和 **DeepSeek Harness (DSH)**，其中 Pi Agent 仍是 Code 默认运行时。可以从**设置 > Runtime Providers**切换运行时。
-
 > **打包版本包含应用自有的运行时闭包。**
 >
-> 当前闭包固定 Node.js 22.19.0、Pi 0.85.1、DSH 0.1.5-rc.2、pnpm 10.15.0，以及 Code/Work 所需的 Pi 扩展。开发构建也可以使用本地准备好的运行时目录。
+> 当前闭包固定 Node.js 22.19.0、Pi 0.85.1、pnpm 10.15.0，以及 Code/Work 所需的 Pi 扩展。开发构建也可以使用本地准备好的运行时目录。
 >
 > 官方打包目标为 **macOS Apple Silicon**（`arm64`），最低 macOS 版本为 13.0。Windows 与 Linux 保留源码级兼容，作为社区构建目标。
 

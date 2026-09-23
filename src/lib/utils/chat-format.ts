@@ -1,5 +1,7 @@
 /**
- * Formatters and algorithms adapted from DeepSeek Harness (@deepseek-ai/dsh-client-ui-chat).
+ * Formatters and metrics utilities for conversation turns, tokens, throughput, and duration.
+ * Adapted and optimized for AgentCabin. Attribution: original percentage algorithms adapted
+ * from DeepSeek Harness (@deepseek-ai/dsh-client-ui-chat:formatCacheHitPercent).
  */
 
 /**
@@ -58,7 +60,6 @@ function displayPercentUnits(units: number, decimalPlaces: number): string {
 
 /**
  * Display-ready cache-hit share without rounding a partial hit to 100%.
- * From @deepseek-ai/dsh-client-ui-chat:formatCacheHitPercent
  */
 export function formatCacheHitPercent(
   cacheReadTokens: number,

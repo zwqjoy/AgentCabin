@@ -130,9 +130,9 @@
   import CodeTasksCenter from "$lib/components/CodeTasksCenter.svelte";
   import ChatSearchToolbar from "$lib/components/ChatSearchToolbar.svelte";
   import ConversationTurnRail from "$lib/components/ConversationTurnRail.svelte";
-  import ToBottomButton from "$lib/dsh-ui/ToBottomButton.svelte";
-  import DshDetailsDrawer from "$lib/dsh-ui/DshDetailsDrawer.svelte";
-  import DshContextInjectionRow from "$lib/dsh-ui/DshContextInjectionRow.svelte";
+  import ToBottomButton from "$lib/components/chat/ToBottomButton.svelte";
+  import DetailsDrawer from "$lib/components/chat/DetailsDrawer.svelte";
+  import ContextInjectionRow from "$lib/components/chat/ContextInjectionRow.svelte";
 
   import ToolActivity from "$lib/components/ToolActivity.svelte";
   import ShortcutHelpPanel from "$lib/components/ShortcutHelpPanel.svelte";
@@ -6702,7 +6702,7 @@
   <!-- Main content area -->
   <div class="flex flex-1 flex-col min-w-0 relative chat-main-content chat-canvas">
     {#if isTaskView}
-      <div class="flex-1 overflow-y-auto bg-background">
+      <div class="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
         <CodeTasksCenter />
       </div>
     {:else if isArchivedView}
@@ -7637,7 +7637,7 @@
                       store.effectiveCwd.replace(/\\/g, "/").split("/").filter(Boolean).pop() ||
                       "AgentCabin"}
                     <div class="chat-content-width pb-1.5">
-                      <DshContextInjectionRow
+                      <ContextInjectionRow
                         type="injection"
                         title="上下文"
                         source={cwdFolder}
@@ -7863,7 +7863,7 @@
               </div>
             {/if}
             <ToBottomButton visible={!isChatAutoScroll} onClick={scrollChatToBottom} />
-            <DshDetailsDrawer
+            <DetailsDrawer
               open={dshDetailsDrawerState.open}
               toolName={dshDetailsDrawerState.toolName}
               args={dshDetailsDrawerState.args}
