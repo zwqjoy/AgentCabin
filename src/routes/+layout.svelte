@@ -2809,9 +2809,8 @@
     <!-- Top bar (non-chat and non-settings pages only) -->
     {#if !isChatPage && !isSettingsPage && currentPath !== "/"}
       <header
-        class="flex h-11 items-center gap-3 border-b px-4 {IS_MAC && !sidebarOpen
-          ? 'pl-[76px]'
-          : ''}"
+        class="flex h-11 items-center gap-3 border-b px-4"
+        style:padding-left={IS_MAC && !sidebarOpen ? "80px" : undefined}
         data-window-drag-region
         data-tauri-drag-region
       >

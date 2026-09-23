@@ -357,7 +357,8 @@
 >
   <!-- Single-row Modern Header: 44px (h-11) like Codex / ZCode -->
   <div
-    class="flex h-11 items-center justify-between px-3 {IS_MAC && !sidebarOpen ? 'pl-[76px]' : ''}"
+    class="flex h-11 items-center justify-between px-3"
+    style:padding-left={IS_MAC && !sidebarOpen ? "80px" : undefined}
   >
     <!-- Left: Session title & identity -->
     <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden pr-2">

@@ -3247,7 +3247,7 @@
     function onNewChatEvent(e: Event) {
       const customEvt = e as CustomEvent<{ cwd?: string; codeStandaloneTask?: boolean }>;
       const cwd = customEvt.detail?.cwd;
-      codeStandaloneTask = customEvt.detail?.codeStandaloneTask === true;
+      codeStandaloneTask = customEvt.detail?.codeStandaloneTask === true || !cwd;
       if (cwd) {
         folderCwdOverride = cwd;
         setSavedProjectCwd(cwd, currentRealm);

@@ -2944,7 +2944,9 @@
                 />
               </svg>
               <span class="truncate max-w-[140px] font-medium"
-                >{projectPicker.currentProjectName || t("prompt_projectNotSelected")}</span
+                >{projectPicker.currentStandaloneTask
+                  ? "独立任务"
+                  : projectPicker.currentProjectName || t("prompt_projectNotSelected")}</span
               >
             </div>
           {:else}
@@ -3062,7 +3064,7 @@
         </div>
       {/if}
 
-      {#if gitBranch}
+      {#if gitBranch && !projectPicker?.currentStandaloneTask && !(workspacePicker && !workspacePicker.currentWorkspaceId)}
         <div class="relative inline-flex items-center">
           <button
             bind:this={branchBtnEl}
