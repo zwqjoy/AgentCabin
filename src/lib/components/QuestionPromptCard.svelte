@@ -268,39 +268,41 @@
     {/if}
 
     <div class={embedded ? "" : "px-5 pb-5 sm:px-6"}>
-      <div class="mb-4 flex items-center gap-1.5 overflow-x-auto border-b border-border/60 pb-2">
-        {#each questions as question, index}
-          <button
-            type="button"
-            class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] transition-colors {activeIndex ===
-              index && !reviewPage
-              ? 'bg-primary/10 font-semibold text-primary'
-              : questionComplete(question)
-                ? 'text-foreground/70 hover:bg-muted'
+      {#if questions.length > 1 || review}
+        <div class="mb-4 flex items-center gap-1.5 overflow-x-auto border-b border-border/60 pb-2">
+          {#each questions as question, index}
+            <button
+              type="button"
+              class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] transition-colors {activeIndex ===
+                index && !reviewPage
+                ? 'bg-primary/10 font-semibold text-primary'
+                : questionComplete(question)
+                  ? 'text-foreground/70 hover:bg-muted'
+                  : 'text-muted-foreground hover:bg-muted'}"
+              aria-current={activeIndex === index && !reviewPage ? "step" : undefined}
+              onclick={() => {
+                activeIndex = index;
+                reviewPage = false;
+              }}
+            >
+              {index + 1}. {question.header || question.id}
+              {#if skipped[question.id]}
+                <span class="ml-1 text-muted-foreground">—</span>
+              {:else if questionComplete(question)}<span class="ml-1 text-emerald-500">✓</span>{/if}
+            </button>
+          {/each}
+          {#if review}
+            <button
+              type="button"
+              class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] transition-colors {reviewPage
+                ? 'bg-primary/10 font-semibold text-primary'
                 : 'text-muted-foreground hover:bg-muted'}"
-            aria-current={activeIndex === index && !reviewPage ? "step" : undefined}
-            onclick={() => {
-              activeIndex = index;
-              reviewPage = false;
-            }}
-          >
-            {index + 1}. {question.header || question.id}
-            {#if skipped[question.id]}
-              <span class="ml-1 text-muted-foreground">—</span>
-            {:else if questionComplete(question)}<span class="ml-1 text-emerald-500">✓</span>{/if}
-          </button>
-        {/each}
-        {#if review}
-          <button
-            type="button"
-            class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] transition-colors {reviewPage
-              ? 'bg-primary/10 font-semibold text-primary'
-              : 'text-muted-foreground hover:bg-muted'}"
-            aria-current={reviewPage ? "page" : undefined}
-            onclick={() => (reviewPage = true)}>审阅</button
-          >
-        {/if}
-      </div>
+              aria-current={reviewPage ? "page" : undefined}
+              onclick={() => (reviewPage = true)}>审阅</button
+            >
+          {/if}
+        </div>
+      {/if}
 
       {#if reviewPage}
         <div class="space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3">
@@ -410,23 +412,27 @@
       {/if}
 
       <div class="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
-        <div class="flex items-center gap-2 text-sm tabular-nums text-muted-foreground">
-          <button
-            type="button"
-            class="rounded-lg p-1.5 transition-colors hover:bg-muted disabled:opacity-30"
-            disabled={activeIndex === 0 && !reviewPage}
-            aria-label="上一题"
-            onclick={previousQuestion}>‹</button
-          >
-          <span>{reviewPage ? "审阅" : `${activeIndex + 1}/${questions.length}`}</span>
-          <button
-            type="button"
-            class="rounded-lg p-1.5 transition-colors hover:bg-muted disabled:opacity-30"
-            disabled={reviewPage || isLastQuestion}
-            aria-label="下一题"
-            onclick={nextQuestion}>›</button
-          >
-        </div>
+        {#if questions.length > 1 || review}
+          <div class="flex items-center gap-2 text-sm tabular-nums text-muted-foreground">
+            <button
+              type="button"
+              class="rounded-lg p-1.5 transition-colors hover:bg-muted disabled:opacity-30"
+              disabled={activeIndex === 0 && !reviewPage}
+              aria-label="上一题"
+              onclick={previousQuestion}>‹</button
+            >
+            <span>{reviewPage ? "审阅" : `${activeIndex + 1}/${questions.length}`}</span>
+            <button
+              type="button"
+              class="rounded-lg p-1.5 transition-colors hover:bg-muted disabled:opacity-30"
+              disabled={reviewPage || isLastQuestion}
+              aria-label="下一题"
+              onclick={nextQuestion}>›</button
+            >
+          </div>
+        {:else}
+          <div></div>
+        {/if}
         <div class="flex items-center gap-2">
           <button
             type="button"

@@ -174,6 +174,7 @@
   const sharedBatchQuestions = $derived.by((): QuestionPrompt[] =>
     batchQuestions.map((question) => ({
       id: question.id,
+      header: question.header,
       type: question.type,
       question: question.question,
       options: question.options,
@@ -443,7 +444,7 @@
           {/if}
           请完成下面的问题{batchAsk?.review ? "，最后在审阅页提交" : ""}。
         </p>
-      {:else if current.message}
+      {:else if current.message && !nativePiAsk && !nativePiAskInput}
         <p
           class="mb-3 whitespace-pre-wrap text-xs text-foreground/90 leading-relaxed bg-muted/30 p-2.5 rounded-lg border border-border/40"
         >

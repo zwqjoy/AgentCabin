@@ -12,6 +12,7 @@ export interface PiBatchQuestion {
   id: string;
   type: PiBatchQuestionType;
   question: string;
+  header?: string;
   options?: PiBatchOption[];
   multiSelect?: boolean;
   allowOther?: boolean;
@@ -88,6 +89,7 @@ export function parsePiBatchAskEnvelope(message: string | undefined): PiBatchAsk
         id,
         type,
         question,
+        header: stringOrUndefined(item.header),
         options,
         multiSelect: item.multiSelect === true || item.multi_select === true,
         allowOther: type === "select" ? item.allowOther !== false : undefined,

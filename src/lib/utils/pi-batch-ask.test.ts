@@ -84,4 +84,27 @@ describe("Pi batch ask envelope", () => {
       multiSelect: true,
     });
   });
+
+  it("preserves question header chips when present", () => {
+    const envelope = parsePiBatchAskEnvelope(
+      JSON.stringify({
+        __piDeckBatchAsk: 1,
+        review: false,
+        questions: [
+          {
+            id: "doc_type",
+            header: "文档类型",
+            type: "select",
+            question: "您希望我为您创建什么类型的文档？",
+            options: [{ label: "Word 文档", value: "docx" }],
+          },
+        ],
+      }),
+    );
+
+    expect(envelope?.questions[0]).toMatchObject({
+      id: "doc_type",
+      header: "文档类型",
+    });
+  });
 });

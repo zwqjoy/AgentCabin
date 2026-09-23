@@ -2507,3 +2507,159 @@ test("Parallel child token exchange matches exact IDs and uses distinct credenti
     delete process.env.PI_SUBAGENT_CHILD_INDEX;
   }
 });
+
+test("Pi Work wraps ask_user_question into a single batch envelope and formats answers for the model", async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-ask-batch-"));
+  try {
+    const extension = await loadExtension(temp);
+    const tools = new Map();
+    const eventHandlers = new Map();
+    const mockPi = {
+      registerTool(tool) {
+        tools.set(tool.name, tool);
+      },
+      setActiveTools() {},
+      on(event, handler) {
+        eventHandlers.set(event, handler);
+      },
+      getTool(name) {
+        return tools.get(name);
+      },
+    };
+
+    extension(mockPi);
+
+    // Simulate upstream @juicesharp/rpiv-ask-user-question registering its tool
+    mockPi.registerTool({
+      name: "ask_user_question",
+      label: "Ask User Question",
+      description: "Ask questions",
+      execute: async () => ({ content: [{ type: "text", text: "original" }] }),
+    });
+
+    eventHandlers.get("session_start")?.();
+
+    const tool = tools.get("ask_user_question");
+    assert(tool, "ask_user_question must be registered");
+    assert.equal(tool.__agentCabinBatchWrapped, true);
+
+    let sentEnvelope = null;
+    const mockCtx = {
+      hasUI: true,
+      ui: {
+        input: async (envelope) => {
+          sentEnvelope = JSON.parse(envelope);
+          return JSON.stringify({
+            answers: [
+              { id: "q1", type: "select", value: "docx", label: "Word 文档 (.docx)", wasCustom: false },
+              { id: "q2", type: "select", value: "presentation", label: "对外展示", wasCustom: false },
+            ],
+          });
+        },
+      },
+    };
+
+    const response = await tool.execute(
+      "call-1",
+      {
+        questions: [
+          {
+            header: "文档类型",
+            question: "您希望我为您创建什么类型的文档？",
+            options: [
+              { label: "Word 文档 (.docx)", description: "适合长文本" },
+              { label: "PPT 演示文稿 (.pptx)", description: "适合汇报" },
+            ],
+          },
+          {
+            header: "用途受众",
+            question: "这份文档的主要用途和受众是什么？",
+            options: [
+              { label: "工作汇报", description: "向领导汇报" },
+              { label: "对外展示", description: "面向客户" },
+            ],
+          },
+        ],
+      },
+      null,
+      null,
+      mockCtx,
+    );
+
+    assert(sentEnvelope, "Must send a batch envelope");
+    assert.equal(sentEnvelope.__piDeckBatchAsk, 1);
+    assert.equal(sentEnvelope.questions.length, 2);
+    assert.equal(sentEnvelope.questions[0].header, "文档类型");
+    assert.equal(sentEnvelope.questions[1].header, "用途受众");
+
+    assert.equal(response.details.cancelled, false);
+    assert.equal(response.details.answers.length, 2);
+    assert.equal(response.details.answers[0].answer, "Word 文档 (.docx)");
+    assert.equal(response.details.answers[1].answer, "对外展示");
+
+    const text = response.content[0].text;
+    assert(text.includes('User has answered your questions:'));
+    assert(text.includes('"您希望我为您创建什么类型的文档？"="Word 文档 (.docx)"'));
+    assert(text.includes('"这份文档的主要用途和受众是什么？"="对外展示"'));
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("Pi Work ask_user_question handles user cancellation as a canonical decline", async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-ask-cancel-"));
+  try {
+    const extension = await loadExtension(temp);
+    const tools = new Map();
+    const eventHandlers = new Map();
+    const mockPi = {
+      registerTool(tool) {
+        tools.set(tool.name, tool);
+      },
+      setActiveTools() {},
+      on(event, handler) {
+        eventHandlers.set(event, handler);
+      },
+      getTool(name) {
+        return tools.get(name);
+      },
+    };
+
+    extension(mockPi);
+    mockPi.registerTool({
+      name: "ask_user_question",
+      label: "Ask User Question",
+      execute: async () => ({ content: [{ type: "text", text: "original" }] }),
+    });
+    eventHandlers.get("session_start")?.();
+
+    const tool = tools.get("ask_user_question");
+    const mockCtx = {
+      hasUI: true,
+      ui: {
+        input: async () => JSON.stringify({ cancelled: true, answers: [] }),
+      },
+    };
+
+    const response = await tool.execute(
+      "call-2",
+      {
+        questions: [
+          {
+            header: "文档类型",
+            question: "您希望我为您创建什么类型的文档？",
+            options: [{ label: "Word 文档" }],
+          },
+        ],
+      },
+      null,
+      null,
+      mockCtx,
+    );
+
+    assert.equal(response.details.cancelled, true);
+    assert.equal(response.content[0].text, "User declined to answer questions");
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});

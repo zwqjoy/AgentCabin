@@ -1261,6 +1261,7 @@ const ROOT_ONLY_TOOL_NAMES = new Set([
   "act_ui",
   "read_text",
   "wait_for",
+  "ask_user_question",
 ]);
 
 const CANONICAL_ROLE_TOOLS = {
@@ -1304,6 +1305,25 @@ function resolveChildAllowedTools() {
   return allowed;
 }
 
+const AskUserQuestionOptionSchema = Type.Object({
+  label: Type.String({ description: "Visible option label." }),
+  description: Type.Optional(Type.String({ description: "Option explanation." })),
+  preview: Type.Optional(Type.String({ description: "Optional preview content." })),
+});
+
+const AskUserQuestionItemSchema = Type.Object({
+  question: Type.String({ description: "Question for the user." }),
+  header: Type.Optional(Type.String({ description: "Short chip/tag shown next to the question." })),
+  options: Type.Array(AskUserQuestionOptionSchema, { description: "Available choices (2-4 options)." }),
+  multiSelect: Type.Optional(Type.Boolean({ default: false, description: "Allow multiple selections." })),
+  multi_select: Type.Optional(Type.Boolean({ description: "Allow multiple selections." })),
+});
+
+const AskUserQuestionParamsSchema = Type.Object({
+  title: Type.Optional(Type.String({ description: "Optional title shown above the questions." })),
+  questions: Type.Array(AskUserQuestionItemSchema, { description: "Questions to ask the user (1-4 questions)." }),
+});
+
 export default function agentCabinWorkExtension(pi) {
   // Register the AgentCabin provider if metadata is present in the environment.
   // This ensures child subagents (which inherit environment variables but not ambient extensions)
@@ -1346,6 +1366,191 @@ export default function agentCabinWorkExtension(pi) {
     : new Set(DEFAULT_ACTIVE_TOOLS);
   const canChangeActiveTools = typeof pi.setActiveTools === "function";
   const registeredWorkTools = new Map();
+  const originalRegisterTool = typeof pi.registerTool === "function" ? pi.registerTool.bind(pi) : null;
+
+  function wrapAskUserQuestionTool(originalTool) {
+    return {
+      name: "ask_user_question",
+      label: originalTool?.label || "Ask User Question",
+      description: originalTool?.description || "Ask the user one or more structured questions during execution.",
+      promptSnippet: originalTool?.promptSnippet,
+      promptGuidelines: originalTool?.promptGuidelines,
+      parameters: originalTool?.parameters || AskUserQuestionParamsSchema,
+      __agentCabinBatchWrapped: true,
+
+      async execute(toolCallId, params, signal, onUpdate, ctx) {
+        if (isSubagentChild) {
+          return fail("Permission denied: Tool 'ask_user_question' is not permitted in this child subagent role.");
+        }
+        if (!ctx?.hasUI) {
+          return {
+            content: [{ type: "text", text: "Error: UI not available (running in non-interactive mode)" }],
+            details: { answers: [], cancelled: true, error: "no_ui" },
+          };
+        }
+        const rawQuestions = params?.questions;
+        if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+          return {
+            content: [{ type: "text", text: "ask_user_question requires at least one question." }],
+            details: { answers: [], cancelled: true, error: "no_questions" },
+          };
+        }
+        if (rawQuestions.some((q) => !q || typeof q.question !== "string" || !q.question.trim())) {
+          return {
+            content: [{ type: "text", text: "Every ask_user_question item must have a non-empty question." }],
+            details: { answers: [], cancelled: true, error: "empty_options" },
+          };
+        }
+
+        if (typeof ctx.ui?.input !== "function") {
+          if (typeof originalTool?.execute === "function" && originalTool !== this) {
+            return originalTool.execute(toolCallId, params, signal, onUpdate, ctx);
+          }
+          return {
+            content: [{ type: "text", text: "Error: UI input not available" }],
+            details: { answers: [], cancelled: true, error: "no_ui" },
+          };
+        }
+
+        const batchQuestions = rawQuestions.map((q, index) => {
+          const id = typeof q.id === "string" && q.id.trim() ? q.id.trim() : `q${index + 1}`;
+          const header = typeof q.header === "string" && q.header.trim() ? q.header.trim() : undefined;
+          const questionText = q.question.trim();
+          const options = Array.isArray(q.options)
+            ? q.options.flatMap((opt) => {
+                if (typeof opt === "string") return [{ label: opt, value: opt }];
+                if (!opt || typeof opt !== "object" || typeof opt.label !== "string") return [];
+                return [{
+                  label: opt.label,
+                  value: typeof opt.value === "string" ? opt.value : opt.label,
+                  ...(typeof opt.description === "string" ? { description: opt.description } : {}),
+                }];
+              })
+            : [];
+          return {
+            id,
+            type: "select",
+            question: questionText,
+            ...(header ? { header } : {}),
+            options,
+            multiSelect: q.multiSelect === true || q.multi_select === true,
+            allowOther: true,
+          };
+        });
+
+        const envelope = JSON.stringify({
+          __piDeckBatchAsk: 1,
+          ...(typeof params?.title === "string" && params.title.trim()
+            ? { title: params.title.trim() }
+            : {}),
+          review: batchQuestions.length > 1,
+          questions: batchQuestions,
+        });
+
+        let rawResponse = null;
+        try {
+          rawResponse = await ctx.ui.input(envelope, "");
+        } catch (err) {
+          console.warn("[work/ask_user_question] UI input rejected or failed:", err);
+          return {
+            content: [{ type: "text", text: "User declined to answer questions" }],
+            details: { answers: [], cancelled: true },
+          };
+        }
+
+        let parsed = null;
+        if (typeof rawResponse === "string" && rawResponse.trim()) {
+          try {
+            parsed = JSON.parse(rawResponse.trim());
+          } catch {}
+        }
+
+        if (!parsed || parsed.cancelled === true || !Array.isArray(parsed.answers)) {
+          return {
+            content: [{ type: "text", text: "User declined to answer questions" }],
+            details: { answers: [], cancelled: true },
+          };
+        }
+
+        const answers = [];
+        for (let qi = 0; qi < rawQuestions.length; qi++) {
+          const origQ = rawQuestions[qi];
+          const qId = origQ.id || `q${qi + 1}`;
+          const ans = parsed.answers.find((a) => a.id === qId);
+          if (!ans || (ans.value == null && !ans.label)) continue;
+
+          const isMulti = origQ.multiSelect === true || origQ.multi_select === true;
+          if (isMulti) {
+            const rawVal = ans.value;
+            const values = Array.isArray(rawVal) ? rawVal : (rawVal != null ? [rawVal] : []);
+            const labels = ans.label ? ans.label.split(", ").map((s) => s.trim()) : values.map(String);
+            answers.push({
+              questionIndex: qi,
+              question: origQ.question,
+              kind: "multi",
+              answer: null,
+              selected: labels,
+            });
+          } else if (ans.wasCustom) {
+            answers.push({
+              questionIndex: qi,
+              question: origQ.question,
+              kind: "custom",
+              answer: typeof ans.value === "string" ? ans.value : String(ans.value ?? ""),
+            });
+          } else {
+            answers.push({
+              questionIndex: qi,
+              question: origQ.question,
+              kind: "option",
+              answer: ans.label || (typeof ans.value === "string" ? ans.value : String(ans.value ?? "")),
+            });
+          }
+        }
+
+        const DECLINE_MESSAGE = "User declined to answer questions";
+        const ENVELOPE_PREFIX = "User has answered your questions:";
+        const ENVELOPE_SUFFIX = "You can now continue with the user's answers in mind.";
+
+        const segments = [];
+        for (let i = 0; i < rawQuestions.length; i++) {
+          const q = rawQuestions[i];
+          const a = answers.find((item) => item.questionIndex === i);
+          if (a) {
+            let val = "";
+            if (a.kind === "multi") {
+              val = Array.isArray(a.selected) ? a.selected.join(", ") : String(a.answer || "");
+            } else {
+              val = String(a.answer ?? "");
+            }
+            segments.push(`"${q.question}"="${val}".`);
+          }
+        }
+
+        if (segments.length === 0) {
+          return {
+            content: [{ type: "text", text: DECLINE_MESSAGE }],
+            details: { answers: [], cancelled: true },
+          };
+        }
+
+        return {
+          content: [{ type: "text", text: `${ENVELOPE_PREFIX} ${segments.join(" ")} ${ENVELOPE_SUFFIX}` }],
+          details: { answers, cancelled: false },
+        };
+      },
+    };
+  }
+
+  if (originalRegisterTool) {
+    pi.registerTool = (tool) => {
+      if (tool?.name === "ask_user_question" && !tool.__agentCabinBatchWrapped) {
+        const wrapped = wrapAskUserQuestionTool(tool);
+        return originalRegisterTool(wrapped);
+      }
+      return originalRegisterTool(tool);
+    };
+  }
 
   // Child processes launch with ambient extensions disabled. Register the
   // Work-owned Web adapter from the trusted Core extension when the role's
@@ -1390,6 +1595,12 @@ export default function agentCabinWorkExtension(pi) {
   // session runtime has been bound.
   pi.on("session_start", () => {
     applyActiveTools();
+    if (typeof pi.getTool === "function") {
+      const existing = pi.getTool("ask_user_question");
+      if (existing && !existing.__agentCabinBatchWrapped && originalRegisterTool) {
+        originalRegisterTool(wrapAskUserQuestionTool(existing));
+      }
+    }
   });
 
   const compatibilityTargets = {
