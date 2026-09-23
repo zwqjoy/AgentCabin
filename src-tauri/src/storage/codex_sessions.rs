@@ -1311,6 +1311,7 @@ pub fn import_session(
         prompt: first_prompt,
         cwd: actual_cwd,
         agent: "codex".to_string(),
+        code_standalone_task: false,
         app_mode: crate::work::models::AppMode::Code,
         agent_target: Some(crate::models::AgentTarget::NativeCodex),
         workspace_id: None,

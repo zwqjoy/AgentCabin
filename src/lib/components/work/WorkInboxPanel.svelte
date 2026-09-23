@@ -43,11 +43,11 @@
     } catch {
       tasks = [];
     }
-    await loadSessionRunIds(inboxStore.items);
+    await loadSessionRunIds();
   }
 
-  async function loadSessionRunIds(items: InboxItem[]): Promise<void> {
-    const candidates = items.filter((item) => item.status === "pending");
+  async function loadSessionRunIds(): Promise<void> {
+    const candidates = inboxStore.pendingItems;
     const resolved = await Promise.all(
       candidates.map(async (item) => {
         try {
@@ -67,13 +67,13 @@
 
   $effect(() => {
     const pendingItems = inboxStore.pendingItems;
-    if (pendingItems.length > 0) void loadSessionRunIds(pendingItems);
+    if (pendingItems.length > 0) void loadSessionRunIds();
   });
 
   const displayedItems = $derived(
     filterStatus === "pending"
       ? inboxStore.pendingItems.filter((i) => !workspaceId || i.workspaceId === workspaceId)
-      : inboxStore.items.filter((i) => !workspaceId || i.workspaceId === workspaceId),
+      : inboxStore.actionItems.filter((i) => !workspaceId || i.workspaceId === workspaceId),
   );
 
   const scopedPendingCount = $derived(
@@ -335,8 +335,7 @@
           </svg>
           <span class="font-medium text-foreground/90">暂无待处理事项</span>
           <span class="text-muted-foreground/70"
-            >· Agent
-            在执行任务遇到目录授权、提问、方案审批或异常恢复时会在此暂停等待，处理后自动恢复执行</span
+            >· 对话中的提问、授权、方案确认和成果验收会显示在对应任务里；自动化运行失败时会在此提醒</span
           >
         </div>
       </div>

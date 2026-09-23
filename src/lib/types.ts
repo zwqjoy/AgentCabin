@@ -52,6 +52,8 @@ export interface TaskRun {
   prompt: string;
   cwd: string;
   agent: string;
+  /** Code run created without a project, using its own AgentCabin-managed cwd. */
+  code_standalone_task?: boolean;
   /** Product-level mode that owns this run. Legacy runs default to Code. */
   app_mode?: "code" | "work";
   /** Explicit runtime target. */

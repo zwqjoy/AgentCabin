@@ -547,6 +547,7 @@ mod tests {
             prompt: prompt.to_string(),
             cwd: "/tmp".to_string(),
             agent: "pi".to_string(),
+            code_standalone_task: false,
             app_mode: AppMode::Work,
             agent_target: None,
             workspace_id: Some("ws-test".to_string()),

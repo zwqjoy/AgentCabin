@@ -636,7 +636,7 @@ pub(crate) async fn start_session_impl(
         adapter::build_adapter_settings(&agent_settings, &user_settings, meta.model.clone());
     if meta.effort.is_some() {
         adapter_settings.effort = meta.effort.clone();
-    } else if meta.app_mode == crate::work::models::AppMode::Code {
+    } else if meta.app_mode == crate::work::models::AppMode::Code && !meta.code_standalone_task {
         if let Ok(project) = storage::project_preferences::get(
             &meta.cwd,
             meta.remote_host_name.as_deref(),
@@ -5116,6 +5116,7 @@ mod tests {
             prompt: "completed run".to_string(),
             cwd: "/tmp".to_string(),
             agent: "pi".to_string(),
+            code_standalone_task: false,
             app_mode: crate::work::models::AppMode::Work,
             agent_target: Some(crate::models::AgentTarget::Work),
             workspace_id: None,

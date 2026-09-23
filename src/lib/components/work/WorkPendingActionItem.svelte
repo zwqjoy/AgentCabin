@@ -14,6 +14,9 @@
     isQuestionInteraction,
   } from "$lib/utils/work-interactions";
   import { workTaskStore } from "$lib/stores/work-task-store.svelte";
+  import QuestionPromptCard, {
+    type QuestionPrompt,
+  } from "$lib/components/QuestionPromptCard.svelte";
 
   interface Props {
     item: InboxItem;
@@ -50,8 +53,6 @@
     placeholder?: string;
     required: boolean;
   };
-  let questionAnswers = $state<Record<string, string | string[]>>({});
-  let questionCustomAnswers = $state<Record<string, string>>({});
 
   let questionList = $derived.by((): QuestionSpec[] => {
     const parameters = item.payload.parameters;
@@ -96,78 +97,33 @@
     });
   });
 
+  // Work, Pi and DSH all resolve the same ask_questions contract. Keep the
+  // Inbox payload shape local to Work, but render it through the shared
+  // AgentCabin question surface so the runtime name does not leak into UX.
+  let promptQuestions = $derived.by((): QuestionPrompt[] =>
+    questionList.map((question) => ({
+      id: question.id,
+      type: question.options.length > 0 ? "select" : "input",
+      question: question.question,
+      header: question.header,
+      options: question.options,
+      multiSelect: question.multiSelect,
+      allowOther: question.allowOther,
+      placeholder: question.placeholder,
+      required: question.required,
+    })),
+  );
+
   $effect(() => {
     const itemId = item.id;
     if (!itemId) return;
-    questionAnswers = {};
-    questionCustomAnswers = {};
     freeformAnswer = "";
   });
-
-  function questionValue(question: QuestionSpec): string | string[] {
-    return questionAnswers[question.id] ?? (question.multiSelect ? [] : "");
-  }
-
-  function questionComplete(question: QuestionSpec): boolean {
-    if (!question.required) return true;
-    const value = questionValue(question);
-    if (question.multiSelect) {
-      return (
-        (Array.isArray(value) && value.length > 0) ||
-        (questionCustomAnswers[question.id] ?? "").trim().length > 0
-      );
-    }
-    return (
-      (questionCustomAnswers[question.id] ?? (Array.isArray(value) ? "" : value)).trim().length > 0
-    );
-  }
-
-  let questionsComplete = $derived(
-    questionList.length > 0 && questionList.every((question) => questionComplete(question)),
-  );
   let freeformAnswerComplete = $derived(freeformAnswer.trim().length > 0);
 
-  function setQuestionValue(question: QuestionSpec, value: string) {
-    questionAnswers = { ...questionAnswers, [question.id]: value };
-  }
-
-  function setQuestionCustomValue(question: QuestionSpec, value: string) {
-    questionCustomAnswers = { ...questionCustomAnswers, [question.id]: value };
-  }
-
-  function submittedQuestionAnswers(): Record<string, string | string[]> {
-    return Object.fromEntries(
-      questionList.map((question) => {
-        const selected = questionValue(question);
-        const custom = (questionCustomAnswers[question.id] ?? "").trim();
-        if (question.multiSelect) {
-          return [
-            question.id,
-            [...(Array.isArray(selected) ? selected : []), ...(custom ? [custom] : [])],
-          ];
-        }
-        return [question.id, custom || (Array.isArray(selected) ? "" : selected)];
-      }),
-    );
-  }
-
-  function toggleQuestionOption(question: QuestionSpec, option: string) {
-    if (!question.multiSelect) {
-      setQuestionValue(question, option);
-      return;
-    }
-    const selected = Array.isArray(questionValue(question)) ? [...questionValue(question)] : [];
-    const index = selected.indexOf(option);
-    if (index >= 0) selected.splice(index, 1);
-    else selected.push(option);
-    questionAnswers = { ...questionAnswers, [question.id]: selected };
-  }
-
-  async function submitQuestions(event: SubmitEvent) {
-    event.preventDefault();
-    if (!questionsComplete || resolving) return;
+  async function submitSharedQuestions(answers: Record<string, string | string[] | boolean>) {
     await handleResolve("answered", {
-      answers: submittedQuestionAnswers(),
+      answers,
       source: "ask_questions",
     });
   }
@@ -185,6 +141,7 @@
   let isApp = $derived(isAppConnectionRequest(item));
   let isConnector = $derived(isConnectorAuthRequest(item));
   let isQuestion = $derived(isQuestionInteraction(item));
+  let hasStructuredQuestion = $derived(isQuestion && questionList.length > 0);
   let isHostFallback = $derived(item.payload.executionLane === "host_fallback");
   let isDependencyInstall = $derived(Boolean(item.payload.packageManager || item.payload.packages));
   let dirPath = $derived(isDir ? getDirectoryPathFromItem(item) : "");
@@ -260,7 +217,9 @@
 </script>
 
 <div
-  class="group relative rounded-xl border border-border/70 bg-card p-4 shadow-sm transition-all hover:border-border space-y-3"
+  class={hasStructuredQuestion
+    ? "mx-auto w-full max-w-4xl space-y-3"
+    : "group relative rounded-xl border border-border/70 bg-card p-4 shadow-sm transition-all hover:border-border space-y-3"}
 >
   {#if taskLabel}
     <div class="flex items-center gap-2 text-[10px] text-muted-foreground">
@@ -278,84 +237,86 @@
       {/if}
     </div>
   {/if}
-  <div class="flex items-start gap-3">
-    <div
-      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400"
-    >
-      {#if isDir}
-        <svg
-          viewBox="0 0 24 24"
-          class="h-4 w-4"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M3.5 6.5h6l2 2h9v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
-        </svg>
-      {:else if isApp}
-        <svg
-          viewBox="0 0 24 24"
-          class="h-4 w-4"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-        </svg>
-      {:else}
-        <svg
-          viewBox="0 0 24 24"
-          class="h-4 w-4"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="8" x2="12" y2="12" />
-          <line x1="12" y1="16" x2="12.01" y2="16" />
-        </svg>
-      {/if}
-    </div>
-    <div class="min-w-0 flex-1">
-      <div class="flex items-center gap-2">
-        <span class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-          {isRecovery
-            ? "恢复确认"
-            : isHostFallback
-              ? "主机执行授权"
-              : isDir
-                ? "目录授权"
-                : isConnector
-                  ? "服务授权"
-                  : isApp
-                    ? "应用连接"
-                    : isQuestion
-                      ? "补充信息"
-                      : isDependencyInstall
-                        ? "依赖安装确认"
-                        : "操作确认"}
-        </span>
-        <h4 class="text-xs font-semibold leading-snug text-foreground">{title}</h4>
+  {#if !hasStructuredQuestion}
+    <div class="flex items-start gap-3">
+      <div
+        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400"
+      >
+        {#if isDir}
+          <svg
+            viewBox="0 0 24 24"
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M3.5 6.5h6l2 2h9v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
+          </svg>
+        {:else if isApp}
+          <svg
+            viewBox="0 0 24 24"
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+        {:else}
+          <svg
+            viewBox="0 0 24 24"
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+        {/if}
       </div>
-      {#if displayPath}
-        <div
-          class="mt-1 inline-block break-all rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-foreground"
-        >
-          {displayPath}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2">
+          <span class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+            {isRecovery
+              ? "恢复确认"
+              : isHostFallback
+                ? "主机执行授权"
+                : isDir
+                  ? "目录授权"
+                  : isConnector
+                    ? "服务授权"
+                    : isApp
+                      ? "应用连接"
+                      : isQuestion
+                        ? "补充信息"
+                        : isDependencyInstall
+                          ? "依赖安装确认"
+                          : "操作确认"}
+          </span>
+          <h4 class="text-xs font-semibold leading-snug text-foreground">{title}</h4>
         </div>
-      {/if}
+        {#if displayPath}
+          <div
+            class="mt-1 inline-block break-all rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-foreground"
+          >
+            {displayPath}
+          </div>
+        {/if}
+      </div>
     </div>
-  </div>
 
-  {#if description}
-    <p class="text-xs leading-relaxed text-muted-foreground">{description}</p>
+    {#if description}
+      <p class="text-xs leading-relaxed text-muted-foreground">{description}</p>
+    {/if}
   {/if}
 
   {#if isHostFallback}
@@ -434,62 +395,15 @@
   {/if}
 
   {#if isQuestion && questionList.length > 0}
-    <form
-      class="space-y-3 rounded-xl border border-primary/20 bg-primary/[0.03] p-3"
-      onsubmit={submitQuestions}
-    >
-      {#each questionList as question}
-        <fieldset class="space-y-2">
-          <legend class="text-xs font-medium leading-relaxed text-foreground">
-            {#if question.header}<span class="mr-1 text-muted-foreground">{question.header}：</span
-              >{/if}{question.question}
-            {#if question.required}<span class="text-destructive">*</span>{/if}
-          </legend>
-          {#if question.options.length > 0}
-            <div class="space-y-1.5">
-              {#each question.options as option}
-                {@const selected = Array.isArray(questionValue(question))
-                  ? questionValue(question).includes(option.value)
-                  : questionValue(question) === option.value}
-                <button
-                  type="button"
-                  aria-pressed={selected}
-                  class="flex w-full items-start justify-between gap-3 rounded-lg border px-3 py-2 text-left text-xs transition-colors {selected
-                    ? 'border-primary/50 bg-primary/10 text-primary'
-                    : 'border-border/70 hover:bg-accent'}"
-                  onclick={() => toggleQuestionOption(question, option.value)}
-                >
-                  <span>{option.label}</span>
-                  {#if option.description}<span class="text-[10px] text-muted-foreground"
-                      >{option.description}</span
-                    >{/if}
-                </button>
-              {/each}
-            </div>
-          {/if}
-          {#if question.options.length === 0 || question.allowOther}
-            <input
-              value={questionCustomAnswers[question.id] ?? ""}
-              placeholder={question.options.length > 0
-                ? "也可以自行填写"
-                : question.placeholder || "请输入答案"}
-              class="w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-xs outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10"
-              oninput={(event) =>
-                setQuestionCustomValue(question, (event.currentTarget as HTMLInputElement).value)}
-            />
-          {/if}
-        </fieldset>
-      {/each}
-      <div class="flex items-center justify-end border-t border-border/40 pt-2">
-        <button
-          type="submit"
-          disabled={!questionsComplete || resolving || readOnly}
-          class="rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-        >
-          {resolving ? "提交中…" : "提交答案并继续"}
-        </button>
-      </div>
-    </form>
+    <QuestionPromptCard
+      questions={promptQuestions}
+      eyebrow="AgentCabin 内置问题"
+      title={title || "请补充一点信息"}
+      description={description || "回答后 Work 将继续执行。"}
+      {readOnly}
+      onSubmit={submitSharedQuestions}
+      onCancel={() => handleResolve("rejected", { source: "ask_questions" })}
+    />
   {/if}
 
   {#if isQuestion && questionList.length === 0}

@@ -83,6 +83,13 @@ impl WorkRuntimeAdapter for PiWorkRuntimeAdapter {
             .map_err(|e| {
                 WorkRuntimeError::LaunchFailed(format!("Failed to ensure Pi Work packages: {e}"))
             })?;
+        crate::work::system_packages::ensure_pi_interaction_packages(&context.paths)
+            .await
+            .map_err(|e| {
+                WorkRuntimeError::LaunchFailed(format!(
+                    "Failed to ensure Pi interaction extensions: {e}"
+                ))
+            })?;
         crate::work::mcp::ensure_adapter_for_paths(&context.paths)
             .await
             .map_err(|e| {
@@ -240,8 +247,27 @@ impl PiWorkRuntimeAdapter {
         settings.pi_shared_extension_sources =
             crate::storage::profile_bindings::list_enabled_pi_extension_sources("work")
                 .into_iter()
+                .filter(|path| {
+                    !crate::work::system_packages::is_pi_interaction_source(&path.to_string_lossy())
+                })
                 .map(|path| path.to_string_lossy().into_owned())
                 .collect();
+        settings.pi_shared_extension_sources.push(
+            crate::work::system_packages::common_system_package_entry_path(
+                &work_paths,
+                crate::work::system_packages::PI_ASK_USER_QUESTION_PACKAGE_NAME,
+            )
+            .to_string_lossy()
+            .into_owned(),
+        );
+        settings.pi_shared_extension_sources.push(
+            crate::work::system_packages::common_system_package_entry_path(
+                &work_paths,
+                crate::work::system_packages::PI_TODO_PACKAGE_NAME,
+            )
+            .to_string_lossy()
+            .into_owned(),
+        );
         let context_usage_extension = crate::pi_context_runtime::ensure_context_usage_extension(
             &work_paths,
         )

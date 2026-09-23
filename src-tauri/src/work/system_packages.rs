@@ -36,6 +36,14 @@ pub const PI_SUBAGENTS_PACKAGE_NAME: &str = "pi-subagents";
 pub const PI_SUBAGENTS_VERSION: &str = "0.51.0";
 pub const PI_SUBAGENTS_SOURCE: &str = "npm:pi-subagents@0.51.0";
 
+pub const PI_ASK_USER_QUESTION_PACKAGE_NAME: &str = "@juicesharp/rpiv-ask-user-question";
+pub const PI_ASK_USER_QUESTION_VERSION: &str = "2.11.0";
+pub const PI_ASK_USER_QUESTION_SOURCE: &str = "npm:@juicesharp/rpiv-ask-user-question@2.11.0";
+pub const PI_TODO_PACKAGE_NAME: &str = "@juicesharp/rpiv-todo";
+pub const PI_TODO_VERSION: &str = "2.11.0";
+pub const PI_TODO_SOURCE: &str = "npm:@juicesharp/rpiv-todo@2.11.0";
+const LEGACY_PI_TODO_PACKAGE_NAME: &str = "@pi9/todo";
+
 pub const SYSTEM_MANAGED_PACKAGE_MESSAGE: &str =
     "这是 AgentCabin Work 系统组件，已由系统管理，请在对应能力设置中启用或停用。";
 
@@ -110,6 +118,22 @@ pub fn is_system_managed_source(source: &str) -> bool {
     is_pi_mcp_adapter_source(source)
         || is_pi_web_access_source(source)
         || is_pi_subagents_source(source)
+        || is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME)
+        || is_package_source(source, PI_TODO_PACKAGE_NAME)
+        || is_package_source(source, LEGACY_PI_TODO_PACKAGE_NAME)
+}
+
+pub fn is_pi_interaction_source(source: &str) -> bool {
+    is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME)
+        || is_package_source(source, PI_TODO_PACKAGE_NAME)
+        || is_package_source(source, LEGACY_PI_TODO_PACKAGE_NAME)
+}
+
+fn is_package_source(source: &str, package_name: &str) -> bool {
+    let normalized = source.trim().strip_prefix("npm:").unwrap_or(source.trim());
+    package_reference_matches(normalized, package_name)
+        || normalized.ends_with(&format!("/{package_name}"))
+        || package_reference_matches(final_reference_segment(normalized), package_name)
 }
 
 pub fn is_system_managed_package_name(name: &str) -> bool {
@@ -143,6 +167,12 @@ fn managed_package_name(source: &str) -> Option<&'static str> {
         Some(PI_SUBAGENTS_PACKAGE_NAME)
     } else if is_pi_web_access_source(source) {
         Some(PI_WEB_ACCESS_PACKAGE_NAME)
+    } else if is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME) {
+        Some(PI_ASK_USER_QUESTION_PACKAGE_NAME)
+    } else if is_package_source(source, PI_TODO_PACKAGE_NAME) {
+        Some(PI_TODO_PACKAGE_NAME)
+    } else if is_package_source(source, LEGACY_PI_TODO_PACKAGE_NAME) {
+        Some(LEGACY_PI_TODO_PACKAGE_NAME)
     } else {
         None
     }
@@ -481,6 +511,20 @@ pub async fn ensure_common_system_package(
     }
 }
 
+/// Install the Pi-native interaction extensions once in the shared managed
+/// package profile. Code and isolated Work profiles explicitly load these
+/// package entry points, while DSH continues using its ACP-native tools.
+pub async fn ensure_pi_interaction_packages(paths: &WorkPaths) -> Result<(), String> {
+    ensure_common_system_package(
+        paths,
+        PI_ASK_USER_QUESTION_PACKAGE_NAME,
+        PI_ASK_USER_QUESTION_VERSION,
+        PI_ASK_USER_QUESTION_SOURCE,
+    )
+    .await?;
+    ensure_common_system_package(paths, PI_TODO_PACKAGE_NAME, PI_TODO_VERSION, PI_TODO_SOURCE).await
+}
+
 pub async fn repair_system_package(
     paths: &WorkPaths,
     package_name: &str,
@@ -543,6 +587,12 @@ mod tests {
         ));
         assert!(is_system_managed_source("npm:pi-subagents@0.51.0"));
         assert!(is_system_managed_source("npm:pi-web-access@0.23.0"));
+        assert!(is_system_managed_source(PI_ASK_USER_QUESTION_SOURCE));
+        assert!(is_system_managed_source(PI_TODO_SOURCE));
+        assert!(is_pi_interaction_source(
+            "/managed/node_modules/@juicesharp/rpiv-todo"
+        ));
+        assert!(is_pi_interaction_source("npm:@pi9/todo@0.3.7"));
         assert!(!is_system_managed_source("npm:@acme/pi-web-access-wrapper"));
         assert!(!is_system_managed_source("npm:@user/pi-subagents-fork"));
     }

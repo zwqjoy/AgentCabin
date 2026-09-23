@@ -104,6 +104,7 @@ impl GoldenHarness {
                 .to_string_lossy()
                 .to_string(),
             agent: "pi".to_string(),
+            code_standalone_task: false,
             app_mode: AppMode::Work,
             agent_target: Some(crate::models::AgentTarget::Work),
             workspace_id: Some(workspace.id.clone()),

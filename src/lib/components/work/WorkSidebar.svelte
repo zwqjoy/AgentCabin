@@ -120,10 +120,6 @@
     void goto("/chat/work?panel=pending");
   }
 
-  function openTaskPanel() {
-    void goto("/chat/work?panel=automation");
-  }
-
   // ── Dialog state (presentation-only) ───────────────────────────────────────
   let deleteConfirmOpen = $state(false);
   let deleteTarget: ConversationGroup | null = $state(null);
@@ -210,9 +206,10 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
   <div class="work-sidebar-body flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">
-    <!-- Recent conversations -->
-    {#if recentConversations.length > 0}
-      <div class="mb-2 shrink-0">
+    <!-- The recent task list is mode-wide; workspace trees below provide context. -->
+    <div class="mb-2 shrink-0">
+      <SidebarSectionLabel label="任务" count={recentConversations.length} class="mb-0.5" />
+      {#if recentConversations.length > 0}
         <div class="space-y-0.5">
           {#each recentConversations as session (session.id)}
             <ConversationItem
@@ -228,12 +225,14 @@
             />
           {/each}
         </div>
-      </div>
-    {:else}
-      <div class="px-2.5 py-2 text-xs text-sidebar-foreground/45">
-        {normalizedSearch ? "没有匹配的对话" : "暂无最近对话"}
-      </div>
-    {/if}
+      {:else}
+        <div class="px-2.5 py-2 text-xs text-sidebar-foreground/45">
+          {normalizedSearch ? "没有匹配的对话" : "暂无最近对话"}
+        </div>
+      {/if}
+    </div>
+
+    <div class="mb-2 border-t border-sidebar-border/50"></div>
 
     <!-- Workspaces: same section header/actions as Code. -->
     <div class="shrink-0">
@@ -571,38 +570,22 @@
 
     {#if workTransportSupported}
       <footer class="mt-auto shrink-0 border-t border-sidebar-border/40 px-0.5 pt-2">
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors {activePanel ===
-          'pending'
-            ? 'bg-sidebar-accent text-sidebar-foreground'
-            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}"
-          onclick={openPendingPanel}
-        >
-          <span>待处理</span>
-          {#if inboxStore.pendingCount > 0}
+        {#if inboxStore.pendingCount > 0}
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors {activePanel ===
+            'pending'
+              ? 'bg-sidebar-accent text-sidebar-foreground'
+              : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}"
+            onclick={openPendingPanel}
+          >
+            <span>待处理</span>
             <span
               class="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/25 px-1 text-[10px] font-bold text-amber-600 dark:text-amber-400"
               >{inboxStore.pendingCount}</span
             >
-          {/if}
-        </button>
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors {activePanel ===
-          'automation'
-            ? 'bg-sidebar-accent text-sidebar-foreground'
-            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}"
-          onclick={openTaskPanel}
-        >
-          <span>任务</span>
-          {#if sidebar.activeTaskCount > 0}
-            <span
-              class="flex h-4 min-w-4 items-center justify-center rounded-full bg-sidebar-accent px-1 text-[10px] font-bold text-sidebar-foreground/80"
-              >{sidebar.activeTaskCount}</span
-            >
-          {/if}
-        </button>
+          </button>
+        {/if}
       </footer>
     {/if}
   </div>

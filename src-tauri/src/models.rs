@@ -271,6 +271,9 @@ pub struct TaskRun {
     pub prompt: String,
     pub cwd: String,
     pub agent: String,
+    /// Code run created without a project, using its own AgentCabin-managed cwd.
+    #[serde(default)]
+    pub code_standalone_task: bool,
     #[serde(default)]
     pub app_mode: AppMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1057,6 +1060,9 @@ pub struct RunMeta {
     pub prompt: String,
     pub cwd: String,
     pub agent: String,
+    /// Code run created without a project, using its own AgentCabin-managed cwd.
+    #[serde(default)]
+    pub code_standalone_task: bool,
     /// Product-level mode that owns this run. Missing legacy values default to Code.
     #[serde(default)]
     pub app_mode: AppMode,
@@ -1236,6 +1242,7 @@ impl RunMeta {
             prompt: self.prompt.clone(),
             cwd: self.cwd.clone(),
             agent: self.agent.clone(),
+            code_standalone_task: self.code_standalone_task,
             app_mode: self.app_mode,
             agent_target: Some(
                 self.agent_target

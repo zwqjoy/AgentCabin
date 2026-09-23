@@ -571,11 +571,15 @@ impl DshRuntimeAdapter {
         // before the Harness Controller can create a session. Their enabled
         // state and AgentCabin-specific configuration are applied as root
         // overrides below.
+        // The Web profile also owns DSH's native todo plugin (`tool-todo`).
+        // Keep the built-in visible in AgentCabin, but don't add a second
+        // Cordis loader entry with the same id.
 
         for plugin in active_plugins.iter().filter(|p| {
             p.id != "dsh-skill"
                 && p.id != "dsh-web"
                 && p.id != "dsh-mcp-client"
+                && p.id != "tool-todo"
                 && (!is_work || p.is_safe_in_work())
         }) {
             let reference = plugin.reference().ok_or_else(|| {
@@ -701,6 +705,27 @@ impl DshRuntimeAdapter {
         // Close the insert block before applying overrides to the
         // Profile rows above.
         patch.push_str(&profile_overrides);
+
+        // `tool-todo` is already owned by the Web profile. Override that
+        // entry in place so AgentCabin's toggle and single-active policy are
+        // respected without registering a duplicate Cordis loader id.
+        if let Some(todo) = active_plugins
+            .iter()
+            .find(|plugin| plugin.id == "tool-todo")
+        {
+            let default_config = serde_json::json!({ "allowParallelInProgress": false });
+            let config = todo.config.as_ref().unwrap_or(&default_config);
+            let yaml = serde_yaml::to_string(config)
+                .map_err(|error| format!("Failed to serialize DSH todo config: {error}"))?;
+            patch.push_str("- id: tool-todo\n  config:\n");
+            for line in yaml.lines() {
+                patch.push_str("    ");
+                patch.push_str(line);
+                patch.push('\n');
+            }
+        } else {
+            patch.push_str("- id: tool-todo\n  disabled: true\n");
+        }
 
         // The Web profile already owns the official LLM plugin. Override it
         // in place so every catalog provider is visible to Session Controller
@@ -913,6 +938,10 @@ mod tests {
         assert!(patch.contains("name: '@deepseek-ai/dsh-mcp-client'"));
         assert!(patch.contains("agentcabin_work"));
         assert!(!patch.contains("agentcabin-work-plugin"));
+        let insert_block = patch.split("- id: llm-pi-ai").next().unwrap_or(&patch);
+        assert!(insert_block.contains("id: tool-ask-user\n"));
+        assert_eq!(patch.matches("- id: tool-todo\n").count(), 1);
+        assert!(patch.contains("- id: tool-todo\n  config:\n    allowParallelInProgress: false\n"));
         assert!(!patch.contains("id: acp"));
         assert!(patch.contains("id: llm-pi-ai"));
         assert!(patch.contains("reasoningEfforts:"));
@@ -985,6 +1014,9 @@ mod tests {
         let mcp = std::fs::read_to_string(caps.managed_runtime_dir.join("mcp.json")).unwrap();
         assert!(!patch.contains("id: web-search-deepseek\n  disabled: true"));
         let insert_block = patch.split("- id: llm-pi-ai").next().unwrap_or(&patch);
+        assert!(insert_block.contains("id: tool-ask-user\n"));
+        assert_eq!(patch.matches("- id: tool-todo\n").count(), 1);
+        assert!(patch.contains("- id: tool-todo\n  config:\n    allowParallelInProgress: false\n"));
         assert!(!insert_block.contains("    - id: skill\n"));
         assert!(!insert_block.contains("    - id: web\n"));
         assert!(patch.contains("AGENTCABIN_WORK_BRIDGE_TOKEN"));

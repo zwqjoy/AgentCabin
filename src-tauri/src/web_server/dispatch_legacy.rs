@@ -88,6 +88,9 @@ pub async fn dispatch_command(
                 .get("continuation_context")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let code_standalone_task = params
+                .get("code_standalone_task")
+                .and_then(|value| value.as_bool());
             let run = crate::commands::runs::start_run(
                 prompt,
                 cwd,
@@ -97,6 +100,7 @@ pub async fn dispatch_command(
                 platform_id,
                 execution_path,
                 continuation_context,
+                code_standalone_task,
             )?;
             serde_json::to_value(run).map_err(|e| e.to_string())
         }
@@ -1685,6 +1689,23 @@ pub async fn dispatch_command(
             Ok(json!(true))
         }
 
+        "respond_user_input" => {
+            let run_id = extract_str(&params, "run_id")?;
+            let request_id = extract_str(&params, "request_id")?;
+            let answers = params
+                .get("answers")
+                .cloned()
+                .ok_or_else(|| "respond_user_input: missing 'answers'".to_string())?;
+            crate::commands::session::respond_user_input_impl(
+                &state.sessions,
+                run_id,
+                request_id,
+                answers,
+            )
+            .await?;
+            Ok(json!(true))
+        }
+
         "respond_elicitation" => {
             let run_id = extract_str(&params, "run_id")?;
             let request_id = extract_str(&params, "request_id")?;
@@ -2509,6 +2530,20 @@ mod tests {
         let nested = output.get("params").unwrap();
         assert!(nested.get("nestedCamel").is_some());
         assert!(nested.get("nested_camel").is_none());
+    }
+
+    #[tokio::test]
+    async fn respond_user_input_is_registered_on_the_json_rpc_bridge() {
+        let runtime = std::sync::Arc::new(crate::core::CoreRuntime::new());
+        let state = runtime.app_state(std::sync::Arc::new("127.0.0.1".into()), None);
+        let result = dispatch_command(
+            "respond_user_input",
+            json!({ "runId": "missing-run", "requestId": "question-1" }),
+            &state,
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err(), "respond_user_input: missing 'answers'");
     }
 
     #[test]

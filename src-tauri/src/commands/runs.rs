@@ -75,7 +75,12 @@ pub fn start_run(
     platform_id: Option<String>,
     execution_path: Option<String>,
     continuation_context: Option<String>,
+    code_standalone_task: Option<bool>,
 ) -> Result<TaskRun, String> {
+    let code_standalone_task = code_standalone_task.unwrap_or(false);
+    if code_standalone_task && remote_host_name.is_some() {
+        return Err("Standalone Code tasks cannot use a remote host".to_string());
+    }
     let requested_model = model.clone();
     let user_settings = storage::settings::get_user_settings();
     let model = storage::settings::resolve_model_for_agent(
@@ -93,7 +98,7 @@ pub fn start_run(
         execution_path,
         continuation_context.as_ref().map(|value| value.len()),
         prompt.len(),
-        cwd
+        if code_standalone_task { "<standalone>" } else { &cwd }
     );
 
     let path: ExecutionPath = match execution_path {
@@ -141,10 +146,17 @@ pub fn start_run(
     };
 
     let id = uuid::Uuid::new_v4().to_string();
+    let run_cwd = if code_standalone_task {
+        storage::ensure_code_standalone_task_dir(&id)?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        cwd
+    };
     let mut meta = storage::runs::create_run(
         &id,
         &prompt,
-        &cwd,
+        &run_cwd,
         &agent,
         RunStatus::Pending,
         model,
@@ -159,6 +171,7 @@ pub fn start_run(
             platform_id
         },
     )?;
+    meta.code_standalone_task = code_standalone_task;
     meta.execution_path = Some(path);
     meta.continuation_context = continuation_context.filter(|value| !value.trim().is_empty());
     storage::runs::save_meta(&meta)?;

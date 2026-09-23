@@ -491,6 +491,51 @@ describe("SessionStore reducer", () => {
       });
       expect(api.sendSessionMessage).not.toHaveBeenCalled();
     });
+
+    it("routes DSH multi-question answers and preserves explicit skips", async () => {
+      const dshStore = new SessionStore();
+      dshStore.run = makeRun("dsh-ask-1", { agent: "dsh" });
+      dshStore.agent = "dsh";
+      dshStore._useChatTimelineForRun = true;
+      dshStore.phase = "running";
+      dshStore.applyEventBatch([
+        {
+          type: "tool_start",
+          run_id: "dsh-ask-1",
+          tool_use_id: "dsh-question-1",
+          tool_name: "AskUserQuestion",
+          input: {
+            questions: [
+              { id: "genre", question: "类型？", options: [{ label: "科幻" }] },
+              { id: "ending", question: "结尾？", options: [{ label: "开放" }] },
+            ],
+          },
+        },
+        {
+          type: "tool_end",
+          run_id: "dsh-ask-1",
+          tool_use_id: "dsh-question-1",
+          tool_name: "AskUserQuestion",
+          output: {},
+          status: "error",
+        },
+      ] as BusEvent[]);
+
+      await dshStore.answerToolQuestion(
+        "dsh-question-1",
+        JSON.stringify({
+          __askMulti: true,
+          byId: { genre: "科幻", ending: [] },
+          byText: { "类型？": "科幻", "结尾？": "已跳过" },
+        }),
+      );
+
+      expect(api.respondUserInput).toHaveBeenCalledWith("dsh-ask-1", "dsh-question-1", {
+        genre: ["科幻"],
+        ending: [],
+      });
+      expect(api.sendSessionMessage).not.toHaveBeenCalled();
+    });
   });
 
   // ── Deduplication ──
@@ -6829,6 +6874,27 @@ describe("SessionStore reducer", () => {
 
     it("returns [] when neither source has run", () => {
       expect(store.panelTasks).toEqual([]);
+    });
+
+    it("prefers DSH's authoritative structured task snapshots", () => {
+      store.applyEventBatch([
+        {
+          type: "structured_task_state",
+          run_id: "run-panel",
+          tasks: [{ id: "dsh-1", text: "DSH plan step", status: "in_progress" }],
+        },
+      ] as BusEvent[]);
+
+      expect(store.panelTasks).toEqual([
+        { id: "dsh-1", text: "DSH plan step", status: "in_progress" },
+      ]);
+      expect(store.todoPanelVisible).toBe(true);
+
+      store.applyEventBatch([
+        { type: "structured_task_state", run_id: "run-panel", tasks: [] },
+      ] as BusEvent[]);
+      expect(store.panelTasks).toEqual([]);
+      expect(store.todoPanelVisible).toBe(false);
     });
 
     it("hides completed todos after the next user message", () => {

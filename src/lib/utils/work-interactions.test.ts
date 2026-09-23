@@ -9,6 +9,7 @@ import {
   getDirectoryPathFromItem,
   getInteractionDescription,
   getInteractionTitle,
+  isGlobalInboxInteraction,
   isAccessRootRequest,
   isQuestionInteraction,
   excludeInlineInteractions,
@@ -74,6 +75,17 @@ describe("work-interactions", () => {
 
     it("does not classify approval items as questions", () => {
       expect(isQuestionInteraction(makeInboxItem("approval-1"))).toBe(false);
+    });
+
+    it("keeps run-bound questions and approvals out of the global inbox", () => {
+      expect(
+        isGlobalInboxInteraction(
+          makeInboxItem("question-1", {
+            itemType: "question_elicitation",
+          }),
+        ),
+      ).toBe(false);
+      expect(isGlobalInboxInteraction(makeInboxItem("approval-1"))).toBe(false);
     });
   });
 

@@ -2106,97 +2106,23 @@ test("work_write_file waits on durable Inbox approval and retries instead of fai
   }
 });
 
-test("ask_questions waits on a durable Inbox answer and retries the same tool call", async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-ask-questions-inbox-"));
-  const workspaceRoot = path.join(temp, "workspace");
-  fs.mkdirSync(workspaceRoot, { recursive: true });
-  fs.writeFileSync(path.join(workspaceRoot, "manifest.json"), JSON.stringify({ accessRoots: [] }), "utf8");
-
-  const previous = {
-    workspaceRoot: process.env.AGENTCABIN_WORKSPACE_ROOT,
-    workspaceId: process.env.AGENTCABIN_WORKSPACE_ID,
-    bridgePort: process.env.AGENTCABIN_WORK_BRIDGE_PORT,
-    bridgeToken: process.env.AGENTCABIN_WORK_BRIDGE_TOKEN,
-    fetch: globalThis.fetch,
-  };
-  process.env.AGENTCABIN_WORKSPACE_ROOT = workspaceRoot;
-  process.env.AGENTCABIN_WORKSPACE_ID = "fixture";
-  process.env.AGENTCABIN_WORK_BRIDGE_PORT = "49324";
-  process.env.AGENTCABIN_WORK_BRIDGE_TOKEN = "test-token";
-  const requests = [];
-  let pipelineCount = 0;
-  globalThis.fetch = async (url, init = {}) => {
-    const request = { url: String(url), init };
-    requests.push(request);
-    if (request.url.endsWith("/internal/work/tool_pipeline")) {
-      pipelineCount += 1;
-      const body = JSON.parse(init.body || "{}");
-      assert.equal(body.toolName, "ask_questions");
-      assert.equal(body.toolCallId, "question-call");
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return pipelineCount === 1
-            ? { success: false, status: "waiting_input", interactionId: "question-inbox-1" }
-            : {
-                success: true,
-                status: "success",
-                stdout: JSON.stringify({
-                  answers: [{ id: "mode", type: "select", value: "fast" }],
-                }),
-              };
-        },
-      };
-    }
-    assert.match(request.url, /\/internal\/work\/inbox_status\/question-inbox-1$/);
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return {
-          status: "answered",
-          response: { answers: [{ id: "mode", type: "select", value: "fast" }] },
-        };
-      },
-    };
-  };
-
+test("Pi Work delegates questions to the native ask_user_question extension", async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-native-questions-"));
   try {
     const extension = await loadExtension(temp);
     const tools = new Map();
+    const eventHandlers = new Map();
+    let active = [];
     extension({
-      registerTool(tool) {
-        tools.set(tool.name, tool);
-      },
-      setActiveTools() {},
-      on() {},
+      registerTool(tool) { tools.set(tool.name, tool); },
+      setActiveTools(names) { active = names; },
+      on(event, handler) { eventHandlers.set(event, handler); },
     });
-
-    const execution = await tools.get("ask_questions").execute(
-      "question-call",
-      {
-        title: "Choose a mode",
-        questions: [{
-          id: "mode",
-          question: "Which mode should we use?",
-          options: [{ label: "Fast", value: "fast" }],
-        }],
-      },
-    );
-    assert.equal(execution.details.ok, true);
-    assert.deepEqual(execution.details.answers, [
-      { id: "mode", type: "select", value: "fast" },
-    ]);
-    assert.match(execution.content[0].text, /fast/);
-    assert.equal(pipelineCount, 2);
-    assert.equal(requests.length, 3);
+    eventHandlers.get("session_start")?.();
+    assert(!tools.has("ask_questions"), "Pi Work must not register a duplicate questionnaire");
+    assert(active.includes("ask_user_question"), "native Pi questionnaire must remain active");
+    assert(active.includes("todo"), "native Pi todo tool must remain active");
   } finally {
-    if (previous.workspaceRoot === undefined) delete process.env.AGENTCABIN_WORKSPACE_ROOT; else process.env.AGENTCABIN_WORKSPACE_ROOT = previous.workspaceRoot;
-    if (previous.workspaceId === undefined) delete process.env.AGENTCABIN_WORKSPACE_ID; else process.env.AGENTCABIN_WORKSPACE_ID = previous.workspaceId;
-    if (previous.bridgePort === undefined) delete process.env.AGENTCABIN_WORK_BRIDGE_PORT; else process.env.AGENTCABIN_WORK_BRIDGE_PORT = previous.bridgePort;
-    if (previous.bridgeToken === undefined) delete process.env.AGENTCABIN_WORK_BRIDGE_TOKEN; else process.env.AGENTCABIN_WORK_BRIDGE_TOKEN = previous.bridgeToken;
-    globalThis.fetch = previous.fetch;
     fs.rmSync(temp, { recursive: true, force: true });
   }
 });

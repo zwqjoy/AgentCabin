@@ -2,6 +2,7 @@ import { clearInboxItems, deleteInboxItem, listInboxItems, resolveInboxItem } fr
 import { getEventMiddleware } from "$lib/stores/event-middleware";
 import type { BusEvent } from "$lib/types";
 import type { InboxItem, InboxItemStatus } from "$lib/types/work";
+import { isGlobalInboxInteraction } from "$lib/utils/work-interactions";
 
 export class InboxStore {
   items = $state<InboxItem[]>([]);
@@ -24,11 +25,15 @@ export class InboxStore {
   }
 
   get pendingCount(): number {
-    return this.items.filter((item) => item.status === "pending").length;
+    return this.pendingItems.length;
   }
 
   get pendingItems(): InboxItem[] {
-    return this.items.filter((item) => item.status === "pending");
+    return this.items.filter((item) => item.status === "pending" && isGlobalInboxInteraction(item));
+  }
+
+  get actionItems(): InboxItem[] {
+    return this.items.filter(isGlobalInboxInteraction);
   }
 
   async fetch(onlyPending = false, taskId?: string): Promise<void> {

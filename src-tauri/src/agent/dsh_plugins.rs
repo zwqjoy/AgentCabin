@@ -12,7 +12,13 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-const BUILTIN_PLUGIN_IDS: &[&str] = &["dsh-skill", "dsh-web", "dsh-mcp-client"];
+const BUILTIN_PLUGIN_IDS: &[&str] = &[
+    "dsh-skill",
+    "dsh-web",
+    "dsh-mcp-client",
+    "tool-ask-user",
+    "tool-todo",
+];
 
 fn is_false(value: &bool) -> bool {
     !*value
@@ -338,6 +344,30 @@ pub fn default_built_in_plugins() -> Vec<DshPluginManifest> {
             security: DshPluginSecurity::CodeOnly,
             config: None,
         },
+        DshPluginManifest {
+            id: "tool-ask-user".to_string(),
+            name: "@deepseek-ai/dsh-tool-ask-user".to_string(),
+            package: Some("@deepseek-ai/dsh-tool-ask-user".to_string()),
+            path: None,
+            version: Some("0.1.5-rc.2".to_string()),
+            description: Some("DSH native structured user-question tool".to_string()),
+            enabled: true,
+            safe_in_work: true,
+            security: DshPluginSecurity::SafeInWork,
+            config: None,
+        },
+        DshPluginManifest {
+            id: "tool-todo".to_string(),
+            name: "@deepseek-ai/dsh-tool-todo".to_string(),
+            package: Some("@deepseek-ai/dsh-tool-todo".to_string()),
+            path: None,
+            version: Some("0.1.5-rc.2".to_string()),
+            description: Some("DSH native structured todo tool".to_string()),
+            enabled: true,
+            safe_in_work: true,
+            security: DshPluginSecurity::SafeInWork,
+            config: Some(serde_json::json!({"allowParallelInProgress": false})),
+        },
     ]
 }
 
@@ -554,6 +584,8 @@ fn is_certified_work_plugin(plugin: &DshPluginManifest) -> bool {
         Some("@deepseek-ai/dsh-skill")
             | Some("@deepseek-ai/dsh-skill-filesystem")
             | Some("@deepseek-ai/dsh-tool-skill")
+            | Some("@deepseek-ai/dsh-tool-ask-user")
+            | Some("@deepseek-ai/dsh-tool-todo")
     )
 }
 
@@ -566,10 +598,21 @@ mod tests {
     fn defaults_and_toggle_are_persisted_atomically() {
         let temp = tempdir().unwrap();
         let list = list_dsh_plugins(temp.path());
-        assert_eq!(list.len(), 3);
+        assert_eq!(list.len(), 5);
         assert!(list
             .iter()
             .any(|plugin| plugin.id == "dsh-skill" && plugin.is_safe_in_work()));
+        assert!(list.iter().any(|plugin| {
+            plugin.id == "tool-ask-user" && plugin.enabled && plugin.is_safe_in_work()
+        }));
+        assert!(list.iter().any(|plugin| {
+            plugin.id == "tool-todo" && plugin.enabled && plugin.is_safe_in_work()
+        }));
+        let work_plugins = active_plugins(temp.path(), AppMode::Work);
+        assert!(work_plugins
+            .iter()
+            .any(|plugin| plugin.id == "tool-ask-user"));
+        assert!(work_plugins.iter().any(|plugin| plugin.id == "tool-todo"));
 
         let toggled = toggle_dsh_plugin(temp.path(), "dsh-web", false).unwrap();
         assert!(!toggled.enabled);

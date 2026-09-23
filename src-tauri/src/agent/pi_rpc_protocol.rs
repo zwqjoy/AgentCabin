@@ -799,12 +799,58 @@ impl PiRpc {
                 && message.get("toolName").and_then(Value::as_str) == Some("todo")
                 && message.get("isError").and_then(Value::as_bool) != Some(true)
             {
-                if let Some(state) = message
-                    .get("details")
-                    .and_then(|details| details.get("state"))
-                    .and_then(|state| serde_json::from_value::<PiTodoState>(state.clone()).ok())
-                {
-                    return Some(state);
+                if let Some(details) = message.get("details") {
+                    if let Some(state) = details
+                        .get("state")
+                        .and_then(|state| serde_json::from_value::<PiTodoState>(state.clone()).ok())
+                    {
+                        return Some(state);
+                    }
+                    if let Some(tasks) = details.get("tasks").and_then(Value::as_array) {
+                        let mut working_on = None;
+                        let tasks = tasks
+                            .iter()
+                            .filter_map(|task| {
+                                let status = task.get("status").and_then(Value::as_str)?;
+                                if status == "deleted" {
+                                    return None;
+                                }
+                                let name = task
+                                    .get("subject")
+                                    .or_else(|| task.get("name"))
+                                    .and_then(Value::as_str)?
+                                    .to_string();
+                                let active_form = task
+                                    .get("activeForm")
+                                    .and_then(Value::as_str)
+                                    .filter(|value| !value.trim().is_empty());
+                                if status == "in_progress" {
+                                    working_on = Some(active_form.unwrap_or(&name).to_string());
+                                }
+                                Some(crate::models::PiTodoTask {
+                                    name,
+                                    description: task
+                                        .get("description")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or_default()
+                                        .to_string(),
+                                    status: match status {
+                                        "completed" => "completed",
+                                        "in_progress" => "in_progress",
+                                        _ => "pending",
+                                    }
+                                    .to_string(),
+                                })
+                            })
+                            .collect::<Vec<_>>();
+                        return Some(PiTodoState {
+                            phases: vec![crate::models::PiTodoPhase {
+                                name: "任务".to_string(),
+                                tasks,
+                            }],
+                            working_on,
+                        });
+                    }
                 }
             }
         }
@@ -1671,6 +1717,35 @@ mod tests {
                 if state.working_on.as_deref() == Some("Wire state")
                     && state.phases[0].tasks[0].status == "in_progress"
         ));
+    }
+
+    #[test]
+    fn rpiv_todo_tool_result_is_normalized_to_agentcabin_todo_state() {
+        let entry = json!({
+            "type": "message",
+            "message": {
+                "role": "toolResult",
+                "toolName": "todo",
+                "isError": false,
+                "details": {
+                    "action": "update",
+                    "tasks": [
+                        {"id": 1, "subject": "Read the code", "description": "Inspect runtime", "status": "completed"},
+                        {"id": 2, "subject": "Implement the adapter", "description": "Wire events", "activeForm": "Wiring events", "status": "in_progress"},
+                        {"id": 3, "subject": "Run tests", "status": "pending"},
+                        {"id": 4, "subject": "Old task", "status": "deleted"}
+                    ],
+                    "nextId": 5
+                }
+            }
+        });
+
+        let state = PiRpc::todo_state_from_entry(&entry).expect("todo state should parse");
+        assert_eq!(state.phases[0].name, "任务");
+        assert_eq!(state.phases[0].tasks.len(), 3);
+        assert_eq!(state.phases[0].tasks[0].status, "completed");
+        assert_eq!(state.phases[0].tasks[1].description, "Wire events");
+        assert_eq!(state.working_on.as_deref(), Some("Wiring events"));
     }
 
     #[test]

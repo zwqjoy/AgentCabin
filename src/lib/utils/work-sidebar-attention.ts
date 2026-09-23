@@ -1,6 +1,6 @@
 import type { TaskRun } from "$lib/types";
 import type { InboxItem } from "$lib/types/work";
-import { filterCurrentRunInteractions } from "$lib/utils/work-interactions";
+import { filterCurrentRunInteractions, isQuestionInteraction } from "$lib/utils/work-interactions";
 
 /**
  * Return the small attention label shown beside a Work conversation in the
@@ -16,9 +16,7 @@ export function getWorkSessionAttentionLabel(
 
   // Work permission, plan, directory-access, and artifact decisions are all
   // approval-style interruptions. A question is the only input-style wait.
-  return pendingItems.some((item) => item.itemType !== "question_elicitation")
-    ? "等待批准"
-    : "等待输入";
+  return pendingItems.some((item) => !isQuestionInteraction(item)) ? "等待批准" : "等待输入";
 }
 
 /**

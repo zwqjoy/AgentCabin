@@ -58,7 +58,7 @@ fn pi_adapter_settings(
         adapter::build_adapter_settings(&agent_settings, &user_settings, run.model.clone());
     if run.effort.is_some() {
         settings.effort = run.effort.clone();
-    } else if run.app_mode == crate::work::models::AppMode::Code {
+    } else if run.app_mode == crate::work::models::AppMode::Code && !run.code_standalone_task {
         if let Ok(project) =
             storage::project_preferences::get(&run.cwd, run.remote_host_name.as_deref(), &run.agent)
         {
@@ -115,9 +115,9 @@ pub(crate) async fn pi_launch_context(
     );
 
     // Sync configured Pi Code MCP servers into ~/.agentcabin/profiles/code/pi/mcp.json
-    if let Err(e) =
-        crate::storage::profile_bindings::sync_pi_code_mcp_from_catalog_and_bindings(Some(&run.cwd))
-    {
+    if let Err(e) = crate::storage::profile_bindings::sync_pi_code_mcp_from_catalog_and_bindings(
+        (!run.code_standalone_task).then_some(run.cwd.as_str()),
+    ) {
         log::warn!(
             "[session_dispatch] failed to sync Pi Code MCP bindings: {}",
             e
@@ -125,6 +125,15 @@ pub(crate) async fn pi_launch_context(
     }
     let shared_paths = crate::work::paths::WorkPaths::app();
     shared_paths.ensure_layout()?;
+    crate::work::system_packages::ensure_pi_interaction_packages(&shared_paths).await?;
+    let pi_ask_user_question = crate::work::system_packages::common_system_package_entry_path(
+        &shared_paths,
+        crate::work::system_packages::PI_ASK_USER_QUESTION_PACKAGE_NAME,
+    );
+    let pi_todo = crate::work::system_packages::common_system_package_entry_path(
+        &shared_paths,
+        crate::work::system_packages::PI_TODO_PACKAGE_NAME,
+    );
     let code_desktop_adapter = if run.app_mode == crate::work::models::AppMode::Code
         && crate::work::desktop_operator::is_enabled()
     {
@@ -134,11 +143,6 @@ pub(crate) async fn pi_launch_context(
     };
     let context_usage_adapter =
         crate::pi_context_runtime::ensure_context_usage_extension(&shared_paths)?;
-    let code_ask_questions_adapter = if run.app_mode == crate::work::models::AppMode::Code {
-        Some(crate::code_connector_runtime::ensure_code_ask_questions_adapter(&shared_paths)?)
-    } else {
-        None
-    };
     let connector_skill_sources =
         crate::work::connector_package_manager::package_skill_sources(&shared_paths)?;
     let connector_cli_enabled =
@@ -255,6 +259,9 @@ pub(crate) async fn pi_launch_context(
                     .unwrap_or_default();
                 name != crate::work::system_packages::PI_MCP_ADAPTER_PACKAGE_NAME
                     && name != crate::work::system_packages::PI_WEB_ACCESS_PACKAGE_NAME
+                    && !crate::work::system_packages::is_pi_interaction_source(
+                        &path.to_string_lossy(),
+                    )
             })
             .map(|path| path.to_string_lossy().into_owned())
             .collect();
@@ -295,11 +302,12 @@ pub(crate) async fn pi_launch_context(
             .pi_shared_extension_sources
             .push(adapter.to_string_lossy().into_owned());
     }
-    if let Some(adapter) = code_ask_questions_adapter {
-        settings
-            .pi_shared_extension_sources
-            .push(adapter.to_string_lossy().into_owned());
-    }
+    settings
+        .pi_shared_extension_sources
+        .push(pi_ask_user_question.to_string_lossy().into_owned());
+    settings
+        .pi_shared_extension_sources
+        .push(pi_todo.to_string_lossy().into_owned());
     let mut code_skills = crate::storage::profile_bindings::list_enabled_skill_paths()
         .into_iter()
         .map(|p| p.to_string_lossy().into_owned())
@@ -1826,6 +1834,7 @@ mod tests {
             prompt: "test".to_string(),
             cwd: "/tmp".to_string(),
             agent: "fake".to_string(),
+            code_standalone_task: false,
             app_mode: crate::work::models::AppMode::Work,
             agent_target: None,
             workspace_id: None,

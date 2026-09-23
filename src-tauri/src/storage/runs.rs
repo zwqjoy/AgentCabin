@@ -152,6 +152,7 @@ pub fn create_run_with_context(
         prompt: prompt.to_string(),
         cwd: cwd.to_string(),
         agent: agent.to_string(),
+        code_standalone_task: false,
         app_mode,
         agent_target: Some(crate::models::AgentTarget::from_legacy(app_mode, agent)),
         workspace_id,

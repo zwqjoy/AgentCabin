@@ -1,10 +1,27 @@
-import type { TaskRun } from "$lib/types";
+import type { RunStatus, TaskRun } from "$lib/types";
 
 type RunRef = Pick<TaskRun, "id">;
 
 export interface WorkSessionRefreshTargets {
   workspaceIds: string[];
   refreshStandalone: boolean;
+}
+
+/** Normalize runtime lifecycle states into the status shown by the sidebar. */
+export function getWorkSidebarRunStatus(state: unknown): RunStatus | null {
+  if (state === "spawning") return "running";
+  if (
+    state === "pending" ||
+    state === "running" ||
+    state === "idle" ||
+    state === "completed" ||
+    state === "failed" ||
+    state === "stopped" ||
+    state === "cancelled"
+  ) {
+    return state;
+  }
+  return null;
 }
 
 /**

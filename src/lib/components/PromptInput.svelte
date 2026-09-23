@@ -191,8 +191,9 @@
     projectPicker?: {
       currentProjectCwd?: string | null;
       currentProjectName?: string;
+      currentStandaloneTask?: boolean;
       projects: Array<{ cwd: string; name: string }>;
-      onSelect: (cwd: string) => void;
+      onSelect: (cwd: string | null) => void;
       /** 只读模式：当前对话已经绑定项目目录，不允许中途切换。 */
       readOnly?: boolean;
     } | null;
@@ -507,7 +508,7 @@
     }
   }
 
-  function selectProject(cwd: string) {
+  function selectProject(cwd: string | null) {
     projectDropdownOpen = false;
     projectPicker?.onSelect(cwd);
   }
@@ -2963,7 +2964,9 @@
               class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
               onclick={toggleProjectDropdown}
               title={projectPicker.currentProjectCwd || t("prompt_selectProject")}
-              aria-label={projectPicker.currentProjectName || t("prompt_selectProject")}
+              aria-label={projectPicker.currentStandaloneTask
+                ? "独立任务"
+                : projectPicker.currentProjectName || t("prompt_selectProject")}
               aria-expanded={projectDropdownOpen}
               aria-haspopup="menu"
             >
@@ -2981,7 +2984,9 @@
                 />
               </svg>
               <span class="truncate max-w-[140px] font-medium"
-                >{projectPicker.currentProjectName || t("prompt_selectProject")}</span
+                >{projectPicker.currentStandaloneTask
+                  ? "独立任务"
+                  : projectPicker.currentProjectName || t("prompt_selectProject")}</span
               >
               <svg
                 class="h-2.5 w-2.5 opacity-50"
@@ -3959,8 +3964,33 @@
       <div
         class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
       >
-        {t("prompt_selectProject")}
+        选择任务作用域
       </div>
+
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={projectPicker.currentStandaloneTask === true}
+        class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-accent {projectPicker.currentStandaloneTask
+          ? 'bg-accent/70 font-medium'
+          : ''}"
+        onclick={() => selectProject(null)}
+      >
+        <span class="shrink-0 text-sm">⚡</span>
+        <span class="flex-1 truncate">独立任务（应用隔离目录）</span>
+        {#if projectPicker.currentStandaloneTask}
+          <svg
+            class="h-3.5 w-3.5 shrink-0 text-primary"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg
+          >
+        {/if}
+      </button>
+      <div class="my-1 border-t border-border/50"></div>
 
       {#if projectPicker.projects.length > 0}
         <div class="max-h-48 space-y-0.5 overflow-y-auto">

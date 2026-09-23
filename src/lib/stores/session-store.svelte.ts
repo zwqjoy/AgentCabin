@@ -833,6 +833,13 @@ export class SessionStore {
    * to legacy TodoWrite snapshots. Empty for Codex (neither tool exists there).
    */
   get panelTasks(): PanelTask[] {
+    if (this.structuredTaskState !== null) {
+      return this.structuredTaskState.map((task) => ({
+        id: task.id,
+        text: task.text,
+        status: task.status,
+      }));
+    }
     const tasks = this.taskList;
     if (tasks.length > 0) return tasks;
     return this.latestTodos.map((td, i) => ({
@@ -845,7 +852,9 @@ export class SessionStore {
   get todoPanelVisible(): boolean {
     if (this.todoPanelDismissed) return false;
     return (
-      this.panelTasks.length > 0 || this.piTodoState.phases.some((phase) => phase.tasks.length > 0)
+      (this.structuredTaskState?.length ?? 0) > 0 ||
+      this.panelTasks.length > 0 ||
+      this.piTodoState.phases.some((phase) => phase.tasks.length > 0)
     );
   }
 
@@ -2865,6 +2874,7 @@ export class SessionStore {
     permissionModeOverride?: string,
     skills?: Array<{ name: string; path: string }>,
     effort?: string,
+    codeStandaloneTask = false,
   ): Promise<string> {
     this.error = "";
     if (this.remoteHostName && !this.capabilities.runtime.remote) {
@@ -3012,6 +3022,8 @@ export class SessionStore {
         this.remoteHostName || undefined,
         this.platformId || undefined,
         executionPath,
+        undefined,
+        codeStandaloneTask,
       );
       const startupEffort = effort?.trim();
       if (startupEffort) {
@@ -3943,9 +3955,12 @@ export class SessionStore {
     if (!this.run) return;
     dbg("store", "tool answer", { toolUseId, answer });
 
-    // Multi-question answers arrive JSON-encoded from InlineToolCard (submitAllAskAnswers):
-    // { __askMulti: true, byId: {qid: label}, byText: {questionText: label} }.
-    let multi: { byId: Record<string, string>; byText: Record<string, string> } | null = null;
+    // Structured answers arrive from the shared question card. Empty arrays mark skipped items
+    // in DSH's ask_user_question protocol; arrays also represent multi-select answers.
+    let multi: {
+      byId: Record<string, string | string[]>;
+      byText: Record<string, string>;
+    } | null = null;
     try {
       const p = JSON.parse(answer);
       if (p && p.__askMulti) multi = { byId: p.byId ?? {}, byText: p.byText ?? {} };
@@ -3966,11 +3981,13 @@ export class SessionStore {
     // Pass the per-question answers so the resolved card highlights each choice.
     this.resolveAskQuestion(toolUseId, display, multi ? multi.byText : undefined);
 
-    if (this.run.agent === "codex" || this.run.agent === "grok") {
+    if (this.run.agent === "codex" || this.run.agent === "grok" || this.run.agent === "dsh") {
       try {
         const answers: Record<string, string[]> = {};
         if (multi && Object.keys(multi.byId).length > 0) {
-          for (const [qid, label] of Object.entries(multi.byId)) answers[qid] = [label];
+          for (const [qid, label] of Object.entries(multi.byId)) {
+            answers[qid] = Array.isArray(label) ? label : [label];
+          }
         } else {
           const questions = (tool?.input?.questions ?? []) as Array<{ id?: string }>;
           answers[questions[0]?.id ?? "0"] = [answer];

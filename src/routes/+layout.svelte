@@ -17,6 +17,7 @@
     setRunFlags,
   } from "$lib/api";
   import ProjectFolderItem from "$lib/components/ProjectFolderItem.svelte";
+  import ConversationItem from "$lib/components/ConversationItem.svelte";
   import SidebarNavItem from "$lib/components/SidebarNavItem.svelte";
   import SidebarSectionLabel from "$lib/components/SidebarSectionLabel.svelte";
   import ModeSwitcher from "$lib/components/ModeSwitcher.svelte";
@@ -1064,6 +1065,32 @@
     deleteTarget = null;
   }
 
+  function openCodeTask(runId: string) {
+    const run = runs.find((item) => item.id === runId);
+    void goto(
+      run
+        ? getRunRoute(run, { runId })
+        : isPiCodePage
+          ? getTargetRoute("pi:code", { runId })
+          : getTargetRoute("native:claude", { runId }),
+    );
+
+    const conversation = recentCodeTasks.find((item) =>
+      item.runs.some((candidate) => candidate.id === runId),
+    );
+    if (conversation?.unread) {
+      setRunFlags(conversation.latestRun.id, { unread: false })
+        .then(() =>
+          dispatchRunMutation({
+            kind: "update",
+            runId: conversation.latestRun.id,
+            patch: { unread: false },
+          }),
+        )
+        .catch((error) => dbgWarn("layout", "clear unread failed", error));
+    }
+  }
+
   // ── Remove project folder confirm flow ──
   let removeProjectConfirmOpen = $state(false);
   let removeProjectTarget = $state("");
@@ -1208,7 +1235,38 @@
   // Build project folder tree for chats tab. Archived conversations are managed
   // from dedicated archived views and stay out of the main conversation list.
   let projectFolders = $derived.by(() =>
-    buildProjectFolders(scopedRuns, favoriteRunIds, pinnedCwds, removedCwds, false),
+    buildProjectFolders(
+      scopedRuns.filter((run) => !run.code_standalone_task),
+      favoriteRunIds,
+      pinnedCwds,
+      removedCwds,
+      false,
+    ),
+  );
+
+  // Keep a short mode-wide task list above the project tree, while conversations
+  // remain grouped under their project below (matching Work's recent / spaces split).
+  let recentCodeTasks = $derived.by(() =>
+    buildProjectFolders(scopedRuns, favoriteRunIds, pinnedCwds, removedCwds, false)
+      .flatMap((folder) =>
+        folder.conversations.map((conversation) => ({
+          ...conversation,
+          projectName:
+            conversation.latestRun.code_standalone_task || folder.isUncategorized
+              ? undefined
+              : cwdDisplayLabel(folder.cwd),
+          projectPath:
+            conversation.latestRun.code_standalone_task || folder.isUncategorized
+              ? undefined
+              : folder.cwd,
+        })),
+      )
+      .sort((left, right) =>
+        (right.latestRun.last_activity_at ?? right.latestRun.started_at).localeCompare(
+          left.latestRun.last_activity_at ?? left.latestRun.started_at,
+        ),
+      )
+      .slice(0, 6),
   );
 
   let archivedRunsCount = $derived(scopedRuns.filter((run) => run.archived).length);
@@ -2240,6 +2298,33 @@
                   </svg>
                 {/snippet}
               </SidebarNavItem>
+              {#if getTransport().isDesktop()}
+                <SidebarNavItem
+                  href={isWorkPage
+                    ? '/chat/work?view=tasks'
+                    : isPiCodePage
+                      ? '/chat/pi?view=tasks'
+                      : '/chat?view=tasks'}
+                  label="任务"
+                  active={$page.url.searchParams.get("view") === "tasks"}
+                >
+                  {#snippet icon()}
+                    <svg
+                      viewBox="0 0 24 24"
+                      class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="4" y="4" width="16" height="16" rx="2" />
+                      <path d="m8 9 1.5 1.5L12 8M14 9h2M8 15h8" />
+                    </svg>
+                  {/snippet}
+                </SidebarNavItem>
+              {/if}
             </div>
           {/if}
 
@@ -2513,13 +2598,35 @@
           {:else}
             <!-- Tab content -->
             {#if panelTab === "chats"}
-              <!-- Project folder tree -->
+              <!-- Shared hierarchy: recent tasks first, then mode-specific projects/spaces. -->
               <div
                 class="flex-1 overflow-y-auto px-2 py-2 app-shell-sidebar-content chat-sidebar-content"
               >
-                <!-- Workspace Header with Micro Actions -->
+                <div class="mb-2 shrink-0">
+                  <SidebarSectionLabel label="任务" count={recentCodeTasks.length} class="mb-0.5" />
+                  {#if recentCodeTasks.length > 0}
+                    <div class="space-y-0.5">
+                      {#each recentCodeTasks as conversation (conversation.groupKey)}
+                        <ConversationItem
+                          {conversation}
+                          selected={conversation.runs.some((run) => run.id === selectedRunId)}
+                          onclick={() => openCodeTask(conversation.latestRun.id)}
+                          ondelete={requestDeleteConversation}
+                          onend={endConversation}
+                        />
+                      {/each}
+                    </div>
+                  {:else}
+                    <div class="px-2.5 py-2 text-xs text-sidebar-foreground/45">
+                      {t("sidebar_noConversationsYet")}
+                    </div>
+                  {/if}
+                </div>
+
+                <div class="mb-2 border-t border-sidebar-border/50"></div>
+
                 <SidebarSectionLabel
-                  label={t("layout_workspace_title")}
+                  label="项目"
                   count={selectableFolders.length}
                   class="mb-0.5 shrink-0"
                 >

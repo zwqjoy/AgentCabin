@@ -84,6 +84,7 @@ export async function startRun(
   platformId?: string,
   executionPath?: string,
   continuationContext?: string,
+  codeStandaloneTask = false,
 ): Promise<TaskRun> {
   dbg("api", "startRun", {
     prompt: prompt.slice(0, 80),
@@ -93,6 +94,7 @@ export async function startRun(
     platformId,
     executionPath,
     continuationContext,
+    codeStandaloneTask,
   });
   const result = await invoke<TaskRun>("start_run", {
     prompt,
@@ -103,6 +105,7 @@ export async function startRun(
     platformId: platformId ?? null,
     executionPath: executionPath ?? null,
     continuationContext: continuationContext ?? null,
+    codeStandaloneTask,
   });
   dbg("api", "startRun →", result.id);
   return result;

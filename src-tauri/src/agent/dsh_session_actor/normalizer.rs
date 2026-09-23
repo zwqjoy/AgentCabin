@@ -1,8 +1,8 @@
 //! Normalizes DSH JSON-RPC events into standard AgentCabin BusEvents.
 
-use crate::models::{BusEvent, RunStatus};
+use crate::models::{BusEvent, RunStatus, StructuredTask, StructuredTaskStatus};
 use crate::web_server::broadcaster::BroadcastEmitter;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -224,6 +224,25 @@ impl DshEventNormalizer {
         );
     }
 
+    /// Convert a DSH-native user-question request into the agent-neutral
+    /// AskUserQuestion timeline pair. The actor keeps the JSON-RPC request
+    /// open until the frontend answers it through respond_user_input.
+    pub fn emit_user_question(&self, request_id: &str, params: &Value) {
+        let questions = params
+            .get("questions")
+            .cloned()
+            .or_else(|| {
+                params
+                    .get("input")
+                    .and_then(|input| input.get("questions"))
+                    .cloned()
+            })
+            .unwrap_or_else(|| json!([]));
+        let input = json!({ "questions": questions });
+        self.emit_tool_start(request_id, "AskUserQuestion", input.clone());
+        self.emit_tool_end(request_id, "AskUserQuestion", input, true);
+    }
+
     pub fn handle_notification(&self, method: &str, params: Option<&Value>) {
         match method {
             "session.event" => {
@@ -258,6 +277,9 @@ impl DshEventNormalizer {
                     let call_id = p.get("id").and_then(Value::as_str).unwrap_or("call_dsh");
                     let name = p.get("name").and_then(Value::as_str).unwrap_or("unknown");
                     let input = p.get("input").cloned().unwrap_or(Value::Null);
+                    if is_todo_tool(name) {
+                        self.emit_todo_snapshot(&input);
+                    }
                     self.emit_tool_start(call_id, name, input);
                 }
             }
@@ -437,6 +459,9 @@ impl DshEventNormalizer {
                     .and_then(Value::as_str)
                     .and_then(|value| serde_json::from_str(value).ok())
                     .unwrap_or(Value::Null);
+                if is_todo_tool(name) {
+                    self.emit_todo_snapshot(&input);
+                }
                 self.emit_tool_start(call_id, name, input);
             }
             "tool/result" => {
@@ -503,6 +528,17 @@ impl DshEventNormalizer {
             return;
         };
         match update.get("sessionUpdate").and_then(Value::as_str) {
+            Some("plan") => {
+                if let Some(tasks) = parse_acp_plan(update) {
+                    self.emitter.persist_and_emit(
+                        &self.run_id,
+                        &BusEvent::StructuredTaskState {
+                            run_id: self.run_id.clone(),
+                            tasks,
+                        },
+                    );
+                }
+            }
             Some("agent_message_chunk") => {
                 if let Some(text) = acp_text_block(update.get("content")) {
                     self.emit_assistant_delta(&text);
@@ -551,11 +587,11 @@ impl DshEventNormalizer {
                     .and_then(Value::as_str)
                     .or_else(|| update.get("title").and_then(Value::as_str))
                     .unwrap_or("unknown");
-                self.emit_tool_start(
-                    call_id,
-                    name,
-                    update.get("rawInput").cloned().unwrap_or(Value::Null),
-                );
+                let input = update.get("rawInput").cloned().unwrap_or(Value::Null);
+                if is_todo_tool(name) {
+                    self.emit_todo_snapshot(&input);
+                }
+                self.emit_tool_start(call_id, name, input);
             }
             Some("tool_call_update") => {
                 let status = update
@@ -580,6 +616,89 @@ impl DshEventNormalizer {
             _ => {}
         }
     }
+
+    fn emit_todo_snapshot(&self, input: &Value) {
+        let Some(tasks) = parse_todo_snapshot(input) else {
+            return;
+        };
+        self.emitter.persist_and_emit(
+            &self.run_id,
+            &BusEvent::StructuredTaskState {
+                run_id: self.run_id.clone(),
+                tasks,
+            },
+        );
+    }
+}
+
+fn parse_todo_snapshot(input: &Value) -> Option<Vec<StructuredTask>> {
+    let todos = input.get("todos")?.as_array()?;
+    Some(
+        todos
+            .iter()
+            .enumerate()
+            .filter_map(|(index, todo)| {
+                let text = todo
+                    .get("content")
+                    .or_else(|| todo.get("text"))
+                    .and_then(Value::as_str)?
+                    .trim();
+                if text.is_empty() {
+                    return None;
+                }
+                let status = match todo.get("status").and_then(Value::as_str) {
+                    Some("in_progress") | Some("in-progress") => StructuredTaskStatus::InProgress,
+                    Some("completed") | Some("done") => StructuredTaskStatus::Completed,
+                    _ => StructuredTaskStatus::Pending,
+                };
+                Some(StructuredTask {
+                    id: todo
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| index.to_string()),
+                    text: text.to_string(),
+                    status,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn is_todo_tool(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "todo_write" | "todowrite"
+    )
+}
+
+fn parse_acp_plan(update: &Value) -> Option<Vec<StructuredTask>> {
+    let entries = update.get("entries")?.as_array()?;
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let text = entry.get("content")?.as_str()?.trim();
+            if text.is_empty() {
+                return None;
+            }
+            let status = match entry.get("status")?.as_str()? {
+                "pending" => StructuredTaskStatus::Pending,
+                "in_progress" => StructuredTaskStatus::InProgress,
+                "completed" => StructuredTaskStatus::Completed,
+                _ => return None,
+            };
+            Some(StructuredTask {
+                id: entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| index.to_string()),
+                text: text.to_string(),
+                status,
+            })
+        })
+        .collect()
 }
 
 /// DSH emits its built-in question tool in snake_case, while AgentCabin's shared
@@ -594,13 +713,56 @@ fn canonical_tool_name(tool_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::canonical_tool_name;
+    use super::{canonical_tool_name, is_todo_tool, parse_acp_plan, parse_todo_snapshot};
+    use crate::models::StructuredTaskStatus;
+    use serde_json::json;
 
     #[test]
     fn canonicalizes_dsh_question_tool_name() {
         assert_eq!(canonical_tool_name("ask_user_question"), "AskUserQuestion");
         assert_eq!(canonical_tool_name("Ask_User_Question"), "AskUserQuestion");
         assert_eq!(canonical_tool_name("bash"), "bash");
+    }
+
+    #[test]
+    fn parses_dsh_todo_snapshots_and_clears_empty_lists() {
+        let tasks = parse_todo_snapshot(&json!({
+            "todos": [
+                {"id": "one", "content": " First step ", "status": "in_progress"},
+                {"text": "Second step", "status": "completed"},
+                {"content": "  ", "status": "pending"}
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].id, "one");
+        assert_eq!(tasks[0].text, "First step");
+        assert_eq!(tasks[0].status, StructuredTaskStatus::InProgress);
+        assert_eq!(tasks[1].status, StructuredTaskStatus::Completed);
+        assert!(parse_todo_snapshot(&json!({"todos": []}))
+            .unwrap()
+            .is_empty());
+        assert!(parse_todo_snapshot(&json!({})).is_none());
+        assert!(is_todo_tool("todo_write"));
+        assert!(is_todo_tool("TodoWrite"));
+    }
+
+    #[test]
+    fn parses_acp_plan_replacement_snapshots() {
+        let tasks = parse_acp_plan(&json!({
+            "entries": [
+                {"id": "one", "content": "Plan first", "status": "in_progress"},
+                {"content": "Plan second", "status": "completed"}
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].status, StructuredTaskStatus::InProgress);
+        assert_eq!(tasks[1].id, "1");
+        assert_eq!(tasks[1].status, StructuredTaskStatus::Completed);
+        assert!(parse_acp_plan(&json!({"entries": []})).unwrap().is_empty());
     }
 }
 

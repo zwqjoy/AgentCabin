@@ -47,6 +47,9 @@ const state = {
     ...(initialEffort ? { reasoningEffort: initialEffort } : {}),
   },
   follow: null,
+  remoteEvents: null,
+  remoteEventClientId: "",
+  remoteQuestionRequests: new Map(),
   promptRequests: new Map(),
   toolNames: new Map(),
   rpc: 1,
@@ -60,7 +63,13 @@ output.on("line", (line) => {
   if (!line.trim()) return;
   try {
     const message = JSON.parse(line);
-    void webReady.then(() => handleRequest(message));
+    void webReady.then(() => {
+      if (message && typeof message === "object" && !("method" in message) && "id" in message) {
+        void handleResponse(message);
+      } else {
+        void handleRequest(message);
+      }
+    });
   } catch (error) {
     process.stderr.write(`[agentcabin-dsh-bridge] ${String(error)}\n`);
   }
@@ -163,7 +172,7 @@ async function startSession(params, resume) {
   await applySelection();
   const initialPermissionPreset = permissionPresetForMode(initialPermissionMode);
   if (initialPermissionPreset) await setPermissionPreset(initialPermissionPreset);
-  await startFollow();
+  await Promise.all([startFollow(), startRemoteEvents()]);
   return result;
 }
 
@@ -247,6 +256,104 @@ async function startFollow() {
   });
 }
 
+async function startRemoteEvents() {
+  if (!state.sessionId || state.remoteEvents) return;
+  const ws = new WebSocket(`${web.wsBaseUrl}/api/remote.mux`, {
+    headers: { Cookie: web.cookie },
+  });
+  const streamId = `agentcabin-events-${randomUUID()}`;
+  state.remoteEvents = ws;
+  await new Promise((resolve, reject) => {
+    ws.once("unexpected-response", (_request, response) => {
+      reject(new Error(`DSH Remote Events WebSocket returned HTTP ${response.statusCode}`));
+    });
+    ws.once("open", resolve);
+    ws.once("error", reject);
+  });
+  ws.send(JSON.stringify({
+    type: "open",
+    streamId,
+    endpoint: "$events",
+    payload: { args: {} },
+  }));
+  ws.on("message", (data) => {
+    try {
+      const frame = JSON.parse(data.toString());
+      if (frame.type === "item" && frame.streamId === streamId) {
+        handleRemoteEventFrame(frame.value);
+      } else if (frame.type === "error" && frame.streamId === streamId) {
+        process.stderr.write(`[agentcabin-dsh-bridge] Remote Events failed: ${frame.error?.message || "unknown error"}\n`);
+      }
+    } catch (error) {
+      process.stderr.write(`[agentcabin-dsh-bridge] invalid Remote Events frame: ${String(error)}\n`);
+    }
+  });
+  ws.on("close", () => {
+    state.remoteEventClientId = "";
+  });
+}
+
+function handleRemoteEventFrame(frame) {
+  if (!frame || typeof frame !== "object") return;
+  if (frame.type === "ready") {
+    state.remoteEventClientId = frame.clientId || "";
+    return;
+  }
+  if (frame.type !== "waterfall" || frame.event !== "user-questions/request" || !state.remoteEventClientId) return;
+  const requestId = `dsh-question-${randomUUID()}`;
+  state.remoteQuestionRequests.set(String(requestId), {
+    clientId: state.remoteEventClientId,
+    eventId: frame.eventId,
+    questions: Array.isArray(frame.request?.questions) ? frame.request.questions : [],
+  });
+  write({
+    jsonrpc: "2.0",
+    id: requestId,
+    method: "ask_user_question",
+    params: frame.request || {},
+  });
+}
+
+async function handleResponse(message) {
+  const pending = state.remoteQuestionRequests.get(String(message.id));
+  if (!pending) return;
+  state.remoteQuestionRequests.delete(String(message.id));
+  const outcome = message.error
+    ? { kind: "rejected", error: {
+        name: message.error.name || "UserQuestionError",
+        code: message.error.code || "ASK_CANCELLED",
+        message: message.error.message || "The user question was cancelled",
+      } }
+    : { kind: "result", value: toDshQuestionAnswer(pending.questions, message.result?.answers) };
+  try {
+    await callWithArgs("$events/result", {
+      clientId: pending.clientId,
+      eventId: pending.eventId,
+      outcome,
+    });
+  } catch (error) {
+    process.stderr.write(`[agentcabin-dsh-bridge] failed to return user-question answer: ${String(error)}\n`);
+  }
+}
+
+function toDshQuestionAnswer(questions, rawAnswers) {
+  const answers = rawAnswers && typeof rawAnswers === "object" ? rawAnswers : {};
+  return {
+    answers: questions.map((question, index) => {
+      const id = String(question?.id ?? index);
+      const raw = answers[id];
+      const values = Array.isArray(raw) ? raw.map(String) : raw == null ? [] : [String(raw)];
+      const labels = new Set((Array.isArray(question?.options) ? question.options : [])
+        .map((option) => typeof option === "string" ? option : option?.label)
+        .filter((label) => typeof label === "string"));
+      if (labels.size === 0) return { id, selected: [], ...(values.length ? { custom: values.join("\n") } : {}) };
+      const selected = values.filter((value) => labels.has(value));
+      const custom = values.filter((value) => !labels.has(value)).join("\n");
+      return { id, selected, ...(custom ? { custom } : {}) };
+    }),
+  };
+}
+
 function emitUpdate(update) {
   write({
     jsonrpc: "2.0",
@@ -285,6 +392,7 @@ function handleFollow(frame) {
   } else if (event?.type === "tool/call") {
     const toolCallId = data.callId || data.toolCallId || "dsh-tool";
     const toolName = data.name || data.toolName || data.message?.source?.name || "DSH tool";
+    if (isQuestionTool(toolName)) return;
     state.toolNames.set(toolCallId, toolName);
     emitUpdate({
       sessionUpdate: "tool_call",
@@ -295,6 +403,10 @@ function handleFollow(frame) {
   } else if (event?.type === "tool/result") {
     const toolCallId = data.message?.source?.callId || data.callId || data.toolCallId || "dsh-tool";
     const toolName = data.name || data.toolName || data.message?.source?.name || state.toolNames.get(toolCallId) || "DSH tool";
+    if (isQuestionTool(toolName)) {
+      state.toolNames.delete(toolCallId);
+      return;
+    }
     emitUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId,
@@ -304,6 +416,10 @@ function handleFollow(frame) {
     });
     state.toolNames.delete(toolCallId);
   }
+}
+
+function isQuestionTool(name) {
+  return String(name).trim().toLowerCase() === "ask_user_question";
 }
 
 function failPending(message) {
@@ -487,6 +603,7 @@ async function shutdown() {
   bridgeStopped = true;
   state.stopped = true;
   state.follow?.close();
+  state.remoteEvents?.close();
   web?.child.kill();
   process.exit(0);
 }

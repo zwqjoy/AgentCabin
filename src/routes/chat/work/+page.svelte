@@ -23,7 +23,7 @@
   import WorkAutomationCenter from "$lib/components/work/WorkAutomationCenter.svelte";
   import WorkMaterialsCenter from "$lib/components/work/WorkMaterialsCenter.svelte";
   import ArchivedChatsView from "$lib/components/ArchivedChatsView.svelte";
-  import type { SessionInfoData } from "$lib/types";
+  import type { PiTodoState, SessionInfoData } from "$lib/types";
   import type {
     InboxItem,
     WorkArtifactStorageMode,
@@ -38,8 +38,11 @@
   let route = $derived(parseWorkRouteState($page.url));
   let selectedId = $derived(route.workspaceId ?? "");
   let selectedRunId = $derived(route.runId ?? "");
-  let activePanel = $derived(route.panel);
+  let activePanel = $derived(route.panel === "automation" ? null : route.panel);
   let isArchivedView = $derived($page.url.searchParams.get("view") === "archived");
+  let isTaskView = $derived(
+    $page.url.searchParams.get("view") === "tasks" || route.panel === "automation",
+  );
   let newConversation = $derived(route.newConversation);
   let createOpen = $derived(route.createWorkspace);
   let freshWorkspace = $derived(route.fresh);
@@ -54,6 +57,7 @@
   );
   // ── Conversation surface bindables ─────────────────────────────────────────
   let sessionInfo = $state<SessionInfoData | null>(null);
+  let piTodoState = $state<PiTodoState>({ phases: [] });
   let progress = $state<WorkProgressSnapshot | null>(null);
   let progressView = $state<WorkRunProgressView | null>(null);
   let pendingInteractions = $state<InboxItem[]>([]);
@@ -475,6 +479,10 @@
       <div class="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
         <ArchivedChatsView realm="work" />
       </div>
+    {:else if isTaskView}
+      <div class="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
+        <WorkAutomationCenter workspaceId="" {workspaces} />
+      </div>
     {:else}
       {#if error}
         <div
@@ -514,6 +522,7 @@
                   {artifacts}
                   onArtifactsChanged={refreshArtifacts}
                   bind:sessionInfo
+                  bind:piTodoState
                   bind:progress
                   bind:progressView
                   bind:conversationArchived
@@ -528,6 +537,7 @@
               open={showConversationInspector}
               onClose={() => (showConversationInspector = false)}
               {sessionInfo}
+              {piTodoState}
               {progress}
               {progressView}
               readOnly={conversationArchived}
@@ -667,6 +677,7 @@
                       workWorkspaceStore.updateWorkspace(ws);
                     }}
                     bind:sessionInfo
+                    bind:piTodoState
                     bind:progress
                     bind:progressView
                     bind:conversationArchived
@@ -683,6 +694,7 @@
                 open={showConversationInspector}
                 onClose={() => (showConversationInspector = false)}
                 {sessionInfo}
+                {piTodoState}
                 {progress}
                 {progressView}
                 {recovery}
@@ -762,8 +774,6 @@
       <div class="min-h-0 flex-1 overflow-y-auto">
         {#if activePanel === "pending"}
           <WorkInboxPanel workspaceId="" {workspaces} />
-        {:else if activePanel === "automation"}
-          <WorkAutomationCenter workspaceId="" {workspaces} />
         {:else if activePanel === "library"}
           <WorkMaterialsCenter {workspaces} />
         {:else if activePanel === "archived"}

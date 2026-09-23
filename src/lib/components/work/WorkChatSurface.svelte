@@ -47,7 +47,7 @@
     extractLatestThinkingLine,
   } from "$lib/utils/chat-presentation";
   import { isInteractionTool } from "$lib/utils/tool-activity-adapter";
-  import type { BusToolItem } from "$lib/types";
+import type { BusToolItem, PiTodoState } from "$lib/types";
   import {
     assignSessionWorkspace,
     continueWorkSession,
@@ -150,6 +150,7 @@
     sessionAlive?: boolean;
     conversationArchived?: boolean;
     pendingInteractions?: InboxItem[];
+    piTodoState?: PiTodoState;
     workspaces?: WorkWorkspaceSummary[];
     onCreateWorkspace?: () => void;
     onOpenFolderWorkspace?: () => void;
@@ -179,6 +180,7 @@
     sessionAlive = $bindable(false),
     conversationArchived = $bindable(false),
     pendingInteractions = $bindable<InboxItem[]>([]),
+    piTodoState = $bindable<PiTodoState>({ phases: [] }),
     onStopSession = $bindable(() => {}),
     onToggleInspector,
     inspectorOpen = false,
@@ -193,6 +195,10 @@
   // provider that Work would only render as read-only.
   const WORK_RUNTIME_PROVIDERS = ALL_RUNTIME_PROVIDERS.filter(isWorkRuntimeSupported);
   const workSession = new WorkSessionStore();
+
+  $effect(() => {
+    piTodoState = workSession.session.piTodoState;
+  });
 
   $effect(() => {
     // Seed the fresh composer from the legacy Work profile without making the
@@ -3270,6 +3276,7 @@
             subTimeline={item.subTimeline}
             runId={session.run?.id ?? ""}
             agentDisplayName={CONVERSATION_ASSISTANT_NAME}
+            onAnswer={(answer) => void session.answerToolQuestion(tool.tool_use_id, answer)}
           />
         {/if}
       {/snippet}

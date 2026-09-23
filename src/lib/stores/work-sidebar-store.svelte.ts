@@ -33,6 +33,7 @@ import type { TaskRun } from "$lib/types";
 import type { WorkWorkspaceSummary } from "$lib/types/work";
 import {
   getExpandedWorkSessionLoadTargets,
+  getWorkSidebarRunStatus,
   getWorkSessionRefreshTargets,
 } from "$lib/utils/work-sidebar-refresh";
 
@@ -499,8 +500,16 @@ export class WorkSidebarStore {
       }
     }
 
+    const syncRunStatus = (runId: unknown, state: unknown) => {
+      if (typeof runId !== "string") return;
+      const status = getWorkSidebarRunStatus(state);
+      if (!status) return;
+      dispatchRunMutation({ kind: "update", runId, patch: { status } });
+    };
+
     transport
-      .listen<{ run_id?: unknown }>("agentcabin:status-changed", (payload) => {
+      .listen<{ run_id?: unknown; status?: unknown }>("agentcabin:status-changed", (payload) => {
+        syncRunStatus(payload?.run_id, payload?.status);
         refreshSessionForRun.call(this, payload?.run_id);
       })
       .then((fn) => {
@@ -509,8 +518,9 @@ export class WorkSidebarStore {
       });
 
     transport
-      .listen<{ type?: unknown; run_id?: unknown }>("bus-event", (payload) => {
+      .listen<{ type?: unknown; run_id?: unknown; state?: unknown }>("bus-event", (payload) => {
         if (payload?.type !== "run_state") return;
+        syncRunStatus(payload.run_id, payload.state);
         refreshSessionForRun.call(this, payload.run_id);
       })
       .then((fn) => {

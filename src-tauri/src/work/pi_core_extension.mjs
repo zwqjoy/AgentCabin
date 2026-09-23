@@ -59,13 +59,18 @@ const {
 } = workBridgeClient;
 
 function toolCatalog() {
-  return createWorkToolCatalog();
+  // Pi Work uses Pi's native ask/todo extensions. The durable ask_questions
+  // bridge remains in the runtime-neutral catalog for DSH, but must not be
+  // exposed as a second Pi questionnaire implementation.
+  return createWorkToolCatalog().filter((tool) => tool.name !== "ask_questions");
 }
 
 const COMPAT_TOOL_NAMES = WORK_COMPAT_TOOL_NAMES;
 const DEFAULT_ACTIVE_TOOLS = new Set([
-  ...createDefaultActiveWorkTools(),
+  ...[...createDefaultActiveWorkTools()].filter((name) => name !== "ask_questions"),
   ...COMPAT_TOOL_NAMES,
+  "ask_user_question",
+  "todo",
 ]);
 
 function workPresetGuidance() {
@@ -135,25 +140,6 @@ const RunCommandSchema = Type.Object({
 
 const CommandInfoSchema = Type.Object({
   command: Type.String({ description: "Executable name to inspect, for example soffice, python, git, node, or pdftoppm." }),
-});
-
-const AskQuestionOptionSchema = Type.Object({
-  label: Type.String({ description: "Visible option label." }),
-  value: Type.Optional(Type.String({ description: "Stable value returned for this option." })),
-  description: Type.Optional(Type.String({ description: "Optional explanation shown below the label." })),
-});
-
-const AskQuestionsSchema = Type.Object({
-  title: Type.Optional(Type.String({ description: "Short title shown above the questionnaire." })),
-  questions: Type.Array(Type.Object({
-    id: Type.Optional(Type.String({ description: "Stable answer key." })),
-    header: Type.Optional(Type.String({ description: "Compact label for this question." })),
-    question: Type.String({ description: "The decision or information needed from the root user." }),
-    options: Type.Optional(Type.Array(AskQuestionOptionSchema)),
-    multi_select: Type.Optional(Type.Boolean({ description: "Allow selecting more than one option." })),
-    allow_other: Type.Optional(Type.Boolean({ description: "Allow a free-form answer when options are provided." })),
-    placeholder: Type.Optional(Type.String()),
-  })),
 });
 
 const ConnectorCliSchema = Type.Object({
@@ -1248,7 +1234,6 @@ const ROOT_ONLY_TOOL_NAMES = new Set([
   "work_save_checkpoint",
   "work_request_directory_access",
   "work_propose_context_update",
-  "ask_questions",
   "work_deliver",
   "work_delegate",
   "work_research_swarm",
@@ -1546,54 +1531,6 @@ export default function agentCabinWorkExtension(pi) {
       }
     }
   }
-
-  registerWorkTool({
-    name: "ask_questions",
-    label: "ask_questions",
-    description: "Ask the root user one or more structured questions. Work persists the request in Inbox and resumes after the answers arrive.",
-    parameters: AskQuestionsSchema,
-    async execute(toolCallId, params, signal) {
-      try {
-        const questions = Array.isArray(params?.questions) ? params.questions : [];
-        if (questions.length === 0) return fail("ask_questions requires at least one question.");
-        if (questions.some((question) => !String(question?.question || "").trim())) {
-          return fail("Every ask_questions item must have a non-empty question.");
-        }
-        const payload = {
-          ...(params?.title ? { title: String(params.title).trim() } : {}),
-          questions,
-        };
-        let res = await callToolPipeline(toolCallId, "ask_questions", "ask", payload, signal);
-        while (res.status === "waiting_input") {
-          if (!res.interactionId) {
-            return fail("ask_questions entered WaitingInput without a durable Inbox item.", {
-              status: res.status,
-            });
-          }
-          const resolution = await waitForWorkInboxResolution(res.interactionId, signal);
-          const answered = resolution.status === "answered" || resolution.status === "approved";
-          if (!answered) {
-            return fail(`ask_questions was ${resolution.status || "cancelled"} in Inbox.`, {
-              interaction_id: res.interactionId,
-            });
-          }
-          // Re-submit the same call id. The Host resolves the durable interaction
-          // idempotently and returns the exact persisted answer payload.
-          res = await callToolPipeline(toolCallId, "ask_questions", "ask", payload, signal);
-        }
-        if (!res.success) return fail(res.stderr || res.error || "ask_questions failed.", { status: res.status });
-        const response = decodePipelineJson(res, {});
-        const answers = response?.answers ?? response;
-        return result(`用户已回答问题，具体答案如下：\n${formatToolData(answers)}\n请基于这些答案继续执行。`, {
-          ok: true,
-          answers,
-          interaction_id: res.interactionId,
-        });
-      } catch (error) {
-        return fail(error instanceof Error ? error.message : String(error));
-      }
-    },
-  });
 
   registerWorkTool({
     name: "work_workspace_info",
@@ -2788,7 +2725,7 @@ export default function agentCabinWorkExtension(pi) {
     const swarmGuidance = " For complex multi-dimensional investigation or analysis tasks, use work_research_swarm when there are 2–3 genuinely independent, orthogonal research dimensions. Do not use research swarm for simple factual queries, single-file inspection, sequential dependencies, or write/implementation tasks. After the swarm returns its findings bundle, synthesize the findings yourself: identify consensus, explicitly resolve or report disagreements, highlight missing evidence or uncertainties, and never merely concatenate child outputs.";
     const irfGuidance = " For non-trivial implementation tasks that benefit from independent verification, use work_implement_review_fix. Do not use it for pure research, read-only analysis, trivial one-line changes where an independent review adds no material value, or tasks where the user explicitly asks not to modify files. Only treat the workflow as independently reviewed when status === 'passed'. If status is needs_changes, incomplete, review_error, implementation_failed, fix_failed, or authority_error, report that state accurately and do not claim the implementation passed review.";
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## AgentCabin Work tools\n除非用户明确要求其他语言，所有面向用户的说明、状态和结论都使用简体中文，避免使用英文开场白或泛化的状态句。对于复杂多步任务，先调用 work_set_goal 记录明确目标，再调用 work_replace_plan 制定具体执行步骤；在步骤开始和完成时调用 work_update_step，并在关键里程碑处保存简要的 work_save_checkpoint。简单单步问题无需形式化计划。这些 Work 状态工具为内部进度记录，无需用户审批，也不要在普通文本中请求“确认执行 / 修改计划 / 取消”。只有遇到真实的业务选择、外部副作用或 Work 工具明确发出的风险确认时，才等待用户输入；需要用户选择或补充事实时，调用 ask_questions 一次性提交结构化问题，不要把普通进度汇报伪装成提问。当需要了解可用能力或工具目录时，调用 work_discover_capabilities 或 work_list_tools。从 input/ 读取源材料，并在相关时从 context/ 读取项目背景知识（这些工作区目录已可访问，切勿传入 work_request_directory_access；切勿直接修改 input/ 或 context/）。仅在需要访问 Workspace 外的主机绝对目录时调用 work_request_directory_access。当用户明确要求记住规则、决策或状态时，调用 work_propose_context_update 提交确认。在当前 Workspace 或已授权外部目录中写入草稿至 scratch/，最终成果写入 output/（写入 output/ 会自动登记为成果 Artifact）。${pathGuidance}${workPresetGuidance()}${codingGuidance}${fullAccessGuidance}${browserGuidance}${externalGuidance}${swarmGuidance}${irfGuidance}${CONVERSATION_HTML_GUIDANCE}`,
+      systemPrompt: `${event.systemPrompt}\n\n## AgentCabin Work tools\n除非用户明确要求其他语言，所有面向用户的说明、状态和结论都使用简体中文，避免使用英文开场白或泛化的状态句。对于复杂多步任务，先调用 work_set_goal 记录明确目标，再调用 work_replace_plan 制定具体执行步骤；在步骤开始和完成时调用 work_update_step，并在关键里程碑处保存简要的 work_save_checkpoint。简单单步问题无需形式化计划。这些 Work 状态工具为内部进度记录，无需用户审批，也不要在普通文本中请求“确认执行 / 修改计划 / 取消”。只有遇到真实的业务选择、外部副作用或 Work 工具明确发出的风险确认时，才等待用户输入；需要用户选择或补充事实时，调用 Pi 的 ask_user_question 一次性提交结构化问题，不要把普通进度汇报伪装成提问。复杂多步任务使用 Pi 的 todo 工具跟踪步骤，Work 的 work_* 计划工具仍用于持久化运行进度与恢复。当需要了解可用能力或工具目录时，调用 work_discover_capabilities 或 work_list_tools。从 input/ 读取源材料，并在相关时从 context/ 读取项目背景知识（这些工作区目录已可访问，切勿传入 work_request_directory_access；切勿直接修改 input/ 或 context/）。仅在需要访问 Workspace 外的主机绝对目录时调用 work_request_directory_access。当用户明确要求记住规则、决策或状态时，调用 work_propose_context_update 提交确认。在当前 Workspace 或已授权外部目录中写入草稿至 scratch/，最终成果写入 output/（写入 output/ 会自动登记为成果 Artifact）。${pathGuidance}${workPresetGuidance()}${codingGuidance}${fullAccessGuidance}${browserGuidance}${externalGuidance}${swarmGuidance}${irfGuidance}${CONVERSATION_HTML_GUIDANCE}`,
     };
   });
 }

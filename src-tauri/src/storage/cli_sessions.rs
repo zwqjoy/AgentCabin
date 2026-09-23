@@ -1206,6 +1206,7 @@ pub fn import_session(
         prompt: first_prompt,
         cwd: cwd.to_string(),
         agent: "claude".to_string(),
+        code_standalone_task: false,
         app_mode: crate::work::models::AppMode::Code,
         agent_target: Some(crate::models::AgentTarget::NativeClaude),
         workspace_id: None,

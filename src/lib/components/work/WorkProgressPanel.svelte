@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { PiTodoState } from "$lib/types";
   import type {
     InboxItem,
     RunHealth,
@@ -11,15 +12,12 @@
     WorkProgressSnapshot,
     WorkRunProgressView,
   } from "$lib/types/work";
-  import {
-    workRunProgressDisplayPhase,
-    workProgressPercent,
-    workRunProgressToSnapshot,
-  } from "$lib/utils/work-progress";
+  import { workRunProgressDisplayPhase, workRunProgressToSnapshot } from "$lib/utils/work-progress";
   import { hasOperationalWorkEvidence, hasWorkCompletionEvidence } from "$lib/utils/work-result";
   import { isQuestionInteraction } from "$lib/utils/work-interactions";
   import { workToolLabel } from "$lib/utils/work-activity";
   import WorkGoalCard from "./WorkGoalCard.svelte";
+  import TaskChecklistCard from "$lib/components/TaskChecklistCard.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { verifyWorkGoal, triggerWorkGoalRepair } from "$lib/api/work";
 
@@ -34,6 +32,7 @@
     showHeader?: boolean;
     showArtifactSummary?: boolean;
     pendingInteractions?: InboxItem[];
+    piTodoState?: PiTodoState;
   }
 
   let {
@@ -47,6 +46,7 @@
     showHeader = true,
     showArtifactSummary = true,
     pendingInteractions = [],
+    piTodoState = { phases: [] },
   }: Props = $props();
 
   const phaseLabels: Record<WorkProgressPhase, string> = {
@@ -109,7 +109,18 @@
   let phaseLabel = $derived(phaseLabels[phase] ?? "等待下一步");
   let phaseClass = $derived(phaseClasses[phase] ?? "bg-muted text-muted-foreground");
   let tasks = $derived(progressView ? progressView.steps : (resolvedSnapshot?.tasks ?? []));
-  let percent = $derived(workProgressPercent(tasks));
+  let piTodoSections = $derived(
+    piTodoState.phases.map((phase, phaseIndex) => ({
+      id: `pi-todo-phase-${phaseIndex}`,
+      title: phase.name,
+      tasks: phase.tasks.map((task, taskIndex) => ({
+        id: `pi-todo-${phaseIndex}-${taskIndex}`,
+        text: task.name,
+        description: task.description,
+        status: task.status,
+      })),
+    })),
+  );
   let completedTasks = $derived(tasks.filter((task) => task.status === "completed").length);
   let deliveredArtifacts = $derived(
     artifacts.filter((artifact) => artifact.status === "delivered").length,
@@ -377,18 +388,6 @@
     if (status === "satisfied") return "验收通过";
     if (status === "invalid") return "需修复";
     return "等待交付";
-  }
-
-  function taskStatusLabel(status: string): string {
-    if (status === "completed") return "完成";
-    if (status === "in_progress") return "进行中";
-    return "待处理";
-  }
-
-  function taskStatusClass(status: string): string {
-    if (status === "completed") return "bg-emerald-500";
-    if (status === "in_progress") return "bg-amber-500 animate-pulse";
-    return "bg-muted-foreground/40";
   }
 
   function toolLabel(name: string): string {
@@ -977,35 +976,14 @@
 
   <!-- Steps List -->
   {#if tasks.length > 0}
-    <div class="mt-4 flex items-center justify-between gap-3 text-[10px] text-muted-foreground">
-      <span>步骤进度</span>
-      <span>{completedTasks}/{tasks.length}{percent === null ? "" : ` · ${percent}%`}</span>
+    <div class="mt-4">
+      <TaskChecklistCard {tasks} />
     </div>
-    <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      <div
-        class="h-full bg-primary transition-all duration-300"
-        style={`width: ${percent ?? 0}%`}
-      ></div>
-    </div>
+  {/if}
 
-    <div class="mt-3 space-y-2">
-      {#each tasks as task, index (task.id)}
-        <div class="flex items-start gap-2.5 text-[11px] leading-4 text-foreground">
-          <span
-            class="mt-1 inline-block h-2 w-2 shrink-0 rounded-full {taskStatusClass(task.status)}"
-          ></span>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center justify-between gap-2">
-              <span class="truncate font-medium text-foreground">
-                {index + 1}. {task.text}
-              </span>
-              <span class="shrink-0 text-[10px] text-muted-foreground">
-                {taskStatusLabel(task.status)}
-              </span>
-            </div>
-          </div>
-        </div>
-      {/each}
+  {#if piTodoSections.some((section) => section.tasks.length > 0)}
+    <div class="mt-4">
+      <TaskChecklistCard tasks={[]} sections={piTodoSections} title="Pi Todo" />
     </div>
   {/if}
 

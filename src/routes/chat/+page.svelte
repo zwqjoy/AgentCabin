@@ -127,6 +127,7 @@
   import PiSessionTreePanel from "$lib/components/PiSessionTreePanel.svelte";
   import GitWorktreePanel from "$lib/components/GitWorktreePanel.svelte";
   import ArchivedChatsView from "$lib/components/ArchivedChatsView.svelte";
+  import CodeTasksCenter from "$lib/components/CodeTasksCenter.svelte";
   import ChatSearchToolbar from "$lib/components/ChatSearchToolbar.svelte";
   import ConversationTurnRail from "$lib/components/ConversationTurnRail.svelte";
   import ToBottomButton from "$lib/dsh-ui/ToBottomButton.svelte";
@@ -237,6 +238,8 @@
     return "code";
   });
   let isArchivedView = $derived($page.url.searchParams.get("view") === "archived");
+  let isTaskView = $derived($page.url.searchParams.get("view") === "tasks");
+  let codeStandaloneTask = $state(false);
   let middlewareReady = $state(false);
   let settings = $state<UserSettings | null>(null);
   let xtermRef: XTerminal | undefined = $state();
@@ -286,7 +289,9 @@
 
   function codeProjectCwdsFromRuns(runs: TaskRun[], realm: AppRealm): string[] {
     const folders = buildProjectFolders(
-      runs.filter((run) => !isWorkRun(run) && !run.remote_host_name),
+      runs.filter(
+        (run) => !isWorkRun(run) && !run.remote_host_name && !run.code_standalone_task,
+      ),
       new Set<string>(),
       getSavedPinnedCwds(realm),
       typeof localStorage !== "undefined" ? loadRemovedCwds() : [],
@@ -309,6 +314,7 @@
 
   let codeProjectCwd = $derived.by(() => {
     void removedCwdsVersion;
+    if (codeStandaloneTask || store.run?.code_standalone_task) return "";
     const persistedCwd = store.remoteHostName
       ? getStoredRemoteCwd(store.remoteHostName)
       : getSavedProjectCwd(currentRealm);
@@ -351,8 +357,9 @@
     return {
       currentProjectCwd: codeProjectCwd || null,
       currentProjectName: codeProjectCwd ? cwdDisplayLabel(codeProjectCwd) : "",
+      currentStandaloneTask: codeStandaloneTask || store.run?.code_standalone_task === true,
       projects: codeProjectOptions,
-      onSelect: selectCodeProject,
+      onSelect: selectCodeTaskScope,
       readOnly: codeProjectReadOnly,
     };
   });
@@ -1910,6 +1917,7 @@
   // An explicit project model/thinking preference is used as the default for new conversations
   // in the same left-sidebar project and Agent. Existing conversations keep their own choice.
   let projectPreferenceCwd = $derived.by(() => {
+    if (codeStandaloneTask || store.run?.code_standalone_task) return "";
     return (
       store.effectiveCwd ||
       folderCwdOverride ||
@@ -2356,6 +2364,7 @@
 
   // Welcome page project name (derived for template use)
   let welcomeProjectName = $derived.by(() => {
+    if (codeStandaloneTask || store.run?.code_standalone_task) return "独立任务";
     const cwd = store.effectiveCwd || folderCwdOverride || getSavedProjectCwd(currentRealm) || "";
     return cwd ? cwdDisplayLabel(cwd) : "";
   });
@@ -2727,6 +2736,7 @@
   // ── Lifecycle ──
 
   function getProjectCwdForEditor(): string {
+    if (codeStandaloneTask || store.run?.code_standalone_task) return "";
     return (
       store.effectiveCwd ||
       folderCwdOverride ||
@@ -3245,11 +3255,16 @@
   onMount(() => {
     requestAnimationFrame(() => promptRef?.focus());
     function onNewChatEvent(e: Event) {
-      const customEvt = e as CustomEvent<{ cwd?: string }>;
+      const customEvt = e as CustomEvent<{ cwd?: string; codeStandaloneTask?: boolean }>;
       const cwd = customEvt.detail?.cwd;
+      codeStandaloneTask = customEvt.detail?.codeStandaloneTask === true;
       if (cwd) {
         folderCwdOverride = cwd;
         setSavedProjectCwd(cwd, currentRealm);
+      } else if (codeStandaloneTask) {
+        folderCwdOverride = "";
+        store.remoteHostName = null;
+        setLastTarget(null);
       }
       // 新建对话时必须清空 hydrate token：否则连续开多个相同 key 的 draft 会话时，
       // token（已不含 runModel）会完全相同，effect 认为已 hydrate 过而跳过，导致
@@ -3715,8 +3730,19 @@
 
   // ── Send message ──
 
-  function selectCodeProject(cwd: string) {
+  function selectCodeTaskScope(cwd: string | null) {
     if (codeProjectReadOnly) return;
+    codeStandaloneTask = cwd === null;
+    if (codeStandaloneTask) {
+      folderCwdOverride = "";
+      if (store.remoteHostName) {
+        store.remoteHostName = null;
+        setLastTarget(null);
+      }
+      projectModelPreferenceAppliedToken = "";
+      return;
+    }
+    if (!cwd) return;
     const normalized = normalizeCwd(cwd);
     if (!normalized) return;
 
@@ -3739,6 +3765,7 @@
 
   /** Resolve the local project target used by every new Code session path. */
   async function resolveNewSessionCwd(): Promise<string | null> {
+    if (codeStandaloneTask) return "";
     // Code intentionally mirrors Work's local-only project selection. Clear a
     // stale target left by an older Code session instead of silently launching
     // a new session on a remote host.
@@ -3793,7 +3820,7 @@
     } = {},
   ): Promise<string | null> {
     const cwd = await resolveNewSessionCwd();
-    if (!cwd) return null;
+    if (cwd === null || (!cwd && !codeStandaloneTask)) return null;
 
     if (options.slashCmd) {
       processingSlashCmd = options.slashCmd;
@@ -3808,7 +3835,7 @@
       }).catch(() => {});
     }
     const createdRunId =
-      resolveNewSessionStartMode(options.piShell) === "shell"
+      resolveNewSessionStartMode(options.piShell && !codeStandaloneTask) === "shell"
         ? await store.startPiSessionShell(cwd, currentEffort || undefined)
         : await store.startSession(
             prompt,
@@ -3817,6 +3844,7 @@
             undefined,
             options.skills,
             currentEffort || undefined,
+            codeStandaloneTask,
           );
     const routeBase = isPiCodeRoute || effectiveAgent === "pi" ? "/chat/pi" : "/chat";
     await goto(`${routeBase}?run=${createdRunId}`, { replaceState: true });
@@ -6683,7 +6711,11 @@
 
   <!-- Main content area -->
   <div class="flex flex-1 flex-col min-w-0 relative chat-main-content chat-canvas">
-    {#if isArchivedView}
+    {#if isTaskView}
+      <div class="flex-1 overflow-y-auto bg-background">
+        <CodeTasksCenter />
+      </div>
+    {:else if isArchivedView}
       <div class="flex-1 overflow-y-auto bg-background">
         <ArchivedChatsView realm={currentHarness === "work" ? "work" : "code"} />
       </div>

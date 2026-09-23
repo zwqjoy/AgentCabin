@@ -10,7 +10,7 @@
   import { isQuestionInteraction } from "$lib/utils/work-interactions";
   import { isBrowserToolName } from "$lib/utils/work-browser";
   import { workRunProgressDisplayPhase } from "$lib/utils/work-progress";
-  import type { SessionInfoData } from "$lib/types";
+  import type { PiTodoState, SessionInfoData } from "$lib/types";
   import type {
     InboxItem,
     WorkArtifactSummary,
@@ -24,6 +24,7 @@
 
   interface Props {
     sessionInfo: SessionInfoData | null;
+    piTodoState?: PiTodoState;
     progress: WorkProgressSnapshot | null;
     progressView?: WorkRunProgressView | null;
     recovery?: WorkRunRecovery | null;
@@ -47,6 +48,7 @@
 
   let {
     sessionInfo,
+    piTodoState = { phases: [] },
     progress,
     progressView = null,
     recovery = null,
@@ -392,6 +394,7 @@
             <WorkProgressPanel
               {progress}
               {progressView}
+              {piTodoState}
               {artifacts}
               acceptance={recovery?.acceptance ?? null}
               {artifactRequirements}

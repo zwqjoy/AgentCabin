@@ -51,6 +51,15 @@ export function isQuestionInteraction(item: InboxItem): boolean {
 }
 
 /**
+ * Keep the global Inbox for unattended automation failures. Run interactions
+ * are actionable in their originating conversation, which has the context
+ * needed to answer, approve, authorize, validate, or recover them.
+ */
+export function isGlobalInboxInteraction(item: InboxItem): boolean {
+  return item.payload.failureKind === "automation_failure";
+}
+
+/**
  * Keep the bottom-of-chat pending list from duplicating an interaction that is
  * already attached to its inline tool card in the current conversation.
  *

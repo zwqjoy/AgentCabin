@@ -23,6 +23,9 @@
   import MarkdownContent from "$lib/components/MarkdownContent.svelte";
   import ToolDetailView from "$lib/components/ToolDetailView.svelte";
   import StatusIcon from "$lib/components/StatusIcon.svelte";
+  import QuestionPromptCard, {
+    type QuestionPrompt,
+  } from "$lib/components/QuestionPromptCard.svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { dbg } from "$lib/utils/debug";
 
@@ -326,6 +329,21 @@
   let askOptions = $derived(parsedQuestions[0]?.options.map((o) => o.label) ?? ([] as string[]));
   let isMultiSelect = $derived(parsedQuestions[0]?.multiSelect ?? false);
   let hasMultipleQuestions = $derived(parsedQuestions.length > 1);
+  let sharedAskQuestions = $derived.by((): QuestionPrompt[] =>
+    parsedQuestions.map((question, index) => ({
+      id: question.id || String(index),
+      type: question.options.length > 0 ? "select" : "input",
+      question: question.question,
+      header: question.header,
+      options: question.options.map((option) => ({
+        label: option.label,
+        value: option.label,
+        description: option.description,
+      })),
+      multiSelect: question.multiSelect,
+      allowOther: true,
+    })),
+  );
 
   // Track how many questions are answered (for multi-question submit)
   let allQuestionsAnswered = $derived(
@@ -501,6 +519,23 @@
     }
   }
 
+  function submitSharedAskAnswers(answers: Record<string, string | string[] | boolean>) {
+    const byId: Record<string, string | string[]> = {};
+    const byText: Record<string, string> = {};
+    for (const [index, question] of parsedQuestions.entries()) {
+      const id = question.id || String(index);
+      const value = answers[id];
+      if (value === undefined) {
+        byId[id] = [];
+        byText[question.question] = "已跳过";
+      } else {
+        byId[id] = Array.isArray(value) ? value : String(value);
+        byText[question.question] = Array.isArray(value) ? value.join(", ") : String(value);
+      }
+    }
+    void handleAnswer(JSON.stringify({ __askMulti: true, byId, byText }));
+  }
+
   function handleAskPermissionAllow(answer: string) {
     if (submitting || !onPermissionRespond || !tool.permission_request_id) return;
     if (hasMultipleQuestions) {
@@ -529,22 +564,6 @@
   // Multi-question: select answer for a specific question
   function selectQuestionAnswer(questionText: string, answer: string) {
     questionAnswers[questionText] = answer;
-  }
-
-  // Multi-question submit for the ask_pending (onAnswer) path — used by Codex app-server
-  // (and Claude pipe mode) where the answer goes back via onAnswer, not a permission response.
-  // Encodes all answers keyed by both question id (for Codex respond_user_input) and text.
-  function submitAllAskAnswers() {
-    if (submitting || !onAnswer || !allQuestionsAnswered) return;
-    submitting = true;
-    const byId: Record<string, string> = {};
-    const byText: Record<string, string> = {};
-    for (const q of parsedQuestions) {
-      const ans = questionAnswers[q.question];
-      byText[q.question] = ans;
-      if (q.id) byId[q.id] = ans;
-    }
-    onAnswer(JSON.stringify({ __askMulti: true, byId, byText }));
   }
 
   // Multi-question: submit all answers at once
@@ -610,52 +629,16 @@
   {#if renderLevel === 3}
     <!-- Level 3: interactive card -->
     <div>
-      {#if isAsk && (tool.status === "running" || tool.status === "ask_pending") && hasMultipleQuestions && onAnswer}
-        <!-- AskUserQuestion (multi-question, onAnswer path): collect all answers, submit once.
-             Used by Codex app-server requestUserInput with 2+ questions. -->
-        <div class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="text-xs font-medium text-foreground">{t("inline_question")}</span>
-            <span class="text-xs text-muted-foreground"
-              >{Object.keys(questionAnswers).length}/{parsedQuestions.length}</span
-            >
-          </div>
-          <div class="space-y-3">
-            {#each parsedQuestions as pq}
-              <div>
-                {#if pq.header}
-                  <div class="text-xs font-medium text-muted-foreground mb-1">{pq.header}</div>
-                {/if}
-                <MarkdownContent
-                  text={pq.question}
-                  class="text-sm text-foreground mb-2 [&>*:last-child]:mb-0"
-                />
-                <div class="flex flex-wrap gap-2">
-                  {#each pq.options as option}
-                    <button
-                      class="rounded-md border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed {questionAnswers[
-                        pq.question
-                      ] === option.label
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border bg-background text-foreground hover:bg-accent hover:border-ring/30'}"
-                      disabled={submitting}
-                      onclick={() => selectQuestionAnswer(pq.question, option.label)}
-                    >
-                      {option.label}
-                    </button>
-                  {/each}
-                </div>
-              </div>
-            {/each}
-          </div>
-          <button
-            class="mt-3 rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={submitting || !allQuestionsAnswered}
-            onclick={submitAllAskAnswers}
-          >
-            {t("inline_submit")}
-          </button>
-        </div>
+      {#if isAsk && (tool.status === "running" || tool.status === "ask_pending") && sharedAskQuestions.length > 0 && onAnswer}
+        <QuestionPromptCard
+          embedded
+          questions={sharedAskQuestions}
+          review={hasMultipleQuestions}
+          eyebrow="AgentCabin 内置问题"
+          title={tool.input?.title as string | undefined}
+          description="回答后任务会继续执行。"
+          onSubmit={submitSharedAskAnswers}
+        />
       {:else if isAsk && (tool.status === "running" || tool.status === "ask_pending") && askQuestion}
         <!-- AskUserQuestion: show question + option buttons -->
         <div class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3">

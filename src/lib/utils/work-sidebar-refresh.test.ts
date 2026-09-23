@@ -1,10 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
   getExpandedWorkSessionLoadTargets,
+  getWorkSidebarRunStatus,
   getWorkSessionRefreshTargets,
 } from "$lib/utils/work-sidebar-refresh";
 
 describe("Work sidebar session refresh targets", () => {
+  it.each([
+    ["spawning", "running"],
+    ["running", "running"],
+    ["idle", "idle"],
+    ["completed", "completed"],
+    ["failed", "failed"],
+    ["stopped", "stopped"],
+  ])("maps runtime state %s to sidebar status %s", (state, status) => {
+    expect(getWorkSidebarRunStatus(state)).toBe(status);
+  });
+
+  it("ignores unknown runtime state values", () => {
+    expect(getWorkSidebarRunStatus("authenticating")).toBeNull();
+    expect(getWorkSidebarRunStatus(undefined)).toBeNull();
+  });
+
   it("loads sessions for workspaces restored as expanded before a workspace is selected", () => {
     expect(
       getExpandedWorkSessionLoadTargets(

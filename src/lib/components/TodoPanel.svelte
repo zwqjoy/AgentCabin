@@ -1,8 +1,9 @@
 <script lang="ts">
-  import type { PanelTask, PiTodoState, PiTodoStatus } from "$lib/types";
+  import type { PanelTask, PiTodoState } from "$lib/types";
   import { t } from "$lib/i18n/index.svelte";
   import type { UnifiedDiffSummary } from "$lib/utils/diff-stats";
   import { dbg } from "$lib/utils/debug";
+  import TaskChecklistCard from "$lib/components/TaskChecklistCard.svelte";
 
   type Props = {
     /** Current task list (Tasks system or legacy TodoWrite). Empty hides the task hotspot. */
@@ -30,6 +31,28 @@
         }))
       : tasks.map((task) => ({ text: task.text, description: "", status: task.status })),
   );
+  let todoSections = $derived(
+    phases.length > 0
+      ? phases.map((phase) => ({
+          id: phase.name,
+          title: phase.name,
+          tasks: phase.tasks.map((task, index) => ({
+            id: `${phase.name}-${index}`,
+            text: task.name,
+            description: task.description,
+            status: task.status,
+          })),
+        }))
+      : tasks.length > 0
+        ? [
+            {
+              id: "tasks",
+              title: "",
+              tasks: tasks.map((task) => ({ ...task, description: "" })),
+            },
+          ]
+        : [],
+  );
   let hasTodo = $derived(todoItems.length > 0);
   let doneCount = $derived(
     todoItems.filter((task) => task.status === "completed" || task.status === "cancelled").length,
@@ -51,26 +74,6 @@
       ? t("sidebar_changedFile", { count: "1" })
       : t("sidebar_changedFiles", { count: String(changeFiles.length) }),
   );
-
-  function statusLabel(status: PiTodoStatus): string {
-    return status === "in_progress"
-      ? "进行中"
-      : status === "completed"
-        ? "已完成"
-        : status === "cancelled"
-          ? "已取消"
-          : "待处理";
-  }
-
-  function statusGlyph(status: PiTodoStatus): string {
-    return status === "in_progress"
-      ? "◐"
-      : status === "completed"
-        ? "✓"
-        : status === "cancelled"
-          ? "×"
-          : "○";
-  }
 
   function viewDiff() {
     changesPinned = false;
@@ -126,73 +129,7 @@
                 >
               </div>
 
-              {#if phases.length > 0}
-                <div class="max-h-[min(22rem,60vh)] overflow-y-auto py-1">
-                  {#each phases as phase (phase.name)}
-                    <section class="px-3 py-1.5">
-                      <h3 class="mb-1 text-xs font-semibold text-foreground/80">{phase.name}</h3>
-                      <ul class="space-y-1">
-                        {#each phase.tasks as task (task.name)}
-                          <li class="flex items-start gap-2 text-xs">
-                            <span
-                              class="mt-0.5 w-4 shrink-0 text-center {task.status === 'completed'
-                                ? 'text-emerald-500'
-                                : task.status === 'in_progress'
-                                  ? 'text-blue-500'
-                                  : task.status === 'cancelled'
-                                    ? 'text-muted-foreground/60'
-                                    : 'text-muted-foreground'}"
-                              title={statusLabel(task.status)}>{statusGlyph(task.status)}</span
-                            >
-                            <span
-                              class="min-w-0 {task.status === 'completed' ||
-                              task.status === 'cancelled'
-                                ? 'opacity-60'
-                                : ''}"
-                            >
-                              <span
-                                class="block {task.status === 'completed' ? 'line-through' : ''}"
-                                >{task.name}</span
-                              >
-                              {#if task.description}
-                                <span class="block truncate text-[11px] text-muted-foreground"
-                                  >{task.description}</span
-                                >
-                              {/if}
-                            </span>
-                          </li>
-                        {/each}
-                      </ul>
-                    </section>
-                  {/each}
-                </div>
-              {:else}
-                <ul class="max-h-[min(22rem,60vh)] space-y-1 overflow-y-auto px-3 py-2">
-                  {#each tasks as task, i (i)}
-                    <li class="flex items-center gap-2 text-xs">
-                      <span
-                        class="rounded px-1.5 py-0.5 text-[10px] font-medium {task.status ===
-                        'completed'
-                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                          : task.status === 'in_progress'
-                            ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                            : 'bg-neutral-500/15 text-muted-foreground'}"
-                      >
-                        {task.status === "completed"
-                          ? t("tool_statusDone")
-                          : task.status === "in_progress"
-                            ? t("tool_statusWip")
-                            : t("tool_statusTodo")}
-                      </span>
-                      <span
-                        class="min-w-0 text-muted-foreground {task.status === 'completed'
-                          ? 'line-through opacity-60'
-                          : ''}">{task.text}</span
-                      >
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
+              <TaskChecklistCard tasks={[]} sections={todoSections} embedded />
             </div>
           </div>
         </div>

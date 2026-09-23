@@ -70,6 +70,7 @@ pub(super) async fn run_actor(
     let mut cancel_requested = false;
     let mut pending_messages = VecDeque::new();
     let mut control_waiters: HashMap<u64, oneshot::Sender<Value>> = HashMap::new();
+    let mut pending_user_input_requests: HashMap<String, Value> = HashMap::new();
     let mut assistant_message_id = None;
     let mut assistant_text = String::new();
     let mut explicitly_stopped = false;
@@ -175,6 +176,13 @@ pub(super) async fn run_actor(
                         } else {
                             let _ = reply.send(Err("DSH ACP session is still initializing".to_string()));
                         }
+                    }
+                    Some(ActorCommand::RespondUserInput { request_id, response, reply }) => {
+                        let request_value = pending_user_input_requests
+                            .remove(&request_id)
+                            .unwrap_or_else(|| Value::String(request_id.clone()));
+                        let result = send_json_response(&mut stdin, request_value, response).await;
+                        let _ = reply.send(result);
                     }
                     Some(ActorCommand::Stop { reply, .. }) => {
                         if let Some(session_id) = session_id.as_deref() {
@@ -363,6 +371,15 @@ pub(super) async fn run_actor(
                                 normalizer.handle_notification(&notif.method, notif.params.as_ref());
                             }
                             DshIncomingMessage::Request(request) => {
+                                let request_id = request_id_key(&request.id);
+                                if is_user_question_request(&request.method) {
+                                    pending_user_input_requests.insert(request_id.clone(), request.id.clone());
+                                    normalizer.emit_user_question(
+                                        &request_id,
+                                        request.params.as_ref().unwrap_or(&Value::Null),
+                                    );
+                                    continue;
+                                }
                                 let result = if request.method == "session/request_permission" {
                                     json!({"outcome": {"outcome": "cancelled"}})
                                 } else {
@@ -699,6 +716,19 @@ async fn send_json_line(stdin: &mut ChildStdin, value: Value) -> Result<(), Stri
         .flush()
         .await
         .map_err(|error| format!("Failed to flush DSH ACP message: {error}"))
+}
+
+fn request_id_key(id: &Value) -> String {
+    id.as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| id.to_string())
+}
+
+fn is_user_question_request(method: &str) -> bool {
+    let method = method.to_ascii_lowercase();
+    method.contains("ask_user_question")
+        || method.contains("request_user_input")
+        || method.contains("requestuserinput")
 }
 
 fn fail_pending(pending_messages: &mut VecDeque<PendingMessage>, error: &str) {

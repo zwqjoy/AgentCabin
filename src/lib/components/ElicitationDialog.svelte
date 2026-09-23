@@ -8,8 +8,10 @@
     encodePiBatchAskResponse,
     parsePiBatchAskEnvelope,
     type PiBatchAnswer,
-    type PiBatchQuestion,
   } from "$lib/utils/pi-batch-ask";
+  import QuestionPromptCard, {
+    type QuestionPrompt,
+  } from "$lib/components/QuestionPromptCard.svelte";
 
   let {
     elicitations,
@@ -81,6 +83,64 @@
       ),
   );
   let piPermissionOptions = $derived(current?.requestedSchema?.properties?.value?.enum ?? []);
+  const nativePiAsk = $derived.by(() => {
+    if (
+      !isPiExtensionPrompt ||
+      current?.requestedSchema?.properties?.value?.enum == null ||
+      current.mode !== "pi_extension_select" ||
+      isPiPermissionSelect
+    ) {
+      return null;
+    }
+    const rawOptions = current.requestedSchema.properties.value.enum;
+    if (rawOptions.length < 2 || rawOptions.some((option) => !/^\d+\.\s/.test(option))) {
+      return null;
+    }
+    const sentinel = rawOptions.at(-1) ?? "";
+    if (!/(something|other|自定义|自行输入|其他)/i.test(sentinel)) return null;
+    const message = (current.message ?? "").split("\n\n---")[0];
+    const firstLine = message.split("\n")[0] ?? "";
+    const headerMatch = firstLine.match(/^\[([^\]]+)\]\s*/);
+    const question = message.replace(/^\[[^\]]+\]\s*/, "").trim();
+    return {
+      type: "select" as const,
+      question: question || firstLine,
+      header: headerMatch?.[1],
+      options: rawOptions.map((raw, index) => {
+        const optionText = raw.replace(/^\d+\.\s*/, "");
+        if (index === rawOptions.length - 1) {
+          return { label: "自行输入…", value: raw, description: "输入其他答案" };
+        }
+        const separator = optionText.indexOf(" — ");
+        return {
+          label: separator >= 0 ? optionText.slice(0, separator) : optionText,
+          value: raw,
+          ...(separator >= 0 && optionText.slice(separator + 3)
+            ? { description: optionText.slice(separator + 3) }
+            : {}),
+        };
+      }),
+    };
+  });
+  const nativePiAskInput = $derived.by(() => {
+    if (current?.mode !== "pi_extension_input" || !isPiExtensionPrompt) return null;
+    const message = current.message ?? "";
+    const splitAt = message.indexOf("\n\n");
+    if (
+      splitAt < 0 ||
+      !/(type your answer|输入你的答案|请填写答案)/i.test(message.slice(splitAt))
+    ) {
+      return null;
+    }
+    const prompt = message.slice(0, splitAt);
+    const firstLine = prompt.split("\n")[0] ?? prompt;
+    const headerMatch = firstLine.match(/^\[([^\]]+)\]\s*/);
+    return {
+      question: prompt.replace(/^\[[^\]]+\]\s*/, "").trim(),
+      header: headerMatch?.[1],
+      placeholder: current.requestedSchema?.properties?.value?.title ?? "输入你的答案",
+    };
+  });
 
   // Pi extension hosts may attach an absolute expiry to a request. When that
   // deadline is reached, cancel the request through the same response path as
@@ -111,15 +171,19 @@
 
   // Form state for schema fields
   let formValues = $state<Record<string, unknown>>({});
-  let activeBatchTab = $state(0);
-  type BatchValue = string | string[] | boolean;
-  let batchValues = $state<Record<string, BatchValue>>({});
-  let batchCustom = $state<Record<string, boolean>>({});
-  let batchCustomValues = $state<Record<string, string>>({});
-  const isBatchReviewTab = $derived(
-    batchAsk?.review === true && activeBatchTab >= batchQuestions.length,
+  const sharedBatchQuestions = $derived.by((): QuestionPrompt[] =>
+    batchQuestions.map((question) => ({
+      id: question.id,
+      type: question.type,
+      question: question.question,
+      options: question.options,
+      multiSelect: question.multiSelect,
+      allowOther: question.allowOther,
+      placeholder: question.placeholder,
+      prefill: question.prefill,
+      required: true,
+    })),
   );
-  const activeBatchQuestion = $derived(batchQuestions[activeBatchTab] ?? null);
 
   // Reset form when current elicitation changes
   $effect(() => {
@@ -140,17 +204,6 @@
         }
       }
       formValues = defaults;
-      activeBatchTab = 0;
-      batchValues = {};
-      batchCustom = {};
-      batchCustomValues = {};
-      if (batchAsk) {
-        for (const question of batchAsk.questions) {
-          if (question.type === "editor" && question.prefill !== undefined) {
-            batchValues[question.id] = question.prefill;
-          }
-        }
-      }
     }
   });
 
@@ -247,6 +300,21 @@
     }
   }
 
+  async function handleNativePiAskAnswer(answers: Record<string, string | string[] | boolean>) {
+    if (!current || submitting) return;
+    submitting = true;
+    try {
+      const value = answers.answer;
+      await onRespond(current.requestId, "accept", {
+        value: Array.isArray(value) ? value.join(", ") : String(value ?? ""),
+      });
+    } catch (e) {
+      dbgWarn("ElicitationDialog", "native Pi question response failed", e);
+    } finally {
+      submitting = false;
+    }
+  }
+
   async function openElicitationUrl(href: string) {
     // Protocol whitelist — block file://, javascript://, etc.
     try {
@@ -271,118 +339,45 @@
     return field.type ?? "string";
   }
 
-  function batchQuestionComplete(question: PiBatchQuestion): boolean {
-    const value = batchValues[question.id];
-    if (question.type === "confirm") return typeof value === "boolean";
-    if (question.multiSelect) {
-      return (
-        (Array.isArray(value) && value.some((item) => item.trim().length > 0)) ||
-        (batchCustom[question.id] === true &&
-          (batchCustomValues[question.id] ?? "").trim().length > 0)
-      );
-    }
-    return typeof value === "string" && value.trim().length > 0;
-  }
-
-  const batchComplete = $derived(
-    batchQuestions.length > 0 &&
-      batchQuestions.every((question) => batchQuestionComplete(question)),
-  );
-
-  function setBatchValue(question: PiBatchQuestion, value: BatchValue) {
-    batchValues = { ...batchValues, [question.id]: value };
-  }
-
-  function setBatchCustomValue(question: PiBatchQuestion, value: string) {
-    batchCustomValues = { ...batchCustomValues, [question.id]: value };
-  }
-
-  function setBatchSelectValue(question: PiBatchQuestion, value: string) {
-    if (value === "__other__") {
-      batchCustom = { ...batchCustom, [question.id]: true };
-      if (question.multiSelect && !Array.isArray(batchValues[question.id])) {
-        setBatchValue(question, []);
-      } else if (!question.multiSelect) {
-        setBatchValue(question, "");
-      }
-    } else if (question.multiSelect) {
-      const current: string[] = Array.isArray(batchValues[question.id])
-        ? [...(batchValues[question.id] as string[])]
-        : [];
-      const selected = current.includes(value)
-        ? current.filter((item) => item !== value)
-        : [...current, value];
-      batchCustom = { ...batchCustom, [question.id]: false };
-      setBatchValue(question, selected);
-    } else {
-      batchCustom = { ...batchCustom, [question.id]: false };
-      setBatchValue(question, value);
-    }
-  }
-
-  function batchAnswers(): PiBatchAnswer[] {
-    return batchQuestions.map((question) => {
-      const rawValue = batchValues[question.id];
-      const customValue = batchCustom[question.id] ? (batchCustomValues[question.id] ?? "") : "";
-      const value = question.multiSelect
-        ? [
-            ...(Array.isArray(rawValue) ? rawValue : []),
-            ...(customValue.trim() ? [customValue] : []),
-          ]
-        : rawValue;
-      const answer: PiBatchAnswer = {
-        id: question.id,
-        type: question.type,
-        value: value ?? null,
-      };
-      if (question.type === "select") {
+  async function handleSharedBatchAccept(answers: Record<string, string | string[] | boolean>) {
+    if (!current || !batchAsk || submitting) return;
+    submitting = true;
+    try {
+      const encoded: PiBatchAnswer[] = batchQuestions.map((question) => {
+        const value = answers[question.id] ?? null;
         const values = Array.isArray(value) ? value : [value];
         const labels = values
           .filter((item): item is string => typeof item === "string")
           .map((item) => question.options?.find((option) => option.value === item)?.label ?? item);
-        answer.label = labels.length > 0 ? labels.join(", ") : undefined;
-        answer.wasCustom = batchCustom[question.id] === true;
-      }
-      return answer;
-    });
-  }
-
-  async function handleBatchAccept() {
-    if (!current || !batchAsk || submitting || !batchComplete) return;
-    submitting = true;
-    dbg("ElicitationDialog", "batch accept", { requestId: current.requestId });
-    try {
+        return {
+          id: question.id,
+          type: question.type,
+          value,
+          ...(question.type === "select"
+            ? {
+                label: labels.join(", "),
+                wasCustom: values.some(
+                  (item) =>
+                    typeof item === "string" &&
+                    !(question.options ?? []).some((option) => option.value === item),
+                ),
+              }
+            : {}),
+        };
+      });
       await onRespond(current.requestId, "accept", {
-        value: encodePiBatchAskResponse(batchAnswers()),
+        value: encodePiBatchAskResponse(encoded),
       });
     } catch (e) {
-      dbgWarn("ElicitationDialog", "batch accept error", e);
+      dbgWarn("ElicitationDialog", "shared batch accept error", e);
     } finally {
       submitting = false;
     }
   }
-
-  function goToFirstIncompleteBatchQuestion() {
-    const index = batchQuestions.findIndex((question) => !batchQuestionComplete(question));
-    if (index >= 0) activeBatchTab = index;
-  }
-
-  async function handleBatchPrimaryAction() {
-    if (!batchAsk || submitting) return;
-    if (!batchComplete) {
-      goToFirstIncompleteBatchQuestion();
-      return;
-    }
-    if (batchAsk.review && !isBatchReviewTab) {
-      activeBatchTab = batchQuestions.length;
-      return;
-    }
-    await handleBatchAccept();
-  }
 </script>
 
 {#if current && !isLegacyWorkPlanApproval}
-  <div class="mx-auto w-full py-2 {isWorkSurface ? 'max-w-6xl sm:py-3' : 'max-w-lg'}">
+  <div class="mx-auto w-full py-2 {isWorkSurface ? 'max-w-4xl sm:py-3' : 'max-w-lg'}">
     <div
       class="transition-all animate-in fade-in zoom-in-95 duration-150 {isWorkSurface
         ? 'rounded-3xl border border-border/60 bg-background p-4 shadow-[0_8px_30px_rgb(0_0_0/0.08)] sm:p-5'
@@ -395,7 +390,7 @@
           : isWorkSurface
             ? "Work 需要输入"
             : isPiExtensionPrompt
-              ? "Pi 扩展输入"
+              ? "AgentCabin 内置问题"
               : t("elicitation_title")}
     >
       <!-- Header -->
@@ -418,15 +413,17 @@
                     : isPiConfirm
                       ? "确认操作"
                       : isBatchAsk || isPiExtensionPrompt
-                        ? "Pi 扩展需要输入"
+                        ? "AgentCabin 内置问题"
                         : t("elicitation_title")}
           </div>
           <div class="text-xs text-muted-foreground truncate">
-            {isWorkSurface
-              ? isWorkConfirm
-                ? "Work 权限控制"
-                : "Work 运行时输入"
-              : current.mcpServerName}
+            {isBatchAsk
+              ? "统一问题工具"
+              : isWorkSurface
+                ? isWorkConfirm
+                  ? "Work 权限控制"
+                  : "Work 运行时输入"
+                : current.mcpServerName}
             {#if elicitations.size > 1}
               <span class="ml-1 text-muted-foreground/70">
                 ({t("elicitation_pending", { count: String(elicitations.size) })})
@@ -503,162 +500,45 @@
           </button>
         </div>
       {:else if isBatchAsk}
-        <div class="mb-3 space-y-3">
-          <div class="flex gap-1 overflow-x-auto border-b border-border/40 pb-1">
-            {#each batchQuestions as question, index}
-              <button
-                type="button"
-                class="shrink-0 rounded-md px-2.5 py-1.5 text-[11px] transition-colors
-                  {activeBatchTab === index
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : batchQuestionComplete(question)
-                    ? 'text-foreground/70 hover:bg-accent'
-                    : 'text-muted-foreground hover:bg-accent'}"
-                aria-selected={activeBatchTab === index}
-                onclick={() => (activeBatchTab = index)}
-              >
-                {index + 1}. {question.id}
-                {#if batchQuestionComplete(question)}
-                  <span class="ml-1 text-emerald-500">✓</span>
-                {/if}
-              </button>
-            {/each}
-            {#if batchAsk?.review}
-              <button
-                type="button"
-                class="shrink-0 rounded-md px-2.5 py-1.5 text-[11px] transition-colors
-                  {isBatchReviewTab
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'text-muted-foreground hover:bg-accent'}"
-                aria-selected={isBatchReviewTab}
-                onclick={() => (activeBatchTab = batchQuestions.length)}
-              >
-                审阅
-              </button>
-            {/if}
-          </div>
-
-          {#if isBatchReviewTab}
-            <div class="space-y-2 rounded-lg border border-border/40 bg-muted/20 p-3">
-              {#each batchQuestions as question}
-                <div class="rounded-md border border-border/40 bg-background p-2.5">
-                  <div class="text-[11px] font-medium text-foreground/80">{question.question}</div>
-                  <div class="mt-1 whitespace-pre-wrap text-xs text-foreground">
-                    {String(batchValues[question.id] ?? "")}
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {:else if activeBatchQuestion}
-            <div class="rounded-lg border border-border/40 bg-muted/20 p-3">
-              <div class="mb-2 text-xs font-medium leading-relaxed text-foreground/90">
-                {activeBatchQuestion.question}
-                {#if activeBatchQuestion.type !== "confirm"}
-                  <span class="text-destructive">*</span>
-                {/if}
-              </div>
-
-              {#if activeBatchQuestion.type === "select"}
-                <div class="space-y-2">
-                  {#each activeBatchQuestion.options ?? [] as option}
-                    {@const activeValue = batchValues[activeBatchQuestion.id]}
-                    {@const optionSelected = activeBatchQuestion.multiSelect
-                      ? Array.isArray(activeValue) && activeValue.includes(option.value)
-                      : activeValue === option.value}
-                    <button
-                      type="button"
-                      class="flex w-full items-start justify-between gap-3 rounded-lg border px-3 py-2 text-left text-xs transition-colors
-                        {optionSelected && !batchCustom[activeBatchQuestion.id]
-                        ? 'border-primary/50 bg-primary/5 text-primary'
-                        : 'border-border hover:bg-accent'}"
-                      onclick={() => setBatchSelectValue(activeBatchQuestion, option.value)}
-                    >
-                      <span>{option.label}</span>
-                      {#if option.description}
-                        <span class="text-[10px] text-muted-foreground">{option.description}</span>
-                      {/if}
-                    </button>
-                  {/each}
-                  {#if activeBatchQuestion.allowOther !== false}
-                    <button
-                      type="button"
-                      class="w-full rounded-lg border border-dashed px-3 py-2 text-left text-xs transition-colors hover:bg-accent
-                        {batchCustom[activeBatchQuestion.id]
-                        ? 'border-primary/50 bg-primary/5 text-primary'
-                        : 'border-border text-muted-foreground'}"
-                      onclick={() => setBatchSelectValue(activeBatchQuestion, "__other__")}
-                    >
-                      ✎ 自行输入...
-                    </button>
-                  {/if}
-                  {#if batchCustom[activeBatchQuestion.id]}
-                    <input
-                      type="text"
-                      value={activeBatchQuestion.multiSelect
-                        ? (batchCustomValues[activeBatchQuestion.id] ?? "")
-                        : String(batchValues[activeBatchQuestion.id] ?? "")}
-                      oninput={(e) =>
-                        activeBatchQuestion?.multiSelect
-                          ? setBatchCustomValue(
-                              activeBatchQuestion,
-                              (e.target as HTMLInputElement).value,
-                            )
-                          : setBatchValue(
-                              activeBatchQuestion!,
-                              (e.target as HTMLInputElement).value,
-                            )}
-                      class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
-                      placeholder="请输入自定义答案"
-                    />
-                  {/if}
-                </div>
-              {:else if activeBatchQuestion.type === "confirm"}
-                <div class="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    class="rounded-lg border px-3 py-2 text-xs transition-colors hover:bg-accent
-                      {batchValues[activeBatchQuestion.id] === true
-                      ? 'border-primary/50 bg-primary/5 text-primary'
-                      : 'border-border'}"
-                    onclick={() => setBatchValue(activeBatchQuestion!, true)}
-                  >
-                    是
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg border px-3 py-2 text-xs transition-colors hover:bg-accent
-                      {batchValues[activeBatchQuestion.id] === false
-                      ? 'border-primary/50 bg-primary/5 text-primary'
-                      : 'border-border'}"
-                    onclick={() => setBatchValue(activeBatchQuestion!, false)}
-                  >
-                    否
-                  </button>
-                </div>
-              {:else if activeBatchQuestion.type === "editor"}
-                <textarea
-                  rows="6"
-                  value={String(
-                    batchValues[activeBatchQuestion.id] ?? activeBatchQuestion.prefill ?? "",
-                  )}
-                  oninput={(e) =>
-                    setBatchValue(activeBatchQuestion!, (e.target as HTMLTextAreaElement).value)}
-                  class="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
-                  placeholder={activeBatchQuestion.placeholder ?? "请输入内容"}
-                ></textarea>
-              {:else}
-                <input
-                  type="text"
-                  value={String(batchValues[activeBatchQuestion.id] ?? "")}
-                  oninput={(e) =>
-                    setBatchValue(activeBatchQuestion!, (e.target as HTMLInputElement).value)}
-                  class="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
-                  placeholder={activeBatchQuestion.placeholder ?? "请输入答案"}
-                />
-              {/if}
-            </div>
-          {/if}
-        </div>
+        <QuestionPromptCard
+          embedded
+          questions={sharedBatchQuestions}
+          review={batchAsk?.review === true}
+          onSubmit={handleSharedBatchAccept}
+          onCancel={handleDecline}
+        />
+      {:else if nativePiAsk}
+        <QuestionPromptCard
+          embedded
+          questions={[
+            {
+              id: "answer",
+              type: "select",
+              question: nativePiAsk.question,
+              header: nativePiAsk.header,
+              options: nativePiAsk.options,
+              required: true,
+            },
+          ]}
+          onSubmit={handleNativePiAskAnswer}
+          onCancel={handleDecline}
+        />
+      {:else if nativePiAskInput}
+        <QuestionPromptCard
+          embedded
+          questions={[
+            {
+              id: "answer",
+              type: "input",
+              question: nativePiAskInput.question,
+              header: nativePiAskInput.header,
+              placeholder: nativePiAskInput.placeholder,
+              required: true,
+            },
+          ]}
+          onSubmit={handleNativePiAskAnswer}
+          onCancel={handleDecline}
+        />
       {:else if current.requestedSchema?.properties}
         <div class="mb-3 space-y-3">
           {#each Object.entries(current.requestedSchema.properties) as [key, field]}
@@ -748,24 +628,7 @@
             {submitting ? "..." : isWorkspaceKnowledgeProposal ? "确认保存" : t("statusbar_yes")}
           </button>
         </div>
-      {:else if isBatchAsk}
-        <div class="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
-          <button
-            class="rounded-lg border border-border bg-muted/40 px-4 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-            disabled={submitting}
-            onclick={handleDecline}
-          >
-            取消
-          </button>
-          <button
-            class="rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50"
-            disabled={submitting || !batchComplete}
-            onclick={handleBatchPrimaryAction}
-          >
-            {submitting ? "..." : batchAsk?.review && !isBatchReviewTab ? "去审阅" : "提交"}
-          </button>
-        </div>
-      {:else if !isPiPermissionSelect}
+      {:else if !isPiPermissionSelect && !isBatchAsk && !nativePiAsk && !nativePiAskInput}
         <div class="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
           <button
             class="rounded-lg border border-border bg-muted/40 px-4 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"

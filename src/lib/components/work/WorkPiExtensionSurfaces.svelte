@@ -19,7 +19,13 @@
 
   // Work already owns dedicated surfaces for plan/todo/context/MCP state. Keep
   // those extension implementation details out of the generic host card.
-  const hiddenSurfaceKeys = new Set(["plan-mode", "plan-mode-plan", "todo", "pi-deck-todo"]);
+  const hiddenSurfaceKeys = new Set([
+    "plan-mode",
+    "plan-mode-plan",
+    "todo",
+    "pi-deck-todo",
+    "ask_user_question",
+  ]);
 
   const activeStatuses = $derived.by(() => {
     if (!hostState?.statuses) return [];

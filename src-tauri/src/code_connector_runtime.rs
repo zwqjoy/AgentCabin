@@ -115,26 +115,6 @@ pub fn ensure_code_adapter(paths: &crate::work::paths::WorkPaths) -> Result<Path
     Ok(entry)
 }
 
-/// Provision the AgentCabin-owned structured questionnaire for Code Pi.
-/// Work registers the same public capability in its core extension, so this
-/// adapter is only loaded for Code sessions.
-pub fn ensure_code_ask_questions_adapter(
-    paths: &crate::work::paths::WorkPaths,
-) -> Result<PathBuf, String> {
-    let dir = paths
-        .pi_system_dir()
-        .join("npm")
-        .join("node_modules")
-        .join("agentcabin-ask-questions");
-    std::fs::create_dir_all(&dir).map_err(|error| {
-        format!("Failed to create Code ask_questions adapter directory: {error}")
-    })?;
-    let entry = dir.join("ask_questions.mjs");
-    std::fs::write(&entry, include_str!("work/pi_ask_questions_extension.mjs"))
-        .map_err(|error| format!("Failed to provision Code ask_questions adapter: {error}"))?;
-    Ok(entry)
-}
-
 /// Start the loopback-only authenticated bridge.
 pub async fn start_bridge() -> Result<u16, String> {
     let runtime = state().clone();

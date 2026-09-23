@@ -49,6 +49,17 @@ pub fn run_dir(run_id: &str) -> PathBuf {
     runs_dir().join(run_id)
 }
 
+/// Private working roots for Code tasks that are explicitly not attached to a project.
+pub fn ensure_code_standalone_task_dir(run_id: &str) -> Result<PathBuf, String> {
+    uuid::Uuid::parse_str(run_id).map_err(|_| "Invalid standalone Code task id".to_string())?;
+    let task_dir = data_dir()
+        .join("code")
+        .join("standalone_tasks")
+        .join(run_id);
+    ensure_dir(&task_dir).map_err(|error| error.to_string())?;
+    Ok(task_dir)
+}
+
 /// Resolve the user's home directory reliably.
 /// Primary: `getpwuid()` system call (works even when `$HOME` is unset,
 /// e.g. GUI apps launched from Finder/Dock on macOS 26+).

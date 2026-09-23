@@ -268,16 +268,6 @@ fn build_rpc_args(
         );
     }
     if !isolated_work_profile
-        && settings.pi_todo_enabled
-        && pi_extensions::should_load_explicitly_for_agent_dir(pi_profile_dir, "npm:@pi9/todo")
-    {
-        push_explicit_extension(
-            &mut args,
-            &mut explicit_extensions,
-            bundled_or_registry("@pi9/todo", "npm:@pi9/todo@0.3.7"),
-        );
-    }
-    if !isolated_work_profile
         && settings.pi_context_prune_enabled
         && pi_extensions::should_load_explicitly_for_agent_dir(
             pi_profile_dir,
@@ -537,6 +527,16 @@ async fn spawn_actor_with_launch(
                 }
             }
             let mut read_only_roots = vec![crate::work::paths::WorkPaths::app().work_profile_dir()];
+            // Pi's common system packages are managed outside the isolated
+            // Work profile. Work receives read-only access to that dependency
+            // tree so native interaction extensions and their dependencies
+            // can be resolved without enabling arbitrary host extensions.
+            read_only_roots.push(
+                crate::work::paths::WorkPaths::app()
+                    .pi_system_dir()
+                    .join("npm")
+                    .join("node_modules"),
+            );
             read_only_roots.extend(
                 settings
                     .pi_work_access_roots
@@ -882,6 +882,29 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair == ["-e", "/work/profile/extensions/core.mjs"]));
+    }
+
+    #[test]
+    fn native_interaction_extensions_are_explicit_in_code_and_work_sessions() {
+        for work_profile in [false, true] {
+            let mut settings = make_settings();
+            if work_profile {
+                settings.pi_agent_dir = Some("/work/profile".into());
+            }
+            settings.pi_shared_extension_sources = vec![
+                "/managed/npm/node_modules/@juicesharp/rpiv-ask-user-question".into(),
+                "/managed/npm/node_modules/@juicesharp/rpiv-todo".into(),
+            ];
+
+            let args = build_rpc_args(&settings, None).unwrap();
+
+            for source in &settings.pi_shared_extension_sources {
+                assert!(
+                    args.windows(2).any(|pair| pair == ["-e", source.as_str()]),
+                    "native Pi interaction extension {source} was not explicitly loaded"
+                );
+            }
+        }
     }
 
     #[test]
