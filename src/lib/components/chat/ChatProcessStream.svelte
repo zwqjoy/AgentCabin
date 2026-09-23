@@ -84,8 +84,8 @@
     turn.processBlocks.some((b) => b.type === "interaction"),
   );
 
-  // DSH TurnProcess counts & label
-  const dshProcessSummary = $derived.by(() => {
+  // Turn process counts and label
+  const processSummary = $derived.by(() => {
     let toolCallCount = 0;
     let messageCount = 0;
     let subagentCount = 0;
@@ -117,7 +117,7 @@
 </script>
 
 <div class="w-full py-1">
-  <!-- DSH TurnProcessNodeView: full-width subtle disclosure header without dividing line -->
+  <!-- Full-width turn process disclosure header -->
   {#if hasProcessContent || turn.isRunning}
     <div class="w-full">
       <button
@@ -126,9 +126,9 @@
         aria-expanded={!turn.isCollapsed}
         onclick={() => onToggleCollapse?.()}
       >
-        <span class="truncate">{dshProcessSummary}</span>
+        <span class="truncate">{processSummary}</span>
 
-        <!-- Chevron (DSH: 16px, rotate-0 when open, -rotate-90 when closed) -->
+        <!-- Chevron rotates when the process stream is collapsed -->
         <svg
           class="h-4 w-4 text-muted-foreground/45 shrink-0 ml-1.5 transition-transform duration-150 {!turn.isCollapsed
             ? 'rotate-0'
@@ -147,7 +147,7 @@
     </div>
   {/if}
 
-  <!-- DSH Process Stream: clean flat linear stream without heavy left borders -->
+  <!-- Process stream -->
   {#if !turn.isCollapsed && (hasProcessContent || turn.isRunning)}
     <div class="mt-2 space-y-1 animate-fade-in">
       {#if turn.processBlocks.length === 0 && turn.isRunning}
@@ -163,7 +163,7 @@
             isNarration={true}
           />
         {:else if block.type === "activity-group"}
-          <!-- DSH: Flat individual activity rows -->
+          <!-- Individual activity rows -->
           {#each block.activities as activity (activity.id)}
             {#if renderCustomActivity}
               {@render renderCustomActivity(activity)}

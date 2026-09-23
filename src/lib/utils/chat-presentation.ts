@@ -103,7 +103,7 @@ export interface ChatPresentationTurn {
     durationMs?: number;
   }>;
   turnSemanticSummary: string;
-  /** DSH-style live thought preview extracted from active streaming thinking line */
+  /** Live thought preview extracted from the active streaming thinking line */
   activeThinkingPreview?: string;
   /** Active tool action currently running, if any */
   activeToolPreview?: string;
@@ -115,7 +115,7 @@ export interface ChatPresentationTurn {
 /**
  * Extract the latest meaningful thinking line from streaming or completed reasoning text.
  * Omits markdown formatting (e.g. asterisks, hashes, list prefixes).
- * Inspired by DeepSeek Harness (DSH) ReasoningRow latestLine logic.
+ * Returns the latest meaningful line from reasoning text.
  */
 export function extractLatestThinkingLine(text: string): string {
   if (!text) return "";

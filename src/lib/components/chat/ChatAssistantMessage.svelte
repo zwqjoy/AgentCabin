@@ -56,7 +56,7 @@
       <!-- Icon actions: copy / branch / export -->
       <MessageActionBar {content} {onExport} {onContinueFromMessage} />
 
-      <!-- DSH-style Stats & Usage Pills (TurnUsage, TurnTime, Timestamp) right alongside actions -->
+      <!-- Stats and usage pills alongside message actions -->
       <TurnUsagePill {usage} {model} {durationMs} {timestamp} />
     </div>
   {/if}

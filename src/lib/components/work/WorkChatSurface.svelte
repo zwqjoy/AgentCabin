@@ -2363,7 +2363,7 @@
   }
 
   // ── DSH Details Drawer State ──
-  let dshDetailsDrawerState = $state<{
+  let toolDetailsDrawerState = $state<{
     open: boolean;
     toolName: string;
     args?: unknown;
@@ -2375,14 +2375,14 @@
     toolName: "",
   });
 
-  function openDshToolDetails(
+  function openToolDetails(
     toolName: string,
     args?: unknown,
     result?: unknown,
     isError = false,
     isRunning = false,
   ) {
-    dshDetailsDrawerState = {
+    toolDetailsDrawerState = {
       open: true,
       toolName,
       args,
@@ -2392,8 +2392,8 @@
     };
   }
 
-  function closeDshToolDetails() {
-    dshDetailsDrawerState.open = false;
+  function closeToolDetails() {
+    toolDetailsDrawerState.open = false;
   }
 
   $effect(() => {
@@ -3290,7 +3290,7 @@
                 expandedIntermediateTurns[turn.id] = turn.isCollapsed;
               }}
               renderCustomInteraction={renderWorkInteraction}
-              onOpenDetails={openDshToolDetails}
+              onOpenDetails={openToolDetails}
               error={isLatestTurn && session.run?.status === "failed"
                 ? { message: "运行中断或失败" }
                 : undefined}
@@ -3427,13 +3427,13 @@
     {/if}
     <ToBottomButton visible={!isAutoScroll} onClick={scrollTranscriptToBottom} />
     <DetailsDrawer
-      open={dshDetailsDrawerState.open}
-      toolName={dshDetailsDrawerState.toolName}
-      args={dshDetailsDrawerState.args}
-      result={dshDetailsDrawerState.result}
-      isError={dshDetailsDrawerState.isError}
-      isRunning={dshDetailsDrawerState.isRunning}
-      onClose={closeDshToolDetails}
+      open={toolDetailsDrawerState.open}
+      toolName={toolDetailsDrawerState.toolName}
+      args={toolDetailsDrawerState.args}
+      result={toolDetailsDrawerState.result}
+      isError={toolDetailsDrawerState.isError}
+      isRunning={toolDetailsDrawerState.isRunning}
+      onClose={closeToolDetails}
     />
   </div>
 
