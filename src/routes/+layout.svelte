@@ -1391,6 +1391,7 @@
       pluginActiveSection = v;
     },
   });
+  setContext("codeSelectableFolders", () => selectableFolders);
 
   // Breadcrumb for non-chat pages
   let pageName = $derived.by(() => {
