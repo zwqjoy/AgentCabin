@@ -12,7 +12,7 @@ use crate::web_server::broadcaster::BroadcastEmitter;
 use crate::work::sandbox::{
     ExecutionCommand, WorkSandboxLauncher, WORK_NETWORK_POLICY_ENV, WORK_PROVIDER_NETWORK_POLICY,
 };
-use crate::work::system_packages::{is_pi_subagents_source, is_system_managed_source};
+use crate::work::system_packages::is_system_managed_source;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -158,23 +158,12 @@ fn build_rpc_args(
             push_explicit_extension(&mut args, &mut explicit_extensions, adapter);
         }
         for source in &settings.pi_work_package_sources {
-            // pi-subagents is provisioned as a Work system package, but its
-            // extension entry still has to be loaded in the isolated Pi
-            // process: the Work adapter is only an RPC client and the package
-            // owns the request listener/executor.
-            if is_system_managed_source(source) && !is_pi_subagents_source(source) {
+            if is_system_managed_source(source) {
                 continue;
             }
             if !source.trim().is_empty() {
                 push_explicit_extension(&mut args, &mut explicit_extensions, source);
             }
-        }
-        if let Some(adapter) = settings
-            .pi_work_subagents_adapter
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            push_explicit_extension(&mut args, &mut explicit_extensions, adapter);
         }
         if let Some(adapter) = settings
             .pi_work_mcp_adapter
@@ -274,16 +263,6 @@ fn build_rpc_args(
             &mut args,
             &mut explicit_extensions,
             bundled_or_registry("pi-context-prune", "npm:pi-context-prune@1.4.0"),
-        );
-    }
-    if !isolated_work_profile
-        && settings.pi_subagents_enabled
-        && pi_extensions::should_load_explicitly_for_agent_dir(pi_profile_dir, "npm:pi-subagents")
-    {
-        push_explicit_extension(
-            &mut args,
-            &mut explicit_extensions,
-            bundled_or_registry("pi-subagents", "npm:pi-subagents@0.51.0"),
         );
     }
     // Multi-edit is part of the managed Pi Code runtime, not a user extension.
@@ -442,21 +421,6 @@ async fn spawn_actor_with_launch(
     }
     crate::agent::pi_permission::sync_for_spawn(settings, &permission_env);
     let args = build_rpc_args(settings, launch.as_ref())?;
-    if settings.pi_provider.is_some() || !settings.global_providers.is_empty() {
-        if let Some(code_profile_dir) = settings.pi_code_profile_dir.as_deref() {
-            // pi-subagents starts fresh Pi processes; make the same explicit
-            // extension set available to children through their profile defaults.
-            let extension_sources = args
-                .windows(2)
-                .filter(|pair| pair[0] == "-e")
-                .map(|pair| pair[1].clone())
-                .collect::<Vec<_>>();
-            pi_provider_bridge::enable_for_subagents(
-                &PathBuf::from(code_profile_dir),
-                &extension_sources,
-            )?;
-        }
-    }
 
     log::debug!(
         "[pi_rpc_actor] spawn: run_id={}, binary={}, args={:?}, cwd={}",
@@ -576,7 +540,6 @@ async fn spawn_actor_with_launch(
                 .chain(settings.pi_work_extension.iter())
                 .chain(settings.pi_work_mcp_adapter.iter())
                 .chain(settings.pi_work_browser_adapter.iter())
-                .chain(settings.pi_work_subagents_adapter.iter())
             {
                 if source.starts_with('/') {
                     read_only_roots.push(PathBuf::from(source));
@@ -829,7 +792,6 @@ mod tests {
             pi_work_extension: None,
             pi_work_mcp_adapter: None,
             pi_work_browser_adapter: None,
-            pi_work_subagents_adapter: None,
             pi_shared_extension_sources: vec![],
             pi_work_package_sources: vec![],
             pi_work_skill_sources: vec![],
@@ -841,7 +803,6 @@ mod tests {
             pi_plan_mode_enabled: false,
             pi_goal_enabled: false,
             pi_context_prune_enabled: false,
-            pi_subagents_enabled: false,
             pi_multi_edit_enabled: false,
             pi_lsp_enabled: false,
             global_providers: vec![],
@@ -993,11 +954,11 @@ mod tests {
     }
 
     #[test]
-    fn work_loads_the_managed_pi_subagents_rpc_extension() {
+    fn work_loads_arbitrary_package_sources_in_rpc_extension() {
         let mut settings = make_settings();
         settings.pi_agent_dir = Some("/work/profile".into());
         settings.pi_work_package_sources = vec![
-            "npm:pi-subagents@0.51.0".into(),
+            "npm:@acme/pi-custom@1.0.0".into(),
             "npm:pi-mcp-adapter@2.22.0".into(),
             "npm:pi-web-access@0.23.0".into(),
         ];
@@ -1006,7 +967,7 @@ mod tests {
 
         assert!(args
             .windows(2)
-            .any(|pair| pair == ["-e", "npm:pi-subagents@0.51.0"]));
+            .any(|pair| pair == ["-e", "npm:@acme/pi-custom@1.0.0"]));
         assert!(!args
             .windows(2)
             .any(|pair| pair == ["-e", "npm:pi-mcp-adapter@2.22.0"]));
@@ -1023,7 +984,6 @@ mod tests {
         settings.pi_plan_mode_enabled = true;
         settings.pi_goal_enabled = true;
         settings.pi_context_prune_enabled = true;
-        settings.pi_subagents_enabled = true;
         settings.pi_multi_edit_enabled = true;
         settings.pi_lsp_enabled = true;
 
@@ -1034,7 +994,6 @@ mod tests {
             "npm:@narumitw/pi-goal",
             "npm:@narumitw/pi-plan-mode",
             "npm:pi-context-prune",
-            "npm:pi-subagents",
             "npm:pi-mono-multi-edit",
             "npm:@narumitw/pi-lsp",
         ] {
@@ -1086,19 +1045,6 @@ mod tests {
     }
 
     #[test]
-    fn code_and_work_share_the_same_subagents_package() {
-        let mut settings = make_settings();
-        settings.pi_subagents_enabled = true;
-
-        let args = build_rpc_args(&settings, None).unwrap();
-
-        assert_explicit_extension(&args, "pi-subagents", "npm:pi-subagents@0.51.0");
-        assert!(!args
-            .iter()
-            .any(|arg| arg.contains("@narumitw/pi-subagents")));
-    }
-
-    #[test]
     fn pinned_extensions_resolve_to_the_bundled_copy_when_present() {
         // Guards the `bundled_or_registry` preference: a checked-out tree or a
         // packaged app ships every pinned extension, so Pi must never be given a
@@ -1113,7 +1059,6 @@ mod tests {
                 "@narumitw/pi-plan-mode",
                 "npm:@narumitw/pi-plan-mode@0.56.0",
             ),
-            ("pi-subagents", "npm:pi-subagents@0.51.0"),
             ("pi-mono-multi-edit", "npm:pi-mono-multi-edit@2.0.0"),
         ] {
             let source = bundled_or_registry(package_name, registry_source);
@@ -1238,27 +1183,6 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair == ["-e", "/work/profile/extensions/browser.mjs"]));
-        assert!(args
-            .windows(2)
-            .any(|pair| pair == ["--session", "existing-work-session"]));
-    }
-
-    #[test]
-    fn work_subagents_adapter_is_explicitly_loaded_and_reloaded_on_resume() {
-        let mut settings = make_settings();
-        settings.pi_agent_dir = Some("/work/profile".into());
-        settings.pi_work_extension = Some("/work/profile/extensions/core.mjs".into());
-        settings.pi_work_subagents_adapter = Some("/work/profile/extensions/subagents.mjs".into());
-
-        let args = build_rpc_args(
-            &settings,
-            Some(&PiSessionLaunch::Resume("existing-work-session".into())),
-        )
-        .unwrap();
-
-        assert!(args
-            .windows(2)
-            .any(|pair| pair == ["-e", "/work/profile/extensions/subagents.mjs"]));
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--session", "existing-work-session"]));

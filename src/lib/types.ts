@@ -598,8 +598,6 @@ export interface AgentSettings {
   pi_goal_enabled?: boolean;
   /** Pi `-e npm:pi-context-prune` — load optional context pruning. Disabled by default. */
   pi_context_prune_enabled?: boolean;
-  /** Pi `-e npm:pi-subagents` — load the shared Code/Work delegation extension. */
-  pi_subagents_enabled?: boolean;
   /** Legacy compatibility field; Pi Code always loads system-managed multi-edit. */
   pi_multi_edit_enabled?: boolean;
   /** Pi `-e npm:@narumitw/pi-lsp` — load Language Server Protocol (LSP) code intelligence. */

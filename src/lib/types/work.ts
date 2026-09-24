@@ -830,13 +830,7 @@ export interface WorkProjection {
   updatedAt: string;
 }
 
-export type WorkRecoveryAction =
-  | "continue"
-  | "retry"
-  | "verify"
-  | "retry_subagent"
-  | "from_scratch"
-  | "cancel";
+export type WorkRecoveryAction = "continue" | "retry" | "verify" | "from_scratch" | "cancel";
 
 export interface WorkRunRecovery {
   taskId: string;
@@ -994,8 +988,6 @@ export type RuntimeLiveness = "alive" | "dead" | "disconnected" | "alive_but_sta
 export interface WorkRunBudgetView {
   toolCallsUsed?: number | null;
   toolCallsLimit?: number | null;
-  subagentSpawnsUsed?: number | null;
-  subagentSpawnsLimit?: number | null;
   isAnyWarning?: boolean;
   isAnyExceeded?: boolean;
 }
@@ -1015,7 +1007,6 @@ export type GuardianAnomalyKind =
   | "duplicate_tool"
   | "tool_failure_streak"
   | "budget_exceeded"
-  | "subagent_health"
   | "provider_degraded";
 
 export interface GuardianConfig {
@@ -1024,7 +1015,6 @@ export interface GuardianConfig {
   maxDuplicateCalls: number;
   maxFailureStreak: number;
   maxToolCalls?: number;
-  maxSubagentSpawns?: number;
   maxSteeringNudges?: number;
   maxAutomatedSteps?: number | null;
 }

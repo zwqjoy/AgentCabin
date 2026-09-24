@@ -550,27 +550,7 @@ pub(crate) fn resolve_subagents(
         }
     }
 
-    // 2. Overlay live in-memory registry (scoped to matching task_id if present)
-    let live_records = crate::work::subagents::registry().list_for_scope(run_id);
-    for r in live_records {
-        if let Some(ref record_task) = r.task_id {
-            if record_task != task_id {
-                continue;
-            }
-        }
-        map.insert(
-            r.agent_id.clone(),
-            WorkProgressAgent {
-                agent_id: r.agent_id,
-                child_index: r.child_index,
-                role: r.role,
-                status: r.status,
-                result_summary: r.result_summary,
-                error: r.error,
-            },
-        );
-    }
-
+    // Historical facts replay is preserved for read-only backwards compatibility
     let mut list: Vec<WorkProgressAgent> = map.into_values().collect();
     list.sort_by_key(|a| a.child_index);
     Ok(list)

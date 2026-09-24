@@ -1376,7 +1376,6 @@ mod tests {
         assert!(validate_shared_pi_source("npm:pi-mcp-adapter").is_err());
         assert!(validate_shared_pi_source("pi-mcp-adapter@2.22.0").is_err());
         assert!(validate_shared_pi_source("npm:@gotgenes/pi-permission-system").is_err());
-        assert!(validate_shared_pi_source("npm:pi-subagents").is_err());
         assert!(validate_shared_pi_source("npm:@narumitw/pi-plan-mode").is_err());
         assert!(validate_shared_pi_source("npm:pi-mono-multi-edit").is_err());
         assert!(validate_shared_pi_source("npm:@narumitw/pi-lsp").is_err());

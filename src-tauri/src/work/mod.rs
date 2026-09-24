@@ -37,7 +37,6 @@ pub mod runtime;
 pub mod sandbox;
 pub mod scheduler;
 pub mod session;
-pub mod subagents;
 pub mod system_packages;
 pub mod task_state;
 pub mod tasks;

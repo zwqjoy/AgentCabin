@@ -2,7 +2,7 @@
 //!
 //! Pure functional evaluation module that analyzes `RuntimeFact`s in the Ledger
 //! to identify stalls, duplicate tool loops, failure streaks, budget overflows,
-//! subagent runaways, and runtime liveness changes.
+//! and runtime liveness changes.
 //!
 //! Guardian is strictly a detect/diagnose component. It NEVER performs
 //! blind retries, duplicate recovery logic, or second state machine authority.
@@ -261,7 +261,7 @@ impl Guardian {
             anomalies.push(streak_result);
         }
 
-        // 4. Optional tool/subagent limit detection. Liveness and failure
+        // 4. Optional tool limit detection. Liveness and failure
         // diagnostics remain enabled by default; no total-duration budget is
         // applied to Work runs.
         let mut budget_view = WorkRunBudgetView::default();
@@ -329,75 +329,18 @@ impl Guardian {
             }
         }
 
-        // 4b. Subagent Spawns Budget
-        let subagent_count = facts
-            .iter()
-            .filter(|f| matches!(f, RuntimeFact::SubagentSpawned { .. }))
-            .count() as u32;
-        budget_view.subagent_spawns_used = Some(subagent_count);
-
-        if let Some(max_subagents) = config.max_subagent_spawns {
-            budget_view.subagent_spawns_limit = Some(max_subagents);
-            if subagent_count >= max_subagents {
-                health = RunHealth::NeedsAttention;
-                let reason = format!(
-                    "子代理委派总数（{} 个）已达到最大预算（{} 个）",
-                    subagent_count, max_subagents
-                );
-                health_reason = Some(reason.clone());
-                anomalies.push(GuardianEvaluationResult {
-                    anomaly_kind: GuardianAnomalyKind::BudgetExceeded,
-                    step_id: find_current_step_id(facts),
-                    tool_call_id: None,
-                    reason,
-                    threshold: Some(format!("max_subagent_spawns={max_subagents}")),
-                    suggested_action: Some("避免继续委派新子代理，复用现有子任务结果".to_string()),
-                    is_critical: true,
-                });
-
-                let already_exceeded = facts.iter().any(|f| match f {
-                    RuntimeFact::BudgetExceeded { budget_kind, .. } => {
-                        budget_kind == "subagent_spawns"
-                    }
-                    _ => false,
-                });
-                if !already_exceeded {
-                    new_facts.push(RuntimeFact::BudgetExceeded {
-                        budget_kind: "subagent_spawns".to_string(),
-                        used: subagent_count as u64,
-                        limit: max_subagents as u64,
-                        timestamp: now_iso.to_string(),
-                    });
-                }
-            }
-        }
-
         let is_any_exceeded = anomalies
             .iter()
             .any(|a| a.anomaly_kind == GuardianAnomalyKind::BudgetExceeded);
-        let is_any_warning = (budget_view.tool_calls_used.is_some()
+        let is_any_warning = budget_view.tool_calls_used.is_some()
             && budget_view.tool_calls_limit.is_some()
             && budget_view.tool_calls_used.unwrap_or(0)
-                >= (budget_view.tool_calls_limit.unwrap_or(u32::MAX) * 8 / 10))
-            || (budget_view.subagent_spawns_used.is_some()
-                && budget_view.subagent_spawns_limit.is_some()
-                && budget_view.subagent_spawns_used.unwrap_or(0)
-                    >= (budget_view.subagent_spawns_limit.unwrap_or(u32::MAX) * 8 / 10));
+                >= (budget_view.tool_calls_limit.unwrap_or(u32::MAX) * 8 / 10);
 
         budget_view.is_any_exceeded = is_any_exceeded;
         budget_view.is_any_warning = is_any_warning && !is_any_exceeded;
 
-        // 5. Subagent Health Detection
-        if let Some(subagent_anomaly) = check_subagent_health(facts, run_status) {
-            warning_count += 1;
-            if health == RunHealth::Healthy || health == RunHealth::Warning {
-                health = RunHealth::NeedsAttention;
-                health_reason = Some(subagent_anomaly.reason.clone());
-            }
-            anomalies.push(subagent_anomaly);
-        }
-
-        // 6. Provider Degraded Detection
+        // 5. Provider Degraded Detection
         if let Some(provider_result) = check_provider_degraded(facts) {
             warning_count += 1;
             if health == RunHealth::Healthy || health == RunHealth::Warning {
@@ -835,45 +778,6 @@ fn check_failure_streak(
     }
 }
 
-fn check_subagent_health(
-    facts: &[RuntimeFact],
-    parent_status: WorkRunStatus,
-) -> Option<GuardianEvaluationResult> {
-    // If parent is terminal, check if any subagent spawned without terminal fact
-    if !parent_status.is_active() {
-        let mut uncompleted = Vec::new();
-        for fact in facts {
-            match fact {
-                RuntimeFact::SubagentSpawned { agent_id, role, .. } => {
-                    uncompleted.push((agent_id.clone(), role.clone()));
-                }
-                RuntimeFact::SubagentCompleted { agent_id, .. }
-                | RuntimeFact::SubagentFailed { agent_id, .. }
-                | RuntimeFact::SubagentInterrupted { agent_id, .. } => {
-                    uncompleted.retain(|(id, _)| id != agent_id);
-                }
-                _ => {}
-            }
-        }
-        if !uncompleted.is_empty() {
-            let names: Vec<String> = uncompleted
-                .into_iter()
-                .map(|(id, r)| format!("{r}({id})"))
-                .collect();
-            return Some(GuardianEvaluationResult {
-                anomaly_kind: GuardianAnomalyKind::SubagentHealth,
-                step_id: find_current_step_id(facts),
-                tool_call_id: None,
-                reason: format!("父任务已终态，但仍有子代理未完成：{}", names.join("、")),
-                threshold: Some("orphan_subagent".to_string()),
-                suggested_action: Some("子任务需要被中断或等待终态记录".to_string()),
-                is_critical: true,
-            });
-        }
-    }
-    None
-}
-
 fn check_provider_degraded(facts: &[RuntimeFact]) -> Option<GuardianEvaluationResult> {
     let mut consecutive_failures = Vec::new();
     for fact in facts.iter().rev() {
@@ -1174,7 +1078,6 @@ mod tests {
             None,
         );
         assert!(report.budget_view.tool_calls_limit.is_none());
-        assert!(report.budget_view.subagent_spawns_limit.is_none());
         assert!(!report.budget_view.is_any_warning);
         assert!(!report.budget_view.is_any_exceeded);
         assert!(!report

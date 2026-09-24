@@ -387,8 +387,6 @@ pub fn run() {
             commands::work::work_get_run_recovery,
             commands::work::work_recover_run,
             commands::work::work_verify_recovered_output,
-            commands::work::work_retry_subagent,
-            commands::work::work_list_subagents,
             commands::work::work_create_inbox_item,
             commands::work::work_get_inbox_item,
             commands::work::work_get_inbox_session_run,

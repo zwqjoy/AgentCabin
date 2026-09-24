@@ -21,7 +21,6 @@ import {
   canOpenWorkSessionTree,
   getWorkComposerCapabilities,
   isWorkDiagnosticTimelineEntry,
-  isWorkSubagentActivityEvent,
 } from "$lib/work/pi-work-runtime";
 
 const WORK_LOAD_TIMEOUT_MS = 15_000;
@@ -95,15 +94,6 @@ export class WorkSessionStore {
   /** Work transcript projection: hide transport diagnostics before the UI sees them. */
   get visibleTimeline(): TimelineEntry[] {
     return this.session.timeline.filter((entry) => !isWorkDiagnosticTimelineEntry(entry));
-  }
-
-  /**
-   * Expose Work activity invalidation based on runtime-specific subagent events.
-   */
-  subscribeSubagentActivity(callback: () => void): () => void {
-    return this.middleware.subscribeEvents((event) => {
-      if (isWorkSubagentActivityEvent(event)) callback();
-    });
   }
 
   async startMiddleware(): Promise<void> {

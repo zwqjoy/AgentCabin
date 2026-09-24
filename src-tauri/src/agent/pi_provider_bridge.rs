@@ -10,7 +10,7 @@ use crate::models::{GlobalProviderCredential, GlobalProviderModel, PiProviderCre
 use crate::storage;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub(crate) const API_KEY_ENV: &str = "AGENTCABIN_PI_API_KEY";
 const BASE_URL_ENV: &str = "AGENTCABIN_PI_BASE_URL";
@@ -23,61 +23,6 @@ const BRIDGE_FILE_NAME: &str = "pi-provider-bridge.mjs";
 /// AgentCabin runtime asset, not a user Pi extension.
 pub(crate) fn bridge_path() -> PathBuf {
     storage::data_dir().join(BRIDGE_FILE_NAME)
-}
-
-/// Add the managed provider bridge to Pi's default subagent extension set.
-/// Subagents are separate Pi processes, so loading this extension in the parent
-/// session does not register managed providers in their model registry.
-pub(crate) fn enable_for_subagents(
-    agent_dir: &Path,
-    extension_sources: &[String],
-) -> Result<(), String> {
-    let settings_path = agent_dir.join("settings.json");
-    let mut settings = if settings_path.is_file() {
-        let contents = std::fs::read_to_string(&settings_path).map_err(|error| {
-            format!("Failed to read Pi settings for subagent provider bridge: {error}")
-        })?;
-        serde_json::from_str::<Value>(&contents).map_err(|error| {
-            format!("Failed to parse Pi settings for subagent provider bridge: {error}")
-        })?
-    } else {
-        json!({})
-    };
-
-    let root = settings
-        .as_object_mut()
-        .ok_or_else(|| "Pi settings must be a JSON object".to_string())?;
-    let subagents = root
-        .entry("subagents".to_string())
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .ok_or_else(|| "Pi settings 'subagents' value must be an object".to_string())?;
-    let extensions = subagents
-        .entry("defaultExtensions".to_string())
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-        .ok_or_else(|| "Pi settings 'subagents.defaultExtensions' must be an array".to_string())?;
-
-    let mut changed = false;
-    for source in extension_sources {
-        let source = source.trim();
-        if !source.is_empty()
-            && !extensions
-                .iter()
-                .any(|entry| entry.as_str() == Some(source))
-        {
-            extensions.push(Value::String(source.to_string()));
-            changed = true;
-        }
-    }
-    if changed {
-        let contents = serde_json::to_string_pretty(&settings)
-            .map_err(|error| format!("Failed to serialize Pi subagent settings: {error}"))?;
-        std::fs::write(&settings_path, contents)
-            .map_err(|error| format!("Failed to update Pi subagent settings: {error}"))?;
-    }
-
-    Ok(())
 }
 
 const BRIDGE_SOURCE: &str = r#"const providersJson = process.env.AGENTCABIN_PI_PROVIDERS_JSON;

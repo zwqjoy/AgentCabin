@@ -143,7 +143,7 @@
         <div class="grid gap-2 md:grid-cols-2">
           {#each activeWidgets as widget (widget.key)}
             <div class="min-w-0 rounded-lg border border-border/60 bg-background/55 p-2">
-              {#if widget.key !== "default" && widget.key !== "subagent-async"}
+              {#if widget.key !== "default"}
                 <div class="mb-1 truncate text-[11px] font-medium text-muted-foreground">
                   {widget.key}
                 </div>

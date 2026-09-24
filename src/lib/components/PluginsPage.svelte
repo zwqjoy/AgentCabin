@@ -2310,10 +2310,6 @@
       description: "多步任务清单与逐项完成状态",
     },
     {
-      label: "Subagents delegation",
-      description: "多智能体委派与后台协作",
-    },
-    {
       label: "LSP code intelligence",
       description: "语言服务器代码智能 (LSP)",
     },
@@ -2344,12 +2340,6 @@
       label: "Todo progress",
       description: "多步任务清单与逐项完成状态",
       source: "@juicesharp/rpiv-todo",
-      mode: "常驻",
-    },
-    {
-      label: "Subagents",
-      description: "受 Work 策略约束的后台委派与协作",
-      source: "pi-subagents + Work adapter",
       mode: "常驻",
     },
     {

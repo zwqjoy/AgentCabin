@@ -3,8 +3,7 @@
 //! Common MCP packages are installed once under `~/.agentcabin/pi/system` and
 //! injected through mode-specific adapters. Native Web is backend-owned; the
 //! legacy `pi-web-access` source remains reserved only to prevent stale
-//! profiles from loading a second provider. Work-only packages (such as
-//! subagents) remain in the Work profile.
+//! profiles from loading a second provider.
 
 use std::ffi::OsString;
 use std::fs;
@@ -31,10 +30,6 @@ pub const PI_WEB_ACCESS_PACKAGE_NAME: &str = "pi-web-access";
 /// provisioned or loaded by AgentCabin.
 pub const PI_WEB_ACCESS_VERSION: &str = "0.23.0";
 pub const PI_WEB_ACCESS_SOURCE: &str = "npm:pi-web-access@0.23.0";
-
-pub const PI_SUBAGENTS_PACKAGE_NAME: &str = "pi-subagents";
-pub const PI_SUBAGENTS_VERSION: &str = "0.51.0";
-pub const PI_SUBAGENTS_SOURCE: &str = "npm:pi-subagents@0.51.0";
 
 pub const PI_ASK_USER_QUESTION_PACKAGE_NAME: &str = "@juicesharp/rpiv-ask-user-question";
 pub const PI_ASK_USER_QUESTION_VERSION: &str = "2.11.0";
@@ -105,19 +100,9 @@ pub fn is_pi_web_access_source(source: &str) -> bool {
         )
 }
 
-pub fn is_pi_subagents_source(source: &str) -> bool {
-    let normalized = source.trim().strip_prefix("npm:").unwrap_or(source.trim());
-    package_reference_matches(normalized, PI_SUBAGENTS_PACKAGE_NAME)
-        || package_reference_matches(
-            final_reference_segment(normalized),
-            PI_SUBAGENTS_PACKAGE_NAME,
-        )
-}
-
 pub fn is_system_managed_source(source: &str) -> bool {
     is_pi_mcp_adapter_source(source)
         || is_pi_web_access_source(source)
-        || is_pi_subagents_source(source)
         || is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME)
         || is_package_source(source, PI_TODO_PACKAGE_NAME)
         || is_package_source(source, LEGACY_PI_TODO_PACKAGE_NAME)
@@ -163,8 +148,6 @@ pub fn common_system_package_entry_path(paths: &WorkPaths, package_name: &str) -
 fn managed_package_name(source: &str) -> Option<&'static str> {
     if is_pi_mcp_adapter_source(source) {
         Some(PI_MCP_ADAPTER_PACKAGE_NAME)
-    } else if is_pi_subagents_source(source) {
-        Some(PI_SUBAGENTS_PACKAGE_NAME)
     } else if is_pi_web_access_source(source) {
         Some(PI_WEB_ACCESS_PACKAGE_NAME)
     } else if is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME) {
@@ -554,13 +537,6 @@ pub async fn ensure_required_work_packages(paths: &WorkPaths) -> Result<(), Stri
     paths.ensure_layout()?;
     fs::create_dir_all(paths.work_profile_dir().join("npm-cache"))
         .map_err(|error| format!("无法创建 Work Pi npm 缓存目录: {error}"))?;
-    ensure_system_package(
-        paths,
-        PI_SUBAGENTS_PACKAGE_NAME,
-        PI_SUBAGENTS_VERSION,
-        PI_SUBAGENTS_SOURCE,
-    )
-    .await?;
     Ok(())
 }
 
@@ -580,12 +556,6 @@ mod tests {
         assert!(is_pi_web_access_source(
             "https://github.com/nicobailon/pi-web-access"
         ));
-        assert!(is_pi_subagents_source("pi-subagents"));
-        assert!(is_pi_subagents_source("npm:pi-subagents@0.51.0"));
-        assert!(is_pi_subagents_source(
-            "git:github.com/nicobailon/pi-subagents.git"
-        ));
-        assert!(is_system_managed_source("npm:pi-subagents@0.51.0"));
         assert!(is_system_managed_source("npm:pi-web-access@0.23.0"));
         assert!(is_system_managed_source(PI_ASK_USER_QUESTION_SOURCE));
         assert!(is_system_managed_source(PI_TODO_SOURCE));
@@ -594,7 +564,6 @@ mod tests {
         ));
         assert!(is_pi_interaction_source("npm:@pi9/todo@0.3.7"));
         assert!(!is_system_managed_source("npm:@acme/pi-web-access-wrapper"));
-        assert!(!is_system_managed_source("npm:@user/pi-subagents-fork"));
     }
 
     #[test]
@@ -603,44 +572,43 @@ mod tests {
         let paths = WorkPaths::new(temp.path().to_path_buf());
         paths.ensure_layout().unwrap();
 
+        const PKG_NAME: &str = "test-package";
+        const PKG_VERSION: &str = "1.0.0";
+
         // 1. Missing
         assert_eq!(
-            system_package_status(&paths, PI_SUBAGENTS_PACKAGE_NAME, PI_SUBAGENTS_VERSION),
+            system_package_status(&paths, PKG_NAME, PKG_VERSION),
             SystemPackageStatus::Missing
         );
 
         // 2. Corrupted json
-        let manifest = package_manifest_path(&paths.work_profile_dir(), PI_SUBAGENTS_PACKAGE_NAME);
+        let manifest = package_manifest_path(&paths.work_profile_dir(), PKG_NAME);
         fs::create_dir_all(manifest.parent().unwrap()).unwrap();
         fs::write(&manifest, "not valid json").unwrap();
         assert!(matches!(
-            system_package_status(&paths, PI_SUBAGENTS_PACKAGE_NAME, PI_SUBAGENTS_VERSION),
+            system_package_status(&paths, PKG_NAME, PKG_VERSION),
             SystemPackageStatus::Corrupt { .. }
         ));
 
         // 3. Version mismatch
-        fs::write(&manifest, r#"{"name":"pi-subagents","version":"0.50.0"}"#).unwrap();
+        fs::write(&manifest, r#"{"name":"test-package","version":"0.9.0"}"#).unwrap();
         assert_eq!(
-            system_package_status(&paths, PI_SUBAGENTS_PACKAGE_NAME, PI_SUBAGENTS_VERSION),
+            system_package_status(&paths, PKG_NAME, PKG_VERSION),
             SystemPackageStatus::VersionMismatch {
-                installed_version: "0.50.0".into(),
-                expected_version: "0.51.0".into(),
+                installed_version: "0.9.0".into(),
+                expected_version: "1.0.0".into(),
             }
         );
 
         // 4. Exact installed
-        fs::write(&manifest, r#"{"name":"pi-subagents","version":"0.51.0"}"#).unwrap();
+        fs::write(&manifest, r#"{"name":"test-package","version":"1.0.0"}"#).unwrap();
         assert_eq!(
-            system_package_status(&paths, PI_SUBAGENTS_PACKAGE_NAME, PI_SUBAGENTS_VERSION),
+            system_package_status(&paths, PKG_NAME, PKG_VERSION),
             SystemPackageStatus::Installed {
-                version: "0.51.0".into(),
+                version: "1.0.0".into(),
             }
         );
-        assert!(is_package_installed(
-            &paths,
-            PI_SUBAGENTS_PACKAGE_NAME,
-            PI_SUBAGENTS_VERSION
-        ));
+        assert!(is_package_installed(&paths, PKG_NAME, PKG_VERSION));
     }
 
     #[test]
@@ -674,11 +642,11 @@ mod tests {
     #[test]
     fn deploy_bundled_system_package_creates_valid_target_and_updates_status() {
         let temp = TempDir::new().unwrap();
-        let bundled_dir = temp.path().join("mock_bundled").join("pi-subagents");
+        let bundled_dir = temp.path().join("mock_bundled").join("test-package");
         fs::create_dir_all(&bundled_dir).unwrap();
         fs::write(
             bundled_dir.join("package.json"),
-            r#"{"name":"pi-subagents","version":"0.51.0"}"#,
+            r#"{"name":"test-package","version":"1.0.0"}"#,
         )
         .unwrap();
         fs::write(bundled_dir.join("index.ts"), "export default {};").unwrap();
@@ -690,11 +658,11 @@ mod tests {
             .work_profile_dir()
             .join("npm")
             .join("node_modules")
-            .join(PI_SUBAGENTS_PACKAGE_NAME);
+            .join("test-package");
 
         // Before deploy, it must be Missing
         assert_eq!(
-            system_package_status(&paths, PI_SUBAGENTS_PACKAGE_NAME, PI_SUBAGENTS_VERSION),
+            system_package_status(&paths, "test-package", "1.0.0"),
             SystemPackageStatus::Missing
         );
 
@@ -703,18 +671,14 @@ mod tests {
 
         // After deploy, status must be Installed
         assert_eq!(
-            system_package_status(&paths, PI_SUBAGENTS_PACKAGE_NAME, PI_SUBAGENTS_VERSION),
+            system_package_status(&paths, "test-package", "1.0.0"),
             SystemPackageStatus::Installed {
-                version: "0.51.0".into(),
+                version: "1.0.0".into(),
             }
         );
 
         // installed_system_package_entry_path must resolve index.ts
-        let entry = installed_system_package_entry_path(
-            &paths,
-            PI_SUBAGENTS_PACKAGE_NAME,
-            PI_SUBAGENTS_VERSION,
-        );
+        let entry = installed_system_package_entry_path(&paths, "test-package", "1.0.0");
         assert_eq!(entry, Some(target_dir.join("index.ts")));
     }
 }

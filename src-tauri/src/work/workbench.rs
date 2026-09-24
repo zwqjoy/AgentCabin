@@ -45,7 +45,6 @@ pub enum WorkBenchFailurePoint {
     LocalWriteThenProcessCrash,
     ExternalCallThenProcessCrash,
     ExternalAdapterFailure,
-    SubagentInterrupted,
     SchedulerDuplicateTrigger,
     TimeoutOrTokenLimit,
     CodeWorkRegression,
@@ -53,7 +52,6 @@ pub enum WorkBenchFailurePoint {
     GuardianStallDetection,
     GuardianDuplicateToolLoop,
     GuardianToolFailureStreak,
-    GuardianSubagentRunaway,
     // Phase 2 P1 additions
     ArtifactEvidenceGeneration,
     ArtifactMutationInvalidation,
@@ -165,12 +163,6 @@ pub const FAILURE_MATRIX: &[WorkBenchCase] = &[
         expected: WorkBenchExpectedOutcome::Failed,
     },
     WorkBenchCase {
-        id: "subagent_interrupted",
-        failure_point: WorkBenchFailurePoint::SubagentInterrupted,
-        layer: WorkBenchLayer::CrashRestartContract,
-        expected: WorkBenchExpectedOutcome::Recoverable,
-    },
-    WorkBenchCase {
         id: "scheduler_duplicate_trigger",
         failure_point: WorkBenchFailurePoint::SchedulerDuplicateTrigger,
         layer: WorkBenchLayer::RustRuntimeContract,
@@ -204,12 +196,6 @@ pub const FAILURE_MATRIX: &[WorkBenchCase] = &[
     WorkBenchCase {
         id: "guardian_tool_failure_streak",
         failure_point: WorkBenchFailurePoint::GuardianToolFailureStreak,
-        layer: WorkBenchLayer::RustRuntimeContract,
-        expected: WorkBenchExpectedOutcome::Recoverable,
-    },
-    WorkBenchCase {
-        id: "guardian_subagent_runaway",
-        failure_point: WorkBenchFailurePoint::GuardianSubagentRunaway,
         layer: WorkBenchLayer::RustRuntimeContract,
         expected: WorkBenchExpectedOutcome::Recoverable,
     },
@@ -616,33 +602,6 @@ impl WorkBenchRunner {
                 }
             }
 
-            WorkBenchFailurePoint::SubagentInterrupted => {
-                let task =
-                    task_mgr.create_task(&ws_id, "Subagent Interrupt", "instructions", None)?;
-                let run = task_mgr.start_run(&task.id, None, WorkRunTrigger::Manual)?;
-                let ledger = WorkRuntimeLedger::open(paths, &task.id, &run.id)?;
-
-                ledger.record(&RuntimeFact::SubagentSpawned {
-                    agent_id: "sub-1".to_string(),
-                    provider_run_id: "prun-1".to_string(),
-                    child_index: 0,
-                    role: "worker".to_string(),
-                    task_digest: "digest-1".to_string(),
-                    launch_contract_digest: "contract-1".to_string(),
-                    status: "running".to_string(),
-                    timestamp: crate::models::now_iso(),
-                })?;
-
-                controller.reconcile_on_restart()?;
-                let reloaded_run = task_mgr.get_run(&task.id, &run.id)?;
-
-                actual_outcome = format!("{:?}", reloaded_run.status);
-                if reloaded_run.status == WorkRunStatus::Recoverable {
-                    passed = true;
-                    assertions_passed.push("interrupted_subagent_reconciled".to_string());
-                }
-            }
-
             WorkBenchFailurePoint::SchedulerDuplicateTrigger => {
                 let mut task =
                     task_mgr.create_task(&ws_id, "Scheduler Dup", "instructions", None)?;
@@ -896,57 +855,6 @@ impl WorkBenchRunner {
                 }
             }
 
-            // Phase 1 Guardian Anomaly 4: Guardian Subagent Runaway
-            WorkBenchFailurePoint::GuardianSubagentRunaway => {
-                let task =
-                    task_mgr.create_task(&ws_id, "Subagent Runaway Task", "instructions", None)?;
-                let run = task_mgr.start_run(&task.id, None, WorkRunTrigger::Manual)?;
-                let ledger = WorkRuntimeLedger::open(paths, &task.id, &run.id)?;
-
-                ledger.record(&RuntimeFact::RunStarted {
-                    task_id: task.id.clone(),
-                    work_run_id: run.id.clone(),
-                    execution_context: ExecutionContext::Attended,
-                    collaboration_mode: CollaborationMode::Default,
-                    timestamp: "2026-08-28T12:00:00Z".to_string(),
-                })?;
-                ledger.record(&RuntimeFact::SubagentSpawned {
-                    agent_id: "child-runaway-1".to_string(),
-                    provider_run_id: "prun-1".to_string(),
-                    child_index: 0,
-                    role: "worker".to_string(),
-                    task_digest: "digest-runaway".to_string(),
-                    launch_contract_digest: "contract-runaway".to_string(),
-                    status: "running".to_string(),
-                    timestamp: "2026-08-28T12:00:01Z".to_string(),
-                })?;
-
-                let config = GuardianConfig::default();
-
-                // Evaluate when parent has become Failed (terminal)
-                let report = Guardian::evaluate_health(
-                    &ledger.list_facts()?,
-                    WorkRunStatus::Failed,
-                    &config,
-                    "2026-08-28T12:00:10Z",
-                    None,
-                );
-
-                if report.health == RunHealth::NeedsAttention
-                    && report
-                        .anomalies
-                        .iter()
-                        .any(|a| a.anomaly_kind == GuardianAnomalyKind::SubagentHealth)
-                {
-                    actual_outcome = "recoverable".to_string();
-                    passed = true;
-                    assertions_passed.push("orphan_subagent_detected_by_guardian".to_string());
-                } else {
-                    actual_outcome = format!("{:?}", report.health);
-                    details = Some("Guardian failed to detect runaway orphan subagent".to_string());
-                }
-            }
-
             // Phase 2 Artifact Evidence
             WorkBenchFailurePoint::ArtifactEvidenceGeneration => {
                 fs::write(ws_dir.join("output/evidence.txt"), "evidence payload")
@@ -1163,7 +1071,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_contains_all_19_release_gates() {
+    fn matrix_contains_all_17_release_gates() {
         let required = [
             "ordinary_file_generation",
             "missing_required_artifact",
@@ -1173,7 +1081,6 @@ mod tests {
             "local_write_then_process_crash",
             "external_call_then_process_crash",
             "mcp_browser_connector_failure",
-            "subagent_interrupted",
             "scheduler_duplicate_trigger",
             "timeout_token_limit",
             "code_work_regression",
@@ -1181,14 +1088,13 @@ mod tests {
             "guardian_stall_detection",
             "guardian_duplicate_tool_loop",
             "guardian_tool_failure_streak",
-            "guardian_subagent_runaway",
             // P2 Artifact Integrity Cases
             "artifact_evidence_generation",
             "artifact_mutation_invalidation",
             "source_provenance_binding",
         ];
 
-        assert_eq!(failure_matrix().len(), 19);
+        assert_eq!(failure_matrix().len(), 17);
         assert_eq!(failure_matrix().len(), required.len());
         for id in required {
             assert!(
@@ -1305,19 +1211,19 @@ mod tests {
     }
 
     #[test]
-    fn workbench_runner_executes_all_19_cases_successfully() {
+    fn workbench_runner_executes_all_17_cases_successfully() {
         let temp = TempDir::new().unwrap();
         let paths = WorkPaths::new(temp.path().join("workbench_data"));
 
         let report = WorkBenchRunner::run_all(&paths).unwrap();
-        assert_eq!(report.total_cases, 19);
+        assert_eq!(report.total_cases, 17);
         assert_eq!(report.target_runtime, "pi");
         assert_eq!(report.runtime, "rust_work_contract");
         assert_eq!(report.harness, "rust_runtime_contract");
         assert_eq!(
             report.passed_cases,
-            19,
-            "All 19 WorkBench cases should pass. Failures: {:?}",
+            17,
+            "All 17 WorkBench cases should pass. Failures: {:?}",
             report
                 .results
                 .iter()
@@ -1327,8 +1233,8 @@ mod tests {
         assert_eq!(report.failed_cases, 0);
 
         let json = serde_json::to_string_pretty(&report).unwrap();
-        assert!(json.contains("\"total_cases\": 19"));
-        assert!(json.contains("\"passed_cases\": 19"));
+        assert!(json.contains("\"total_cases\": 17"));
+        assert!(json.contains("\"passed_cases\": 17"));
     }
 
     #[test]
@@ -1338,12 +1244,12 @@ mod tests {
         let report_file = temp.path().join("reports/workbench_report.json");
 
         let report = WorkBenchRunner::run_all_and_save(&paths, &report_file).unwrap();
-        assert_eq!(report.total_cases, 19);
-        assert_eq!(report.passed_cases, 19);
+        assert_eq!(report.total_cases, 17);
+        assert_eq!(report.passed_cases, 17);
         assert_eq!(report.target_runtime, "pi");
         assert!(report_file.exists());
         let saved_content = fs::read_to_string(&report_file).unwrap();
-        assert!(saved_content.contains("\"total_cases\": 19"));
+        assert!(saved_content.contains("\"total_cases\": 17"));
     }
 }
 

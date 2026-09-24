@@ -38,7 +38,6 @@
     "rust:check": "npm run rust:fmt && npm run rust:clippy",
     "test:work:golden": "cargo test --manifest-path src-tauri/Cargo.toml work::workbench::golden --lib -- --nocapture",
     "test:work:smoke": "node scripts/run-work-smoke.mjs",
-    "test:code:subagents": "node --experimental-strip-types scripts/test-code-subagent-smoke.mjs",
     "eval:computer-use": "node --test src-tauri/src/work/eval/eval_harness.test.mjs",
     "eval:computer-use:live": "node src-tauri/src/work/eval/run_live.mjs",
     "i18n:check": "node scripts/i18n-check.mjs",

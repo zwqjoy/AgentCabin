@@ -5,7 +5,6 @@
 //!   - Pi AdapterSettings for Work (isolated from Code-mode Pi features)
 //!   - PI_CODING_AGENT_DIR and all other Work-specific Pi env vars
 //!   - pi_work_extension, pi_work_mcp_adapter, pi_work_browser_adapter
-//!   - pi_work_subagents_adapter paths
 //!   - PiRuntimeAdapter.prepare_runtime for the managed pi_home
 //!
 //! The Work Harness (session.rs, session_dispatch.rs) does NOT need to know
@@ -58,7 +57,6 @@ impl WorkRuntimeAdapter for PiWorkRuntimeAdapter {
             supports_resume: true,
             supports_continuation: true,
             supports_follow_up: true,
-            supports_subagents: true,
         }
     }
 
@@ -239,12 +237,6 @@ impl PiWorkRuntimeAdapter {
         settings.pi_work_browser_adapter = runtime
             .browser_enabled
             .then(|| runtime.browser_adapter_entry.to_string_lossy().into_owned());
-        settings.pi_work_subagents_adapter = Some(
-            runtime
-                .subagents_adapter_entry
-                .to_string_lossy()
-                .into_owned(),
-        );
         settings.pi_work_package_sources = runtime.package_sources.clone();
         settings.pi_shared_extension_sources =
             crate::storage::profile_bindings::list_enabled_pi_extension_sources("work")
@@ -418,12 +410,6 @@ impl PiWorkRuntimeAdapter {
             runtime.agent_dir.to_string_lossy().into_owned(),
         );
         extra_env.insert(
-            "AGENTCABIN_WORK_EXPECTED_AGENT_FILE_DIGESTS".to_string(),
-            serde_json::to_string(&runtime.system_agent_file_digests).map_err(|e| {
-                WorkRuntimeError::LaunchFailed(format!("序列化 Work system agent digest 失败: {e}"))
-            })?,
-        );
-        extra_env.insert(
             "AGENTCABIN_WORK_RESOURCE_CATALOG".to_string(),
             runtime.resource_catalog_path.to_string_lossy().into_owned(),
         );
@@ -528,7 +514,6 @@ fn isolate_work_pi_features(settings: &mut AdapterSettings) {
     settings.pi_plan_mode_enabled = false;
     settings.pi_goal_enabled = false;
     settings.pi_context_prune_enabled = false;
-    settings.pi_subagents_enabled = false;
     settings.pi_multi_edit_enabled = false;
     settings.pi_lsp_enabled = false;
 }

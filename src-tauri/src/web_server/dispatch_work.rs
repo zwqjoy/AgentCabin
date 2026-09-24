@@ -263,7 +263,6 @@ async fn work_dispatch(
         "work_list_standalone_sessions" => crate::commands::work::conversations::work_list_standalone_sessions(),
         "work_get_projection" => crate::commands::work::conversations::work_get_projection(run_id: String),
         "work_get_run_progress" => crate::commands::work::conversations::work_get_run_progress(task_id: String, run_id: String),
-        "work_list_subagents" => crate::commands::work::conversations::work_list_subagents(parent_scope: String, task_id: Option<String>),
         "work_delete_inbox_item" => crate::commands::work::interactions::work_delete_inbox_item(id: String),
         "work_clear_inbox_items" => crate::commands::work::interactions::work_clear_inbox_items(workspace_id: Option<String>, only_resolved: Option<bool>)
     ) {
@@ -503,29 +502,7 @@ async fn work_dispatch(
             )
             .map(Some)
         }
-        "work_retry_subagent" => {
-            let _guard = crate::commands::work::INBOX_DELIVERY_LOCK.lock().await;
-            let workspace_id: String = param(params, "workspace_id")?;
-            let task_id: String = param(params, "task_id")?;
-            let run_id: String = param(params, "run_id")?;
-            let subagent_id: String = param(params, "subagent_id")?;
-            to_json(
-                crate::commands::work::conversations::recover_work_run_locked(
-                    &WorkPaths::app(),
-                    &rt.emitter,
-                    &rt.sessions,
-                    &rt.spawn_locks,
-                    &rt.cancel_token,
-                    &workspace_id,
-                    &task_id,
-                    &run_id,
-                    WorkRecoveryAction::RetrySubagent,
-                    Some(&subagent_id),
-                )
-                .await,
-            )
-            .map(Some)
-        }
+
         "work_steer" => {
             let task_id: String = param(params, "task_id")?;
             let run_id: String = param(params, "run_id")?;

@@ -887,7 +887,6 @@ pub fn is_pi_code_native_extension_source(source: &str) -> bool {
         "pi-plan-mode",
         "pi9/todo",
         "pi-context-prune",
-        "pi-subagents",
         "pi-mono-multi-edit",
         "pi-lsp",
     ]

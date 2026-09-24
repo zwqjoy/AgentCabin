@@ -1114,42 +1114,6 @@ export function verifyRecoveredWorkOutput(
   });
 }
 
-export function retryWorkSubagent(
-  workspaceId: string,
-  taskId: string,
-  runId: string,
-  subagentId: string,
-): Promise<WorkRun> {
-  return invoke<WorkRun>("work_retry_subagent", {
-    workspaceId,
-    taskId,
-    runId,
-    subagentId,
-  });
-}
-
-export async function listWorkSubagents(
-  parentScope: string,
-  taskId?: string | null,
-): Promise<WorkSubagentRecord[]> {
-  const records = await invoke<WorkSubagentRecord[]>("work_list_subagents", {
-    parentScope,
-    taskId: taskId ?? null,
-  });
-  // These IDs become Svelte keyed-list identities. Reject a broken host
-  // contract here so a refresh error cannot abort the whole Work render.
-  const ids = new Set<string>();
-  if (!Array.isArray(records)) throw new Error("Invalid Work subagent response");
-  for (const record of records) {
-    if (!record || typeof record.agentId !== "string" || !record.agentId.trim()) {
-      throw new Error("Work subagent response is missing agentId");
-    }
-    if (ids.has(record.agentId)) throw new Error("Duplicate Work subagent agentId");
-    ids.add(record.agentId);
-  }
-  return records;
-}
-
 export function createInboxItem(
   taskId: string,
   runId: string,

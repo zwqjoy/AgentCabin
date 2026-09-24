@@ -94,12 +94,7 @@ function runDir() {
     "",
   ).trim();
   if (!value) throw new Error("Web Access run ledger 未配置");
-  const root = path.resolve(value);
-  if (process.env.PI_SUBAGENT_CHILD !== "1") return root;
-  const childId = String(process.env.PI_SUBAGENT_RUN_ID || "").trim();
-  if (!childId) throw new Error("Web Access 子代理运行 ID 未配置");
-  const safeChildId = childId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 128);
-  return path.join(root, "subagents", safeChildId);
+  return path.resolve(value);
 }
 
 function ensureRunDir() {

@@ -2,7 +2,7 @@
 //!
 //! Provides `GoldenHarness` and reusable assertion helpers that execute
 //! full business scenario lifecycles across Workspace, Run, Policy,
-//! Interaction, ToolPipeline, Ledger, Recovery, Artifact, and Subagents.
+//! Interaction, ToolPipeline, Ledger, Recovery, and Artifact.
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -78,7 +78,6 @@ impl GoldenHarness {
         let temp_dir = tempfile::TempDir::new().map_err(|e| e.to_string())?;
         std::env::set_var("AGENTCABIN_DATA_DIR", temp_dir.path());
         crate::storage::runs::invalidate_runs_cache();
-        crate::work::subagents::registry().reset_for_test();
 
         let paths = WorkPaths::new(temp_dir.path().to_path_buf());
         paths.ensure_layout()?;

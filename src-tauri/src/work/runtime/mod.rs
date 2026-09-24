@@ -44,7 +44,6 @@ pub struct WorkRuntimeCapabilities {
     pub supports_resume: bool,
     pub supports_continuation: bool,
     pub supports_follow_up: bool,
-    pub supports_subagents: bool,
 }
 
 /// Runtime-neutral input for provider-specific preparation.

@@ -36,9 +36,6 @@ export function createWorkBridgeClient({
   sleep = defaultSleep,
   now = () => Date.now(),
 } = {}) {
-  let childTokenExchanged = false;
-  let childTokenExchangePromise = null;
-
   function config() {
     const port = Number(env.AGENTCABIN_WORK_BRIDGE_PORT || 0);
     const token = String(env.AGENTCABIN_WORK_BRIDGE_TOKEN || "");
@@ -48,75 +45,7 @@ export function createWorkBridgeClient({
     return { baseUrl: `http://127.0.0.1:${port}`, token };
   }
 
-  async function ensureChildToken(signal) {
-    if (env.PI_SUBAGENT_CHILD !== "1" || childTokenExchanged) return;
-    if (childTokenExchangePromise) return await childTokenExchangePromise;
-
-    childTokenExchangePromise = (async () => {
-      const runId = String(env.PI_SUBAGENT_RUN_ID || env.PI_SUBAGENT_CHILD_ID || "").trim();
-      const role = String(env.PI_SUBAGENT_CHILD_AGENT || env.PI_SUBAGENT_ROLE || "").trim();
-      const rawIndex = env.PI_SUBAGENT_CHILD_INDEX;
-      const childIndex = rawIndex !== undefined && !Number.isNaN(Number(rawIndex))
-        ? Number(rawIndex)
-        : undefined;
-
-      if (!runId || !role) {
-        // Standalone fixtures without child metadata do not need an exchange.
-        childTokenExchanged = true;
-        return;
-      }
-
-      const { baseUrl, token } = config();
-      const maxRetries = 10;
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        if (signal?.aborted) throw new Error("Child bridge token exchange was aborted.");
-        try {
-          const response = await fetchImpl(`${baseUrl}/internal/work/subagents/token`, {
-            method: "POST",
-            signal,
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              agentId: runId,
-              childId: env.PI_SUBAGENT_CHILD_ID || undefined,
-              providerRunId: env.PI_SUBAGENT_RUN_ID || undefined,
-              role,
-              childIndex,
-            }),
-          });
-          if (response.ok) {
-            const data = await response.json();
-            if (data?.token) {
-              env.AGENTCABIN_WORK_BRIDGE_TOKEN = data.token;
-              childTokenExchanged = true;
-              return;
-            }
-          } else {
-            const errPayload = await response.json().catch(() => ({}));
-            console.warn(
-              `[work/bridge] Child token exchange attempt ${attempt} failed (HTTP ${response.status}):`,
-              errPayload,
-            );
-          }
-        } catch (error) {
-          console.warn(`[work/bridge] Child token exchange attempt ${attempt} network error:`, error);
-        }
-        await sleep(150);
-      }
-      throw new Error(`Failed to exchange child bridge token for subagent '${runId}' (${role}).`);
-    })();
-
-    try {
-      await childTokenExchangePromise;
-    } finally {
-      childTokenExchangePromise = null;
-    }
-  }
-
   async function request(endpoint, body, signal) {
-    await ensureChildToken(signal);
     const { baseUrl, token } = config();
     const response = await fetchImpl(`${baseUrl}${endpoint}`, {
       method: "POST",
@@ -135,7 +64,6 @@ export function createWorkBridgeClient({
   }
 
   async function waitForInboxResolution(itemId, signal, timeoutMs = DEFAULT_INBOX_TIMEOUT_MS) {
-    await ensureChildToken(signal);
     const { baseUrl, token } = config();
     const startTime = now();
     for (;;) {
@@ -160,7 +88,6 @@ export function createWorkBridgeClient({
 
   return {
     config,
-    ensureChildToken,
     request,
     waitForInboxResolution,
   };

@@ -977,9 +977,6 @@ pub struct AgentSettings {
     /// Pi `-e npm:pi-context-prune` — load optional context pruning. Disabled by default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pi_context_prune_enabled: Option<bool>,
-    /// Pi `-e npm:pi-subagents` — load the shared Code/Work delegation extension.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pi_subagents_enabled: Option<bool>,
     /// Legacy compatibility field. Pi Code always loads the system-managed multi-edit extension.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pi_multi_edit_enabled: Option<bool>,
@@ -1022,7 +1019,6 @@ impl AgentSettings {
             pi_plan_mode_enabled: None,
             pi_goal_enabled: None,
             pi_context_prune_enabled: None,
-            pi_subagents_enabled: None,
             pi_multi_edit_enabled: None,
             pi_lsp_enabled: None,
             updated_at: now_iso(),

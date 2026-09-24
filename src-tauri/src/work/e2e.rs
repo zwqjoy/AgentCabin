@@ -817,55 +817,6 @@ mod tests {
     }
 
     #[test]
-    fn test_23b_parent_run_cannot_complete_with_durable_unfinished_child() {
-        let temp = TempDir::new().unwrap();
-        let paths = WorkPaths::new(temp.path().join("data"));
-        let task_manager = TaskManager::new(paths.clone());
-        let controller = WorkHarnessController::new(paths.clone());
-        let task = task_manager
-            .create_task("ws-23b", "Task 23b", "Desc", None)
-            .unwrap();
-        let run = task_manager
-            .start_run(&task.id, None, WorkRunTrigger::Manual)
-            .unwrap();
-        let ledger = WorkRuntimeLedger::open(&paths, &task.id, &run.id).unwrap();
-        ledger
-            .record(&RuntimeFact::SubagentSpawned {
-                agent_id: "child-23b".to_string(),
-                provider_run_id: "provider-23b".to_string(),
-                child_index: 0,
-                role: "worker".to_string(),
-                task_digest: "task".to_string(),
-                launch_contract_digest: "contract".to_string(),
-                status: "running".to_string(),
-                timestamp: "2026-08-27T00:00:00Z".to_string(),
-            })
-            .unwrap();
-
-        let blocked = controller
-            .complete_or_fail_run(&task.id, &run.id, WorkRunStatus::Completed, None, None)
-            .unwrap();
-        assert_eq!(blocked.status, WorkRunStatus::Recoverable);
-        assert!(blocked.finished_at.is_none());
-
-        ledger
-            .record(&RuntimeFact::SubagentCompleted {
-                agent_id: "child-23b".to_string(),
-                provider_run_id: "provider-23b".to_string(),
-                child_index: 0,
-                role: "worker".to_string(),
-                status: "completed".to_string(),
-                summary: Some("done".to_string()),
-                timestamp: "2026-08-27T00:01:00Z".to_string(),
-            })
-            .unwrap();
-        let completed = controller
-            .complete_or_fail_run(&task.id, &run.id, WorkRunStatus::Completed, None, None)
-            .unwrap();
-        assert_eq!(completed.status, WorkRunStatus::Completed);
-    }
-
-    #[test]
     fn test_23c_unresolved_external_call_requires_one_recovery_inbox_item() {
         let temp = TempDir::new().unwrap();
         let paths = WorkPaths::new(temp.path().join("data"));

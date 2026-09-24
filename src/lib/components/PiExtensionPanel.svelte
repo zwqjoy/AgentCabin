@@ -67,7 +67,7 @@
         <div class="space-y-2">
           {#each activeWidgets as widget (widget.key)}
             <div class="rounded border border-border/60 bg-background/50 p-2">
-              {#if widget.key !== "default" && widget.key !== "subagent-async"}
+              {#if widget.key !== "default"}
                 <div class="font-medium text-[11px] text-muted-foreground mb-1">{widget.key}</div>
               {/if}
               <PiExtensionWidgetContent {widget} />

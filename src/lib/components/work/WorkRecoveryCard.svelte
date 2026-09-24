@@ -23,8 +23,6 @@
         return "未完成，重新执行";
       case "verify":
         return "验证交付物";
-      case "retry_subagent":
-        return "重试中断子任务";
       case "from_scratch":
         return "从头开始";
       case "cancel":
@@ -140,9 +138,7 @@
     {#each recovery.availableActions as action (action)}
       <button
         type="button"
-        disabled={readOnly ||
-          busy !== null ||
-          (action === "retry_subagent" && recovery.interruptedSubagentIds.length === 0)}
+        disabled={readOnly || busy !== null}
         class="rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-colors disabled:opacity-50 {action ===
         'cancel'
           ? 'border-border/70 text-muted-foreground hover:bg-accent'

@@ -81,11 +81,6 @@
       pkg: "npm:@juicesharp/rpiv-todo",
     },
     {
-      label: "多智能体委派 (Subagents)",
-      description: "后台多子代理并行协作与消息投递",
-      pkg: "npm:pi-subagents",
-    },
-    {
       label: "代码智能 (LSP / pi-lsp)",
       description: "精准跳转定义、查找引用与实时代码诊断",
       pkg: "npm:@narumitw/pi-lsp",
@@ -119,12 +114,6 @@
       label: "任务进度 (Todo)",
       description: "追踪多步任务，并在每一步完成后同步状态",
       pkg: "npm:@juicesharp/rpiv-todo",
-      resident: true,
-    },
-    {
-      label: "多智能体委派 (Subagents)",
-      description: "后台委派与协作，受 Work 沙箱和策略适配器约束",
-      pkg: "npm:pi-subagents + Work adapter",
       resident: true,
     },
     {

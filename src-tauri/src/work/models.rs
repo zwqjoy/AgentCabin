@@ -911,7 +911,6 @@ pub enum RuntimeLiveness {
 pub enum BudgetKind {
     WallTime,
     ToolCalls,
-    SubagentSpawns,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -922,7 +921,6 @@ pub enum GuardianAnomalyKind {
     ToolFailureStreak,
     BudgetExceeded,
     ProviderDegraded,
-    SubagentHealth,
 }
 
 fn default_stall_after_ms() -> u64 {
@@ -960,8 +958,6 @@ pub struct GuardianConfig {
     pub max_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_automated_steps: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_subagent_spawns: Option<u32>,
     #[serde(default = "default_max_steering_nudges")]
     pub max_steering_nudges: u32,
 }
@@ -975,7 +971,6 @@ impl Default for GuardianConfig {
             max_failure_streak: default_max_failure_streak(),
             max_tokens: None,
             max_automated_steps: None,
-            max_subagent_spawns: None,
             max_steering_nudges: default_max_steering_nudges(),
         }
     }
@@ -1495,10 +1490,6 @@ pub struct WorkRunBudgetView {
     pub tool_calls_used: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_calls_limit: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subagent_spawns_used: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subagent_spawns_limit: Option<u32>,
     #[serde(default)]
     pub is_any_warning: bool,
     #[serde(default)]
@@ -1636,7 +1627,6 @@ pub enum WorkRecoveryAction {
     Continue,
     Retry,
     Verify,
-    RetrySubagent,
     FromScratch,
     Cancel,
 }
@@ -2008,6 +1998,7 @@ pub enum RuntimeFact {
         reason: String,
         timestamp: String,
     },
+    // Legacy: Subagent facts preserved solely for read-only deserialization compatibility of historical session ledgers.
     SubagentSpawned {
         agent_id: String,
         provider_run_id: String,

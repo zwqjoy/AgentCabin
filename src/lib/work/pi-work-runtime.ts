@@ -134,12 +134,3 @@ export function canOpenWorkSessionTree(session: SessionStore): boolean {
   const isPi = (session.run?.agent ?? session.agent) === "pi";
   return Boolean(session.run?.id && isPi && session.piCapabilities?.sessionTreeAvailable === true);
 }
-
-export function isWorkSubagentActivityEvent(event: BusEvent): boolean {
-  return (
-    event.type === "tool_start" ||
-    event.type === "tool_end" ||
-    event.type === "work_task_state" ||
-    event.type === "run_state"
-  );
-}

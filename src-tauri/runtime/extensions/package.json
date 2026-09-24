@@ -15,7 +15,6 @@
     "@narumitw/pi-plan-mode": "0.56.0",
     "pi-context-prune": "1.4.0",
     "pi-mcp-adapter": "2.22.0",
-    "pi-mono-multi-edit": "2.0.0",
-    "pi-subagents": "0.51.0"
+    "pi-mono-multi-edit": "2.0.0"
   }
 }

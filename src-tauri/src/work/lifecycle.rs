@@ -10,7 +10,6 @@ use crate::work::models::{
     WorkRecoveryAction, WorkRun, WorkRunRecovery, WorkRunStatus, WorkTaskState,
 };
 use crate::work::paths::WorkPaths;
-use crate::work::runtime::WorkRuntimeAdapter;
 use crate::work::tasks::TaskManager;
 
 #[derive(Debug, Clone)]
@@ -96,47 +95,6 @@ impl WorkHarnessController {
         // WaitingDelivery after a user edits or removes an output file.
         if !requested_final_status.is_active() && run.status == requested_final_status {
             return Ok(run);
-        }
-
-        if !requested_final_status.is_active()
-            && crate::work::subagents::registry().has_active_children(run_id)
-        {
-            if requested_final_status == WorkRunStatus::Completed {
-                return self.task_manager.set_run_state(
-                    task_id,
-                    run_id,
-                    WorkRunStatus::Recoverable,
-                    Some("仍有活动子代理，Run 暂不能完成；请等待或重试子任务".to_string()),
-                    final_state,
-                );
-            }
-            return Err(format!(
-                "Cannot finalize WorkRun '{}' while active subagents are still registered",
-                run_id
-            ));
-        }
-
-        // The in-memory registry is intentionally empty after an application
-        // restart. Consult the durable child lifecycle as well so a parent can
-        // never become Completed while a child is still pending or interrupted.
-        if requested_final_status == WorkRunStatus::Completed {
-            let unresolved_children = crate::work::subagents::interrupted_child_ids_from_ledger(
-                &self.paths,
-                task_id,
-                run_id,
-            )?;
-            if !unresolved_children.is_empty() {
-                return self.task_manager.set_run_state(
-                    task_id,
-                    run_id,
-                    WorkRunStatus::Recoverable,
-                    Some(format!(
-                        "以下子任务尚未完成或在重启时中断：{}；请先重试或从头开始",
-                        unresolved_children.join("、")
-                    )),
-                    final_state,
-                );
-            }
         }
 
         let task = self.task_manager.get_task(task_id)?;
@@ -391,18 +349,6 @@ impl WorkHarnessController {
             // idle so the user can send a follow-up, and its bridge lease must
             // stay valid until that actor actually exits. Actor cleanup owns
             // exact-token revocation; stop/replacement has a timeout fallback.
-            let status_str = match effective_status {
-                WorkRunStatus::Completed => "completed",
-                WorkRunStatus::Failed => "failed",
-                WorkRunStatus::Cancelled => "cancelled",
-                WorkRunStatus::Skipped => "stopped",
-                _ => "stopped",
-            };
-            crate::work::subagents::registry().mark_all_terminal_for_task(
-                task_id,
-                status_str,
-                Some(format!("Run transitioned to {:?}", effective_status)),
-            );
             let run_id_owned = run_id.to_string();
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn(async move {
@@ -479,31 +425,8 @@ impl WorkHarnessController {
                     continue;
                 }
 
-                // 1. Reconcile child lifecycle facts before evaluating the
-                // parent. The registry is in-memory and cannot be trusted
-                // after restart; unfinished children are terminally
-                // interrupted instead of silently disappearing or replaying.
-                let interrupted_children =
-                    crate::work::subagents::reconcile_unfinished_from_ledger(
-                        &self.paths,
-                        &task.id,
-                        &run.id,
-                    )?;
-                if !interrupted_children.is_empty() {
-                    self.task_manager.set_run_state(
-                        &task.id,
-                        &run.id,
-                        WorkRunStatus::Recoverable,
-                        Some(format!(
-                            "应用重启时以下子任务尚未记录终态：{}；请重试或从头开始",
-                            interrupted_children.join("、")
-                        )),
-                        None,
-                    )?;
-                }
-
-                // 2. Inspect ledger facts for effect-aware recovery
-                let mut needs_attention = !interrupted_children.is_empty();
+                // Inspect ledger facts for effect-aware recovery
+                let mut needs_attention = false;
                 let ledger =
                     crate::work::ledger::WorkRuntimeLedger::open(&self.paths, &task.id, &run.id)?;
                 {
@@ -1128,15 +1051,10 @@ pub fn get_run_recovery(
     } else {
         None
     };
-    let interrupted_subagent_ids =
-        crate::work::subagents::interrupted_child_ids_from_ledger(paths, task_id, run_id)?;
-    let interrupted_subagents = interrupted_subagent_ids.len();
-    let active_subagents = crate::work::subagents::registry()
-        .list_for_scope(run_id)
-        .into_iter()
-        .filter(|record| matches!(record.status.as_str(), "running" | "pending" | "queued"))
-        .count();
-    let mut available_actions = match run.status {
+    let interrupted_subagent_ids: Vec<String> = Vec::new();
+    let interrupted_subagents = 0;
+    let active_subagents = 0;
+    let available_actions = match run.status {
         WorkRunStatus::WaitingDelivery => vec![
             WorkRecoveryAction::Verify,
             WorkRecoveryAction::Retry,
@@ -1157,17 +1075,6 @@ pub fn get_run_recovery(
         ],
         _ => Vec::new(),
     };
-    if interrupted_subagents > 0 {
-        let supports_subagents = run
-            .session_id
-            .as_deref()
-            .and_then(crate::storage::runs::get_run)
-            .and_then(|meta| crate::work::runtime::get_pi_work_runtime(&meta.agent).ok())
-            .is_some_and(|adapter| adapter.capabilities().supports_subagents);
-        if supports_subagents {
-            available_actions.insert(0, WorkRecoveryAction::RetrySubagent);
-        }
-    }
 
     Ok(Some(WorkRunRecovery {
         task_id: task_id.to_string(),

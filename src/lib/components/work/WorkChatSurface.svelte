@@ -65,7 +65,6 @@
     getWorkArtifactAcceptance,
     listWorkResources,
     listWorkSessions,
-    listWorkSubagents,
   } from "$lib/api/work";
   import * as workResources from "$lib/work/work-resource-service";
   import { workspaceScope, standaloneScope } from "$lib/work/work-scope";
@@ -74,7 +73,6 @@
     filterCurrentRunInteractions,
     isQuestionInteraction,
   } from "$lib/utils/work-interactions";
-  import { areSubagentRecordsEqual, projectWorkSubagent } from "$lib/utils/work-subagents";
   import type {
     Attachment,
     CliCommand,
@@ -98,7 +96,6 @@
     WorkResultPresentation,
     WorkResourceSummary,
     WorkRunProgressView,
-    WorkSubagentRecord,
     WorkTask,
     WorkWorkspaceSummary,
   } from "$lib/types/work";
@@ -1235,152 +1232,6 @@
       (elicitation) => !isPiWorkRuntimeConfirmation(elicitation.mode),
     ),
   );
-  let hostSubagentRecords = $state<WorkSubagentRecord[]>([]);
-
-  $effect(() => {
-    const run = session.run;
-    if (!run?.id) {
-      if (hostSubagentRecords.length > 0) hostSubagentRecords = [];
-      return;
-    }
-    // The bridge scopes records by Product WorkRun ID. Standalone Work runs
-    // use the session run id as both their WorkRun and ledger task namespace.
-    const parentScope: string = run.work_run_id ?? run.id;
-    const taskId: string | undefined = run.work_task_id ?? (!run.workspace_id ? run.id : undefined);
-    // SubagentRegistry is a small run-scoped projection, so it is safe to
-    // query while the parent turn is active. Keeping this live also makes
-    // composite tools such as research swarms visible before their parent
-    // tool call finishes and the durable WorkRun projection catches up.
-    let active = true;
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function refreshSubagents() {
-      if (!active) return;
-      listWorkSubagents(parentScope, taskId)
-        .then((records) => {
-          if (active && !areSubagentRecordsEqual(hostSubagentRecords, records)) {
-            hostSubagentRecords = records;
-          }
-        })
-        .catch((err) => {
-          console.warn("[work/ui] Failed to list subagents from host:", err);
-        });
-    }
-
-    refreshSubagents();
-
-    // Subagent registry updates are emitted on the same bus as the parent
-    // session. Coalesce bursts instead of polling the host every 2.5 seconds.
-    const unsubscribeEvents = workSession.subscribeSubagentActivity(() => {
-      if (refreshTimer) return;
-      refreshTimer = setTimeout(() => {
-        refreshTimer = null;
-        refreshSubagents();
-      }, 300);
-    });
-
-    return () => {
-      active = false;
-      unsubscribeEvents();
-      if (refreshTimer) clearTimeout(refreshTimer);
-    };
-  });
-
-  let subagentActivities = $derived.by(() => {
-    const list: Array<{
-      id: string;
-      agentId: string;
-      role: string;
-      task: string;
-      status: "running" | "completed" | "failed" | "stopped" | "interrupted";
-      statusText: string;
-      resultSummary?: string;
-      error?: string;
-    }> = [];
-
-    // 1. Authoritative projection from Host SubagentRegistry & Ledger
-    if (hostSubagentRecords.length > 0) {
-      return hostSubagentRecords.map((record) => projectWorkSubagent(record, visibleTimeline));
-    }
-
-    // 2. Timeline fallback before the initial host response arrives, and for
-    // completed standalone runs whose older bridge records were memory-only.
-    for (const entry of visibleTimeline) {
-      if (entry.kind === "tool" && entry.tool.tool_name === "work_delegate") {
-        const input = (entry.tool.input ?? {}) as Record<string, unknown>;
-        const output = (entry.tool.output ?? {}) as Record<string, unknown>;
-        const details = (
-          output.details && typeof output.details === "object" ? output.details : output
-        ) as Record<string, unknown>;
-        const agentId = String(details.agent_id ?? input.agent_id ?? entry.id);
-        const role = String(input.role ?? "researcher").toLowerCase();
-        const task = String(input.task ?? "");
-        const isRunning = entry.tool.status === "running" || details.status === "running";
-        const isFailed = entry.tool.status === "error" || details.ok === false;
-        const status = isRunning ? "running" : isFailed ? "failed" : "completed";
-        list.push({
-          id: entry.id,
-          agentId,
-          role,
-          task,
-          resultSummary: details.summary ? String(details.summary) : undefined,
-          error: details.error ? String(details.error) : undefined,
-          status,
-          statusText: isRunning ? "正在执行" : isFailed ? "执行失败" : "已完成",
-        });
-        continue;
-      }
-
-      if (entry.kind === "tool" && entry.tool.tool_name === "work_research_swarm") {
-        const output = (entry.tool.output ?? {}) as Record<string, unknown>;
-        const details = (
-          output.details && typeof output.details === "object" ? output.details : output
-        ) as Record<string, unknown>;
-        const findings = Array.isArray(details.findings) ? details.findings : [];
-        for (const [index, finding] of findings.entries()) {
-          if (!finding || typeof finding !== "object") continue;
-          const item = finding as Record<string, unknown>;
-          const rawStatus = String(item.status ?? (item.timeout ? "running" : "completed"))
-            .toLowerCase()
-            .replace(/-/g, "_");
-          const status =
-            rawStatus === "running" || rawStatus === "in_progress"
-              ? "running"
-              : rawStatus === "failed" || rawStatus === "error"
-                ? "failed"
-                : rawStatus === "stopped" || rawStatus === "cancelled" || rawStatus === "canceled"
-                  ? "stopped"
-                  : "completed";
-          const agentId = String(
-            item.agent_id ?? item.agentId ?? `${entry.id}:${String(item.label ?? index)}`,
-          );
-          const role = String(item.role ?? "researcher").toLowerCase();
-          const task = String(item.label ?? "");
-          const result = typeof item.result === "string" ? item.result : "";
-          const error = typeof item.error === "string" ? item.error : undefined;
-          list.push({
-            id: `${entry.id}:${agentId}`,
-            agentId,
-            role,
-            task,
-            resultSummary: result || undefined,
-            error,
-            status,
-            statusText:
-              status === "running"
-                ? "正在执行"
-                : status === "failed"
-                  ? "执行失败"
-                  : status === "stopped"
-                    ? "已停止"
-                    : "已完成",
-          });
-        }
-      }
-    }
-    return list;
-  });
-
   let progressSnapshot = $derived.by(
     (): WorkProgressSnapshot => ({
       phase: authoritativeProgressView?.phase
@@ -1416,7 +1267,6 @@
       pendingElicitation: hasWorkInputRequest,
       error: session.error || workSession.error,
       toolCallCount: visibleTimeline.filter((e) => e.kind === "tool").length,
-      subagents: subagentActivities,
     }),
   );
   let currentWorkTaskId = $derived(session.run?.work_task_id ?? null);

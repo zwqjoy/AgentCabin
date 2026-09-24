@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use once_cell::sync::Lazy;
@@ -148,14 +147,7 @@ pub async fn handle_turn_settled(
 
     // If this run belongs to an automation task, handle automation completion / repair
     if let Some(_task_id) = meta.work_task_id.as_deref() {
-        // Always insert into pending first, then immediately attempt finalization.
-        // This eliminates the lost-wakeup race where a child could complete between
-        // has_active_children check and pending.insert, leaving the parent stuck.
-        {
-            let mut pending = PENDING_PARENT_SETTLEMENTS.lock().await;
-            pending.insert(run_id.to_string(), (emitter.clone(), outcome));
-        }
-        return try_finalize_parent_run_locked(run_id).await;
+        return settle_automation_run(emitter, run_id, outcome).await;
     } else {
         // Interactive conversation:
         // A single turn settling returns the conversation to Idle.
@@ -174,17 +166,6 @@ pub async fn handle_turn_settled(
     }
 
     Ok(())
-}
-
-#[allow(clippy::type_complexity)]
-static PENDING_PARENT_SETTLEMENTS: Lazy<
-    tokio::sync::Mutex<HashMap<String, (Arc<BroadcastEmitter>, RuntimeTurnOutcome)>>,
-> = Lazy::new(|| tokio::sync::Mutex::new(HashMap::new()));
-
-#[cfg(test)]
-pub async fn reset_pending_settlements_for_test() {
-    let mut pending = PENDING_PARENT_SETTLEMENTS.lock().await;
-    pending.clear();
 }
 
 static SETTLEMENT_LOCKS: Lazy<SpawnLocks> = Lazy::new(SpawnLocks::new);
@@ -224,7 +205,6 @@ pub async fn request_user_stop(run_id: &str) -> Result<StopAcceptance, String> {
                 }
             }
             storage::runs::update_status(run_id, RunStatus::Stopped, None, None)?;
-            PENDING_PARENT_SETTLEMENTS.lock().await.remove(run_id);
             return Ok(StopAcceptance {
                 accepted: true,
                 previous_status: Some(prev),
@@ -239,30 +219,6 @@ pub async fn request_user_stop(run_id: &str) -> Result<StopAcceptance, String> {
         accepted: false,
         previous_status: None,
     })
-}
-
-/// Re-attempt settling a parent automation run if it was parked waiting for child subagents.
-pub async fn try_finalize_parent_run(parent_run_id: &str) -> Result<(), String> {
-    let _guard = SETTLEMENT_LOCKS.acquire(parent_run_id).await;
-    try_finalize_parent_run_locked(parent_run_id).await
-}
-
-async fn try_finalize_parent_run_locked(parent_run_id: &str) -> Result<(), String> {
-    if crate::work::subagents::registry().has_active_children(parent_run_id) {
-        log::info!(
-            "[work/session] Run {parent_run_id} still has active children; parking settlement"
-        );
-        return Ok(());
-    }
-    let pending_item = {
-        let mut pending = PENDING_PARENT_SETTLEMENTS.lock().await;
-        pending.remove(parent_run_id)
-    };
-    if let Some((emitter, outcome)) = pending_item {
-        log::info!("[work/session] Finalizing pending parent settlement for {parent_run_id}");
-        settle_automation_run(&emitter, parent_run_id, outcome).await?;
-    }
-    Ok(())
 }
 
 async fn settle_automation_run(
@@ -449,11 +405,6 @@ pub async fn handle_process_stopped(
 
     match reason {
         crate::agent::session_actor::RuntimeStopReason::UserStop => {
-            // 1. Remove pending settlement so stale Success cannot finalize run later
-            {
-                let mut pending = PENDING_PARENT_SETTLEMENTS.lock().await;
-                pending.remove(run_id);
-            }
             if let Some(task_id) = meta.work_task_id.as_deref() {
                 let task_manager = crate::work::tasks::TaskManager::new(paths.clone());
                 if let Ok(task_run) = task_manager.get_run(task_id, run_id) {
@@ -461,17 +412,7 @@ pub async fn handle_process_stopped(
                         return Ok(());
                     }
                 }
-                // 2. Stop active children and persist durable facts
-                if crate::work::subagents::registry().has_active_children(run_id) {
-                    crate::work::subagents::registry().interrupt_all_for_scope(
-                        &paths,
-                        run_id,
-                        Some(task_id),
-                        "stopped",
-                        Some("Session stopped by user".to_string()),
-                    )?;
-                }
-                // 3. Cancel run
+                // Cancel run
                 let controller = WorkHarnessController::new(paths.clone());
                 controller.complete_or_fail_run(
                     task_id,
@@ -483,11 +424,6 @@ pub async fn handle_process_stopped(
             }
         }
         crate::agent::session_actor::RuntimeStopReason::ProviderCrash(err) => {
-            // 1. Remove pending settlement
-            {
-                let mut pending = PENDING_PARENT_SETTLEMENTS.lock().await;
-                pending.remove(run_id);
-            }
             if let Some(task_id) = meta.work_task_id.as_deref() {
                 let task_manager = crate::work::tasks::TaskManager::new(paths.clone());
                 if let Ok(task_run) = task_manager.get_run(task_id, run_id) {
@@ -495,17 +431,7 @@ pub async fn handle_process_stopped(
                         return Ok(());
                     }
                 }
-                // 2. Interrupt active children
-                if crate::work::subagents::registry().has_active_children(run_id) {
-                    crate::work::subagents::registry().interrupt_all_for_scope(
-                        &paths,
-                        run_id,
-                        Some(task_id),
-                        "interrupted",
-                        Some(format!("Parent provider crashed: {err}")),
-                    )?;
-                }
-                // 3. Fail run
+                // Fail run
                 let controller = WorkHarnessController::new(paths.clone());
                 controller.complete_or_fail_run(
                     task_id,
@@ -1321,7 +1247,7 @@ mod tests {
 
     #[tokio::test]
     async fn settlement_locks_coordinate_cleanly() {
-        use super::{request_user_stop, try_finalize_parent_run, SETTLEMENT_LOCKS};
+        use super::{request_user_stop, SETTLEMENT_LOCKS};
 
         let run_id = "test-settlement-coordination-run";
 
@@ -1329,10 +1255,6 @@ mod tests {
         {
             let _guard = SETTLEMENT_LOCKS.acquire(run_id).await;
         }
-
-        // Verify that try_finalize_parent_run acquires lock and completes without deadlock
-        let finalize_res = try_finalize_parent_run(run_id).await;
-        assert!(finalize_res.is_ok());
 
         // Verify that request_user_stop acquires lock and completes without deadlock
         let stop_res = request_user_stop(run_id).await;
@@ -1354,108 +1276,6 @@ mod tests {
         let paths = WorkPaths::new(temp.path().to_path_buf());
         paths.ensure_layout().unwrap();
         (guard, temp, paths)
-    }
-
-    #[tokio::test]
-    async fn barrier_concurrency_stop_and_success_racing() {
-        use super::{
-            request_user_stop, BroadcastEmitter, RuntimeTurnOutcome, PENDING_PARENT_SETTLEMENTS,
-        };
-        use crate::models::{RunMeta, RunStatus};
-        use std::sync::Arc;
-        use tokio::sync::Barrier;
-
-        let (_env_guard, _temp, _paths) = setup_test_env();
-        let run_id = "test-barrier-racing-run";
-        let meta = RunMeta {
-            id: run_id.to_string(),
-            prompt: "racing test".to_string(),
-            cwd: "/tmp".to_string(),
-            agent: "pi".to_string(),
-            code_standalone_task: false,
-            app_mode: crate::work::models::AppMode::Work,
-            agent_target: Some(crate::models::AgentTarget::Work),
-            workspace_id: None,
-            work_task_id: None,
-            work_run_id: None,
-            work_execution_context: None,
-            work_preset: None,
-            auth_mode: "default".to_string(),
-            status: RunStatus::Running,
-            started_at: "2026-08-15T00:00:00Z".to_string(),
-            ended_at: None,
-            exit_code: None,
-            error_message: None,
-            session_id: None,
-            result_subtype: None,
-            model: None,
-            effort: None,
-            permission_mode: None,
-            parent_run_id: None,
-            continuation_context: None,
-            name: None,
-            remote_host_name: None,
-            remote_cwd: None,
-            remote_host_snapshot: None,
-            platform_id: None,
-            platform_base_url: None,
-            source: None,
-            cli_import_watermark: None,
-            cli_session_path: None,
-            cli_usage_incomplete: None,
-            deleted_at: None,
-            no_session_persistence: false,
-            execution_path: None,
-            conversation_ref: None,
-            codex_process_seq: None,
-            codex_imported_rollouts: None,
-            pinned: None,
-            archived: None,
-            unread: None,
-        };
-        crate::storage::runs::save_meta(&meta).unwrap();
-
-        // Seed a pending settlement for this run
-        let dummy_emitter = BroadcastEmitter::mock();
-        {
-            let mut pending = PENDING_PARENT_SETTLEMENTS.lock().await;
-            pending.insert(
-                run_id.to_string(),
-                (dummy_emitter.clone(), RuntimeTurnOutcome::Success),
-            );
-        }
-
-        let barrier = Arc::new(Barrier::new(2));
-        let b1 = barrier.clone();
-        let b2 = barrier.clone();
-
-        let stop_handle = tokio::spawn(async move {
-            b1.wait().await;
-            request_user_stop(run_id).await
-        });
-
-        let finalize_handle = tokio::spawn(async move {
-            b2.wait().await;
-            super::try_finalize_parent_run(run_id).await
-        });
-
-        let (stop_res, finalize_res) = tokio::join!(stop_handle, finalize_handle);
-        let stop_acceptance = stop_res.unwrap().expect("stop must succeed");
-        finalize_res.unwrap().expect("finalize must succeed");
-
-        let current_meta = crate::storage::runs::get_run(run_id).expect("run must exist");
-        if stop_acceptance.accepted {
-            // If stop was accepted, current status must be Stopped, and pending map must be cleared
-            assert_eq!(current_meta.status, RunStatus::Stopped);
-            let pending = PENDING_PARENT_SETTLEMENTS.lock().await;
-            assert!(!pending.contains_key(run_id));
-        } else {
-            // If stop was not accepted, it must be because it was already completed/failed
-            assert!(matches!(
-                stop_acceptance.previous_status,
-                Some(RunStatus::Completed) | Some(RunStatus::Failed)
-            ));
-        }
     }
 
     #[tokio::test]

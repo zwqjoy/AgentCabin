@@ -14,7 +14,6 @@ use crate::work::models::{
     InboxItemStatus, WorkPreset, WorkRecoveryAction, WorkRun, WorkRunProgressView, WorkRunRecovery,
     WorkRunStatus, WorkRunTrigger, WorkTask, WorkTaskSource,
 };
-use crate::work::runtime::WorkRuntimeAdapter;
 use crate::work::{artifacts, paths::WorkPaths, session, tasks::TaskManager, workspace};
 
 #[tauri::command]
@@ -298,7 +297,6 @@ pub(crate) fn parse_work_recovery_action(value: &str) -> Result<WorkRecoveryActi
         "continue" => Ok(WorkRecoveryAction::Continue),
         "retry" => Ok(WorkRecoveryAction::Retry),
         "verify" => Ok(WorkRecoveryAction::Verify),
-        "retry_subagent" => Ok(WorkRecoveryAction::RetrySubagent),
         "from_scratch" => Ok(WorkRecoveryAction::FromScratch),
         "cancel" => Ok(WorkRecoveryAction::Cancel),
         other => Err(format!("不支持的 Work 恢复操作：{other}")),
@@ -310,7 +308,6 @@ fn work_recovery_action_name(action: WorkRecoveryAction) -> &'static str {
         WorkRecoveryAction::Continue => "continue",
         WorkRecoveryAction::Retry => "retry",
         WorkRecoveryAction::Verify => "verify",
-        WorkRecoveryAction::RetrySubagent => "retry_subagent",
         WorkRecoveryAction::FromScratch => "from_scratch",
         WorkRecoveryAction::Cancel => "cancel",
     }
@@ -357,7 +354,7 @@ pub(crate) async fn recover_work_run_locked(
     task_id: &str,
     run_id: &str,
     action: WorkRecoveryAction,
-    subagent_id: Option<&str>,
+    _subagent_id: Option<&str>,
 ) -> Result<WorkRun, String> {
     let (_task, run) = validate_work_recovery_scope(paths, workspace_id, task_id, run_id)?;
     let view = crate::work::lifecycle::get_run_recovery(paths, workspace_id, task_id, run_id)?
@@ -443,9 +440,7 @@ pub(crate) async fn recover_work_run_locked(
                 "recovery_cancelled".to_string(),
                 Some("用户放弃了重启前未完成的调用".to_string()),
             ),
-            WorkRecoveryAction::Verify | WorkRecoveryAction::RetrySubagent => {
-                (false, String::new(), None)
-            }
+            WorkRecoveryAction::Verify => (false, String::new(), None),
         };
         if !status.is_empty() {
             ledger.record(&crate::work::models::RuntimeFact::ToolResult {
@@ -534,66 +529,6 @@ pub(crate) async fn recover_work_run_locked(
                 None,
             )
             .await
-        }
-        WorkRecoveryAction::RetrySubagent => {
-            let id = subagent_id
-                .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| "重试子任务需要 subagentId".to_string())?;
-            let interrupted =
-                crate::work::subagents::interrupted_child_ids_from_ledger(paths, task_id, run_id)?;
-            if !interrupted.iter().any(|candidate| candidate == id) {
-                return Err("该子任务不属于当前 Run，或没有可重试的中断记录".to_string());
-            }
-            let session_id = run
-                .session_id
-                .as_deref()
-                .ok_or_else(|| "恢复 Run 没有关联可继续的 Work 会话".to_string())?;
-            let session_meta = crate::storage::runs::get_run(session_id)
-                .ok_or_else(|| "未找到对应的 Work 会话".to_string())?;
-            let adapter = crate::work::runtime::get_pi_work_runtime(&session_meta.agent)
-                .map_err(|e| format!("Work Runtime 不支持该会话: {e}"))?;
-            if !adapter.capabilities().supports_subagents {
-                return Err(format!(
-                    "Work Runtime '{}' 不支持子任务重试",
-                    adapter.provider().as_str()
-                ));
-            }
-            let controller = crate::work::lifecycle::WorkHarnessController::new(paths.clone());
-            let running =
-                controller.transition_run_status(task_id, run_id, WorkRunStatus::Running)?;
-            let message = format!(
-                "子任务 {id} 在应用重启时中断。请通过现有 Work 子代理能力重新委派/重试该子任务；不要直接复用旧子代理进程。"
-            );
-            if let Err(error) = resume_work_session_after_approval(
-                emitter,
-                sessions,
-                spawn_locks,
-                cancel_token,
-                session_id,
-                &message,
-            )
-            .await
-            {
-                let restore_result =
-                    controller.transition_run_status(task_id, run_id, WorkRunStatus::Recoverable);
-                if let Err(restore_error) = restore_result {
-                    return Err(format!(
-                        "子任务恢复消息发送失败：{error}；恢复状态写回失败：{restore_error}"
-                    ));
-                }
-                return Err(format!("子任务恢复消息发送失败：{error}"));
-            }
-            ledger.record_recovery_event_once(
-                "recovery_resolved",
-                run_id,
-                view.tool_call_id.as_deref(),
-                action_name,
-                side_effect,
-                view.reused_existing_output,
-                Some(format!("已请求 Work 运行时重新委派子任务 {id}")),
-                None,
-            )?;
-            Ok(running)
         }
         WorkRecoveryAction::Continue | WorkRecoveryAction::Retry => {
             let controller = crate::work::lifecycle::WorkHarnessController::new(paths.clone());
@@ -722,35 +657,6 @@ pub async fn work_verify_recovered_output(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn work_retry_subagent(
-    emitter: State<'_, Arc<BroadcastEmitter>>,
-    sessions: State<'_, ActorSessionMap>,
-    spawn_locks: State<'_, SpawnLocks>,
-    cancel_token: State<'_, CancellationToken>,
-    workspace_id: String,
-    task_id: String,
-    run_id: String,
-    subagent_id: String,
-) -> Result<WorkRun, String> {
-    ensure_work_enabled()?;
-    let _guard = INBOX_DELIVERY_LOCK.lock().await;
-    recover_work_run_locked(
-        &WorkPaths::app(),
-        emitter.inner(),
-        sessions.inner(),
-        spawn_locks.inner(),
-        cancel_token.inner(),
-        &workspace_id,
-        &task_id,
-        &run_id,
-        WorkRecoveryAction::RetrySubagent,
-        Some(&subagent_id),
-    )
-    .await
-}
-
-#[tauri::command]
 pub async fn work_steer(
     sessions: tauri::State<'_, ActorSessionMap>,
     task_id: String,
@@ -836,126 +742,6 @@ pub fn work_inject_context(
         crate::work::models::RuntimeInputKind::Inject,
         &content,
     )
-}
-
-#[tauri::command]
-pub async fn work_list_subagents(
-    parent_scope: String,
-    task_id: Option<String>,
-) -> Result<Vec<crate::work::subagents::WorkSubagentRecord>, String> {
-    ensure_work_enabled()?;
-    let mut map: std::collections::HashMap<String, crate::work::subagents::WorkSubagentRecord> =
-        std::collections::HashMap::new();
-
-    // 1. Replay historical Ledger facts if task_id is present
-    if let Some(t_id) = task_id.as_deref() {
-        let paths = WorkPaths::app();
-        if let Ok(ledger) =
-            crate::work::ledger::WorkRuntimeLedger::open(&paths, t_id, &parent_scope)
-        {
-            if let Ok(facts) = ledger.list_facts() {
-                for fact in facts {
-                    match fact {
-                        crate::work::models::RuntimeFact::SubagentSpawned {
-                            agent_id,
-                            provider_run_id,
-                            child_index,
-                            role,
-                            status,
-                            ..
-                        } => {
-                            map.insert(
-                                agent_id.clone(),
-                                crate::work::subagents::WorkSubagentRecord {
-                                    agent_id,
-                                    provider_run_id,
-                                    child_index,
-                                    role,
-                                    parent_scope: parent_scope.clone(),
-                                    workspace_id: None,
-                                    task_id: Some(t_id.to_string()),
-                                    launch_contract_digest: String::new(),
-                                    status,
-                                    created_at: String::new(),
-                                    updated_at: String::new(),
-                                    error: None,
-                                    result_summary: None,
-                                },
-                            );
-                        }
-                        crate::work::models::RuntimeFact::SubagentCompleted {
-                            agent_id,
-                            status,
-                            summary,
-                            ..
-                        } => {
-                            if let Some(entry) = map.get_mut(&agent_id) {
-                                entry.status = status;
-                                entry.result_summary = summary;
-                            }
-                        }
-                        crate::work::models::RuntimeFact::SubagentFailed {
-                            agent_id,
-                            status,
-                            error,
-                            ..
-                        } => {
-                            if let Some(entry) = map.get_mut(&agent_id) {
-                                entry.status = status;
-                                entry.error = error;
-                            }
-                        }
-                        crate::work::models::RuntimeFact::SubagentStopped {
-                            agent_id,
-                            status,
-                            reason,
-                            ..
-                        } => {
-                            if let Some(entry) = map.get_mut(&agent_id) {
-                                entry.status = status;
-                                entry.error = reason;
-                            }
-                        }
-                        crate::work::models::RuntimeFact::SubagentInterrupted {
-                            agent_id,
-                            status,
-                            reason,
-                            ..
-                        } => {
-                            if let Some(entry) = map.get_mut(&agent_id) {
-                                entry.status = status;
-                                entry.error = reason;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. Overlay in-memory live registry records (live state wins)
-    let live_records = crate::work::subagents::registry().list_for_scope(&parent_scope);
-    for record in live_records {
-        if let Some(t_id) = task_id.as_deref() {
-            if let Some(ref record_task) = record.task_id {
-                if record_task != t_id {
-                    continue;
-                }
-            }
-        }
-        map.insert(record.agent_id.clone(), record);
-    }
-
-    // 3. Stably sort by child_index ascending, then by agent_id
-    let mut result: Vec<crate::work::subagents::WorkSubagentRecord> = map.into_values().collect();
-    result.sort_by(|a, b| {
-        a.child_index
-            .cmp(&b.child_index)
-            .then_with(|| a.agent_id.cmp(&b.agent_id))
-    });
-
-    Ok(result)
 }
 
 #[tauri::command]

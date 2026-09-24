@@ -13,7 +13,6 @@ import {
   isPiWorkRuntimeConfirmation,
   isWorkDiagnosticTimelineEntry,
   isWorkRunReadOnly,
-  isWorkSubagentActivityEvent,
   loadWorkModels,
   loadWorkPreferences,
   normalizeWorkQueuedText,
@@ -81,12 +80,6 @@ describe("Pi Work Runtime Helpers", () => {
 
     expect(isWorkDiagnosticTimelineEntry(diagEntry)).toBe(true);
     expect(isWorkDiagnosticTimelineEntry(userEntry)).toBe(false);
-  });
-
-  it("identifies subagent activity events", () => {
-    expect(isWorkSubagentActivityEvent({ type: "tool_start" } as never)).toBe(true);
-    expect(isWorkSubagentActivityEvent({ type: "run_state" } as never)).toBe(true);
-    expect(isWorkSubagentActivityEvent({ type: "text_delta" } as never)).toBe(false);
   });
 
   it("evaluates clone and session tree availability", () => {

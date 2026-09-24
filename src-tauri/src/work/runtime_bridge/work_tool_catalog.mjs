@@ -85,16 +85,6 @@ const DESKTOP_OPERATOR_TOOL_CATALOG = [
   ["desktop_release", "Native backend: release its lease.", "read", false],
 ];
 
-const SUBAGENT_TOOL_CATALOG = [
-  ["work_delegate", "Delegate an independent task to a focused Work child subagent.", "delegation", true],
-  ["work_research_swarm", "Launch 2-3 parallel read-only researcher subagents for orthogonal investigation dimensions and collect all findings.", "delegation", true],
-  ["work_implement_review_fix", "Orchestrate a bounded implementation, independent review, and optional fix loop with worker and reviewer subagents.", "delegation", true],
-  ["work_agent_wait", "Wait for a Work child subagent and retrieve its result.", "delegation", true],
-  ["work_agent_status", "Inspect Work child subagent status and progress.", "read", true],
-  ["work_agent_steer", "Send guidance to a running Work child subagent.", "delegation", true],
-  ["work_agent_stop", "Stop a running Work child subagent.", "delegation", true],
-];
-
 function materialize(entries) {
   return entries.map(([name, description, effect, defaultActive]) => ({
     name,
@@ -109,7 +99,6 @@ export function createWorkToolCatalog({
   browserEnabled = process.env.AGENTCABIN_WORK_BROWSER_ENABLED === "1",
   browserUseEnabled = process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED === "1",
   desktopUseEnabled = process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED === "1",
-  subagentChild = process.env.PI_SUBAGENT_CHILD === "1",
 } = {}) {
   return [
     ...materialize(BASE_TOOL_CATALOG),
@@ -117,7 +106,6 @@ export function createWorkToolCatalog({
     ...(desktopUseEnabled ? materialize(DESKTOP_OPERATOR_TOOL_CATALOG) : []),
     ...(mcpEnabled ? materialize(MCP_TOOL_CATALOG) : []),
     ...(browserEnabled ? materialize(BROWSER_TOOL_CATALOG) : []),
-    ...(subagentChild ? [] : materialize(SUBAGENT_TOOL_CATALOG)),
   ];
 }
 

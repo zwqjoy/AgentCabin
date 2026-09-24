@@ -57,8 +57,6 @@ pub struct AdapterSettings {
     /// Work-only Browser adapter bridge. It is loaded only when the Work
     /// Browser config is enabled and has a Work-owned provider secret.
     pub pi_work_browser_adapter: Option<String>,
-    /// Work-only Subagents adapter bridge.
-    pub pi_work_subagents_adapter: Option<String>,
     /// AgentCabin-shared Pi extension package paths explicitly enabled for the
     /// current profile. Package installation is shared; activation is not.
     pub pi_shared_extension_sources: Vec<String>,
@@ -82,7 +80,6 @@ pub struct AdapterSettings {
     pub pi_plan_mode_enabled: bool,
     pub pi_goal_enabled: bool,
     pub pi_context_prune_enabled: bool,
-    pub pi_subagents_enabled: bool,
     pub pi_multi_edit_enabled: bool,
     pub pi_lsp_enabled: bool,
     pub global_providers: Vec<crate::models::GlobalProviderCredential>,
@@ -291,11 +288,6 @@ pub fn build_adapter_settings(
     } else {
         false
     };
-    let pi_subagents_enabled = if agent.agent == "pi" {
-        agent.pi_subagents_enabled.unwrap_or(true)
-    } else {
-        false
-    };
     // Multi-edit is an AgentCabin-managed Pi Code baseline. Keep the persisted
     // field for backward-compatible settings deserialization, but never allow
     // an old `false` value to disable this system capability.
@@ -337,7 +329,6 @@ pub fn build_adapter_settings(
         pi_work_extension: None,
         pi_work_mcp_adapter: None,
         pi_work_browser_adapter: None,
-        pi_work_subagents_adapter: None,
         pi_shared_extension_sources: Vec::new(),
         pi_work_package_sources: Vec::new(),
         pi_work_skill_sources: Vec::new(),
@@ -349,7 +340,6 @@ pub fn build_adapter_settings(
         pi_plan_mode_enabled,
         pi_goal_enabled,
         pi_context_prune_enabled,
-        pi_subagents_enabled,
         pi_multi_edit_enabled,
         pi_lsp_enabled,
         global_providers: user.global_providers.clone(),
@@ -561,7 +551,6 @@ mod tests {
             pi_work_extension: None,
             pi_work_mcp_adapter: None,
             pi_work_browser_adapter: None,
-            pi_work_subagents_adapter: None,
             pi_shared_extension_sources: vec![],
             pi_work_package_sources: vec![],
             pi_work_skill_sources: vec![],
@@ -573,7 +562,6 @@ mod tests {
             pi_plan_mode_enabled: false,
             pi_goal_enabled: false,
             pi_context_prune_enabled: false,
-            pi_subagents_enabled: false,
             pi_multi_edit_enabled: false,
             pi_lsp_enabled: false,
             global_providers: vec![],
