@@ -77,6 +77,36 @@
 
   const filteredTraces = $derived(filterBrowserTraces(traces, searchQuery));
 
+  function traceStatusMeta(status: string): { label: string; className: string } {
+    switch (status) {
+      case "started":
+        return {
+          label: "进行中",
+          className: "text-blue-600 bg-blue-500/10 border-blue-500/20",
+        };
+      case "success":
+        return {
+          label: "已执行",
+          className: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20",
+        };
+      case "failed":
+        return {
+          label: "失败",
+          className: "text-destructive bg-destructive/10 border-destructive/20",
+        };
+      case "waiting_approval":
+        return {
+          label: "等待审批",
+          className: "text-amber-600 bg-amber-500/10 border-amber-500/20",
+        };
+      default:
+        return {
+          label: status || "未知",
+          className: "text-muted-foreground bg-muted border-border",
+        };
+    }
+  }
+
   // Keep the native view mounted for archived/read-only runs as well. The
   // inspector can be reopened after a task finishes, and the view is the only
   // source of truth now that the standalone browser fallback is gone.
@@ -302,6 +332,18 @@
     </div>
   {/if}
 
+  {#if session?.currentAction && session.status === "running"}
+    <div
+      class="flex shrink-0 items-center gap-2 border-b border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs"
+    >
+      <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-blue-500"></span>
+      <span class="font-medium text-blue-700 dark:text-blue-300">Agent 正在操作</span>
+      <span class="min-w-0 truncate text-foreground"
+        >{sanitizeTraceText(session.currentAction)}</span
+      >
+    </div>
+  {/if}
+
   <div class="relative min-h-0 flex-1 overflow-hidden bg-white dark:bg-zinc-900">
     {#if useEmbeddedSurface}
       <EmbeddedBrowserSurface
@@ -375,6 +417,7 @@
         </div>
         {#each filteredTraces as trace (trace.stepIndex)}
           {@const actMeta = formatBrowserAction(trace.actionType)}
+          {@const traceStatus = traceStatusMeta(trace.status)}
           <div
             class="flex items-start gap-2 rounded-lg border border-border/70 bg-card p-2.5 text-xs"
           >
@@ -392,6 +435,10 @@
                 <span class="text-[10px] font-mono text-muted-foreground"
                   >{trace.durationMs > 0 ? `${trace.durationMs}ms` : ""}</span
                 >
+                <span
+                  class="rounded border px-1.5 py-0.5 text-[9px] font-medium {traceStatus.className}"
+                  >{traceStatus.label}</span
+                >
               </div>
               <p class="break-all text-[11px] leading-snug text-foreground">
                 {sanitizeTraceText(trace.description)}
@@ -404,6 +451,22 @@
                 >
                   {trace.error}
                 </div>{/if}
+              {#if trace.screenshotData}
+                <button
+                  type="button"
+                  class="mt-1 flex items-center gap-2 rounded-md border border-border/70 p-1 text-left hover:bg-accent/50"
+                  aria-label={`查看第 ${trace.stepIndex} 步截图`}
+                  onclick={() => (previewImageModal = trace.screenshotData ?? null)}
+                >
+                  <img
+                    src={trace.screenshotData}
+                    alt=""
+                    class="h-12 w-20 rounded object-cover"
+                    loading="lazy"
+                  />
+                  <span class="text-[10px] text-muted-foreground">查看此步页面截图</span>
+                </button>
+              {/if}
             </div>
           </div>
         {/each}

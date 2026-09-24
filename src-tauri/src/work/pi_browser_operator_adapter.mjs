@@ -23,11 +23,19 @@ const ScreenshotSchema = Type.Object({
 
 const WaitSchema = Type.Object({
   ms: Type.Optional(Type.Number({ description: "Milliseconds to wait." })),
+  timeout_ms: Type.Optional(Type.Number({ description: "Maximum time to wait for expected page conditions, up to 30000 ms." })),
   load_state: Type.Optional(Type.Union([
     Type.Literal("domcontentloaded"),
     Type.Literal("load"),
     Type.Literal("networkidle"),
   ], { description: "Page lifecycle load state to wait for." })),
+  expect: Type.Optional(Type.Object({
+    url_contains: Type.Optional(Type.String({ description: "Verify that the current URL contains this text." })),
+    text_contains: Type.Optional(Type.String({ description: "Verify that rendered page text contains this text." })),
+    text_absent: Type.Optional(Type.String({ description: "Verify that this text is absent from the rendered page." })),
+    selector_visible: Type.Optional(Type.String({ description: "Verify that an element matching this CSS selector is visible." })),
+    selector_absent: Type.Optional(Type.String({ description: "Verify that no element matching this CSS selector exists." })),
+  })),
 });
 
 const TabsSchema = Type.Object({
@@ -45,6 +53,7 @@ const CloseSchema = Type.Object({});
 
 const ClickSchema = Type.Object({
   ref: Type.Optional(Type.String({ description: "Semantic ref from browser_snapshot (e.g. 'e4'). Strongly recommended over CSS selector." })),
+  target_label: Type.Optional(Type.String({ description: "Short accessible name copied from the latest browser_snapshot, used to show the human which element is being targeted." })),
   selector: Type.Optional(Type.String({ description: "Optional CSS selector or visible text as fallback." })),
   button: Type.Optional(Type.Union([
     Type.Literal("left"),
@@ -56,6 +65,7 @@ const ClickSchema = Type.Object({
 
 const TypeSchema = Type.Object({
   ref: Type.Optional(Type.String({ description: "Semantic ref from browser_snapshot (e.g. 'e2'). Strongly recommended." })),
+  target_label: Type.Optional(Type.String({ description: "Short accessible name copied from the latest browser_snapshot, used to show the human which field is being targeted." })),
   text: Type.String({ description: "Text content to type into the input field." }),
   selector: Type.Optional(Type.String({ description: "Optional CSS selector as fallback." })),
   clear: Type.Optional(Type.Boolean({ description: "Whether to clear existing text before typing (default true)." })),
@@ -79,8 +89,17 @@ const ScrollSchema = Type.Object({
   ref: Type.Optional(Type.String({ description: "Optional semantic ref of a specific scrollable container." })),
 });
 
+function imageContent(details) {
+  const screenshot = typeof details?.screenshot === "string" ? details.screenshot : "";
+  const rawBase64 = typeof details?.base64 === "string" ? details.base64 : "";
+  const match = screenshot.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s);
+  const base64 = match?.[2] || rawBase64;
+  const mimeType = match?.[1] || details?.mimeType || "image/png";
+  return base64 ? [{ type: "image", data: base64, mimeType }] : [];
+}
+
 function result(text, details = {}) {
-  return { content: [{ type: "text", text }], details };
+  return { content: [{ type: "text", text }, ...imageContent(details)], details };
 }
 
 function fail(message, details = {}) {
@@ -166,7 +185,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_snapshot",
     label: "browser_snapshot",
-    description: "Capture the current page's semantic accessibility tree with stable [ref=eX] identifiers. Use these refs for element click/type/select operations.",
+    description: "Capture the current page's semantic accessibility tree with stable [ref=eX] identifiers and a screenshot image. Use these refs for element click/type/select operations; refresh the snapshot after page changes.",
     parameters: SnapshotSchema,
     async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_snapshot", "snapshot", params, signal);
@@ -189,10 +208,11 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       let parsed = {};
       try { parsed = JSON.parse(res.stdout || "{}"); } catch {}
       if (parsed.path) {
-        return result(`Screenshot saved to ${parsed.path}`, { ok: true, path: parsed.path });
+        return result(`Screenshot saved to ${parsed.path}`, { ok: true, ...parsed });
       }
-      return result(`Screenshot captured (${parsed.base64 ? Math.round(parsed.base64.length * 0.75) : 0} bytes)`, {
+      return result("Screenshot captured for visual inspection.", {
         ok: true,
+        screenshot: parsed.screenshot,
         mimeType: parsed.mimeType || "image/png",
         base64: parsed.base64,
       });
@@ -203,14 +223,33 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_wait_for",
     label: "browser_wait_for",
-    description: "Wait for a specified duration in ms, or wait until the page reaches a specific lifecycle state (domcontentloaded, load, networkidle).",
+    description: "Wait for a duration or verify page conditions (URL, rendered text, visible element, or absent element). After click/type actions, use expect with the user's requested result; only a successful condition check counts as verified.",
     parameters: WaitSchema,
     async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_wait_for", "wait", params, signal);
-      if (!res.success) return fail(res.stderr || res.error || "Wait failed", res);
       let parsed = {};
       try { parsed = JSON.parse(res.stdout || "{}"); } catch {}
-      return result(`Wait completed on ${parsed.url || "page"}`, { ok: true, ...parsed });
+      if (!res.success) {
+        return fail(res.stderr || res.error || "Expected browser page condition was not met.", {
+          ...res,
+          ...parsed,
+          ok: false,
+          resultVerified: false,
+        });
+      }
+      const verified = parsed.verified === true;
+      if (parsed.timedOut) {
+        return fail(
+          `Expected page condition was not met on ${parsed.url || "page"}: ${(parsed.failures || []).join("; ")}`,
+          { ...parsed, ok: false, resultVerified: false },
+        );
+      }
+      return result(
+        verified
+          ? `Expected page condition verified on ${parsed.url || "page"}.`
+          : `Wait completed on ${parsed.url || "page"}; no expected page condition was checked.`,
+        { ok: true, ...parsed, resultVerified: verified },
+      );
     },
   });
 
@@ -251,12 +290,12 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_click",
     label: "browser_click",
-    description: "Click an interactive element on the page. Pass 'ref' (from browser_snapshot) for accurate semantic targeting, or 'selector' as fallback.",
+    description: "Click an interactive element on the page. Pass 'ref' and its accessible name as target_label from the latest browser_snapshot. The operation returns a fresh page snapshot and screenshot; inspect the result before claiming the requested outcome succeeded.",
     parameters: ClickSchema,
     async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_click", "click", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Click failed", res);
-      return result(`Clicked element ${params?.ref ? `[ref=${params.ref}]` : params?.selector}`, { ok: true, ...res });
+      return result(`Click action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.`, { ok: true, ...res, actionExecuted: true, resultVerified: false });
     },
   });
 
@@ -264,12 +303,12 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_type",
     label: "browser_type",
-    description: "Type text into an input field or textarea. Pass 'ref' (from browser_snapshot) for accurate targeting.",
+    description: "Type text into an input field or textarea. Pass 'ref' and its accessible name as target_label from the latest browser_snapshot. The operation returns a fresh page snapshot and screenshot; inspect the result before claiming the requested outcome succeeded.",
     parameters: TypeSchema,
     async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_type", "type", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Type failed", res);
-      return result(`Typed into ${params?.ref ? `[ref=${params.ref}]` : params?.selector}`, { ok: true, ...res });
+      return result(`Text input action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.`, { ok: true, ...res, actionExecuted: true, resultVerified: false });
     },
   });
 

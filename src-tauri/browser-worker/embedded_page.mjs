@@ -20,6 +20,32 @@ export function createEmbeddedPage({ client }) {
     return result?.result?.value;
   }
 
+  async function highlightTarget(selector) {
+    const expression = JSON.stringify(selector);
+    try {
+      const found = await evaluateValue(`
+        const el = document.querySelector(${expression});
+        if (!el) return false;
+        const outline = [el.style.getPropertyValue('outline'), el.style.getPropertyPriority('outline')];
+        const offset = [el.style.getPropertyValue('outline-offset'), el.style.getPropertyPriority('outline-offset')];
+        el.style.setProperty('outline', '3px solid #3b82f6', 'important');
+        el.style.setProperty('outline-offset', '2px', 'important');
+        window.setTimeout(() => {
+          if (!el.isConnected) return;
+          if (outline[0]) el.style.setProperty('outline', outline[0], outline[1]);
+          else el.style.removeProperty('outline');
+          if (offset[0]) el.style.setProperty('outline-offset', offset[0], offset[1]);
+          else el.style.removeProperty('outline-offset');
+        }, 1200);
+        return true;
+      `);
+      if (found) await new Promise((resolve) => setTimeout(resolve, 220));
+    } catch {
+      // Highlight is a visual aid; a cross-origin or stale target must not
+      // prevent the actual browser action from reporting its own result.
+    }
+  }
+
   const page = {
     async title() {
       return (await evaluateValue("return document.title;")) ?? "";
@@ -70,6 +96,7 @@ export function createEmbeddedPage({ client }) {
     },
     async clickRef(ref) {
       const safeRef = String(ref).replace(/[^a-zA-Z0-9_-]/g, "");
+      await highlightTarget(`[data-work-ref="${safeRef}"]`);
       const rect = await evaluateValue(
         `const el = document.querySelector('[data-work-ref="${safeRef}"]');
          if (!el) return null;
@@ -81,6 +108,7 @@ export function createEmbeddedPage({ client }) {
     },
     async clickSelector(selector) {
       const safeSelector = JSON.stringify(String(selector));
+      await highlightTarget(String(selector));
       const rect = await evaluateValue(
         `const el = document.querySelector(${safeSelector});
          if (!el) return null;

@@ -117,6 +117,66 @@ async function relayAct(page, params = {}) {
   return { ok: true, outcome, execution: { outcome, steps, ...(stoppedAt === undefined ? {} : { stoppedAt }) }, observation: await relayObservation(page, params) };
 }
 
+async function waitForPageCondition(page, expect = {}, timeoutMs = 10000) {
+  const keys = [
+    "url_contains",
+    "text_contains",
+    "text_absent",
+    "selector_visible",
+    "selector_absent",
+  ];
+  const conditions = Object.fromEntries(
+    keys.filter((key) => typeof expect[key] === "string" && expect[key].length > 0)
+      .map((key) => [key, expect[key]]),
+  );
+  if (Object.keys(conditions).length === 0) return { verified: false, checks: [] };
+
+  const deadline = Date.now() + timeoutMs;
+  let last = { matched: false, failures: [] };
+  while (true) {
+    last = await page.evaluate((expected) => {
+      const failures = [];
+      const text = document.body?.innerText || "";
+      if (expected.url_contains && !location.href.includes(expected.url_contains)) {
+        failures.push(`URL does not contain: ${expected.url_contains}`);
+      }
+      if (expected.text_contains && !text.includes(expected.text_contains)) {
+        failures.push(`Page text is missing: ${expected.text_contains}`);
+      }
+      if (expected.text_absent && text.includes(expected.text_absent)) {
+        failures.push(`Page text is still present: ${expected.text_absent}`);
+      }
+      if (expected.selector_visible) {
+        try {
+          const element = document.querySelector(expected.selector_visible);
+          const style = element ? getComputedStyle(element) : null;
+          const rect = element?.getBoundingClientRect();
+          if (!element || !style || style.display === "none" || style.visibility === "hidden" || !rect?.width || !rect?.height) {
+            failures.push(`Visible element not found: ${expected.selector_visible}`);
+          }
+        } catch {
+          failures.push(`Invalid CSS selector: ${expected.selector_visible}`);
+        }
+      }
+      if (expected.selector_absent) {
+        try {
+          if (document.querySelector(expected.selector_absent)) {
+            failures.push(`Element is still present: ${expected.selector_absent}`);
+          }
+        } catch {
+          failures.push(`Invalid CSS selector: ${expected.selector_absent}`);
+        }
+      }
+      return { matched: failures.length === 0, failures, url: location.href, title: document.title };
+    }, conditions);
+    if (last.matched) return { verified: true, checks: conditions, url: last.url, title: last.title };
+    if (Date.now() >= deadline) {
+      return { verified: false, timedOut: true, checks: conditions, failures: last.failures, url: last.url, title: last.title };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
 async function handleEmbedded(method, runId, params = {}) {
   const session = await getEmbeddedSession(runId, params);
   const page = session.page;
@@ -151,19 +211,31 @@ async function handleEmbedded(method, runId, params = {}) {
       else if (params.ref) await page.clickRef(params.ref);
       else if (params.selector) await page.clickSelector(params.selector);
       else throw new Error("Embedded click requires a ref, selector, or coordinates");
-      return { ok: true, ...(await generatePageSnapshot(page)) };
+      return {
+        ok: true,
+        ...(await generatePageSnapshot(page)),
+        screenshot: await page.screenshot(),
+      };
     case "browser_type":
       if (params.ref) await page.clickRef(params.ref);
       else if (params.selector) await page.clickSelector(params.selector);
       await page.typeText(params.text ?? "");
       if (params.pressEnter) await page.pressKey("Enter");
-      return { ok: true };
+      return {
+        ok: true,
+        ...(await generatePageSnapshot(page)),
+        screenshot: await page.screenshot(),
+      };
     case "browser_scroll": {
       const delta = params.deltaY ?? (
         params.direction === "up" ? -Math.abs(params.amount ?? 500) : Math.abs(params.amount ?? 500)
       );
       await page.scroll(delta, params.deltaX ?? 0);
-      return { ok: true, url: await page.refreshLocation(), title: await page.title() };
+      return {
+        ok: true,
+        ...(await generatePageSnapshot(page)),
+        screenshot: await page.screenshot(),
+      };
     }
     case "browser_interact": {
       if (params.action === "navigate") await page.navigate(params.url);
@@ -197,9 +269,22 @@ async function handleEmbedded(method, runId, params = {}) {
       };
     case "browser_focus":
       return { ok: true, url: await page.refreshLocation(), title: await page.title() };
-    case "browser_wait_for":
-      if (params.ms) await new Promise((resolve) => setTimeout(resolve, Math.min(Number(params.ms), 30000)));
-      return { ok: true, url: await page.refreshLocation(), title: await page.title() };
+    case "browser_wait_for": {
+      const expectation = await waitForPageCondition(
+        page,
+        params.expect || {},
+        Math.max(0, Math.min(Number(params.timeout_ms ?? params.timeoutMs ?? 10000), 30000)),
+      );
+      if (!expectation.checks.length && params.ms) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(Number(params.ms), 30000)));
+      }
+      return {
+        ok: true,
+        ...expectation,
+        ...(await generatePageSnapshot(page)),
+        screenshot: await page.screenshot(),
+      };
+    }
     case "browser_close":
       page.close();
       embeddedSessions.delete(runId);

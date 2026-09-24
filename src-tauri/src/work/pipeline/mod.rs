@@ -2991,33 +2991,61 @@ impl ToolPipeline {
             }
             "browser_wait_for" => {
                 let ms = intent.arguments.get("ms").and_then(|v| v.as_u64());
+                let timeout_ms = intent.arguments.get("timeout_ms").and_then(|v| v.as_u64());
                 let load_state = intent
                     .arguments
                     .get("load_state")
                     .and_then(|v| v.as_str())
                     .map(String::from);
+                let expect = intent.arguments.get("expect").cloned();
                 let manager = crate::work::browser_operator::browser_operator_manager();
                 match manager
                     .execute(
                         &intent.work_run_id,
                         "browser_wait_for",
-                        serde_json::json!({ "ms": ms, "load_state": load_state }),
+                        serde_json::json!({
+                            "ms": ms,
+                            "timeout_ms": timeout_ms,
+                            "load_state": load_state,
+                            "expect": expect,
+                        }),
                     )
                     .await
                 {
-                    Ok(val) => Ok(WorkExecutionResult {
-                        execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                        resource_id: intent.tool_name.clone(),
-                        action: intent.action.clone(),
-                        status: WorkExecutionStatus::Success,
-                        failure_kind: None,
-                        exit_code: Some(0),
-                        stdout: serde_json::to_string(&val).unwrap_or_default(),
-                        stderr: String::new(),
-                        outputs: Vec::new(),
-                        started_at: started_at.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    }),
+                    Ok(val) => {
+                        let verification_failed = val
+                            .get("timedOut")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        let failure_message = val
+                            .get("failures")
+                            .and_then(serde_json::Value::as_array)
+                            .map(|failures| {
+                                failures
+                                    .iter()
+                                    .filter_map(serde_json::Value::as_str)
+                                    .collect::<Vec<_>>()
+                                    .join("; ")
+                            })
+                            .unwrap_or_default();
+                        Ok(WorkExecutionResult {
+                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
+                            resource_id: intent.tool_name.clone(),
+                            action: intent.action.clone(),
+                            status: if verification_failed {
+                                WorkExecutionStatus::Failed
+                            } else {
+                                WorkExecutionStatus::Success
+                            },
+                            failure_kind: None,
+                            exit_code: Some(if verification_failed { 1 } else { 0 }),
+                            stdout: serde_json::to_string(&val).unwrap_or_default(),
+                            stderr: failure_message,
+                            outputs: Vec::new(),
+                            started_at: started_at.clone(),
+                            finished_at: Utc::now().to_rfc3339(),
+                        })
+                    }
                     Err(err) => Err(err),
                 }
             }
@@ -3099,6 +3127,11 @@ impl ToolPipeline {
                     .get("selector")
                     .and_then(|v| v.as_str())
                     .map(String::from);
+                let target_label = intent
+                    .arguments
+                    .get("target_label")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let button = intent
                     .arguments
                     .get("button")
@@ -3116,6 +3149,7 @@ impl ToolPipeline {
                         serde_json::json!({
                             "ref": ref_id,
                             "selector": selector,
+                            "target_label": target_label,
                             "button": button,
                             "double_click": double_click,
                         }),
@@ -3155,6 +3189,11 @@ impl ToolPipeline {
                     .get("selector")
                     .and_then(|v| v.as_str())
                     .map(String::from);
+                let target_label = intent
+                    .arguments
+                    .get("target_label")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let clear = intent.arguments.get("clear").and_then(|v| v.as_bool());
                 let press_enter = intent
                     .arguments
@@ -3169,6 +3208,7 @@ impl ToolPipeline {
                             "ref": ref_id,
                             "text": text,
                             "selector": selector,
+                            "target_label": target_label,
                             "clear": clear,
                             "press_enter": press_enter,
                         }),

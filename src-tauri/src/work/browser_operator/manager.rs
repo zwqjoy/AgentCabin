@@ -327,14 +327,35 @@ impl BrowserOperatorManager {
                     .and_then(Value::as_str)
                     .map(ToString::to_string);
                 let screenshot = screenshot_data_from_result(val);
+                let verification_failed = val
+                    .get("timedOut")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let verification_error = verification_failed.then(|| {
+                    val.get("failures")
+                        .and_then(Value::as_array)
+                        .map(|failures| {
+                            failures
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                .join("; ")
+                        })
+                        .filter(|message| !message.is_empty())
+                        .unwrap_or_else(|| "Expected browser page condition was not met".into())
+                });
 
                 session_mgr
                     .record_action_end(
                         run_id,
                         step_index,
                         BrowserActionCompletion {
-                            status: "success".to_string(),
-                            error: None,
+                            status: if verification_failed {
+                                "failed".to_string()
+                            } else {
+                                "success".to_string()
+                            },
+                            error: verification_error,
                             screenshot,
                             page_title,
                             current_url,
@@ -410,14 +431,7 @@ impl BrowserOperatorManager {
                 )
                 .await
             }
-            "browser_wait_for" => {
-                self.wait(
-                    run_id,
-                    param_u64(&params, &["ms"]),
-                    param_string(&params, &["load_state", "loadState"]),
-                )
-                .await
-            }
+            "browser_wait_for" => self.wait(run_id, params).await,
             "browser_tabs" => {
                 let target_id = param_string(&params, &["target_id", "targetId", "id"]);
                 self.tabs_with_target(
@@ -577,17 +591,8 @@ impl BrowserOperatorManager {
         self.call(run_id, "browser_take_screenshot", params).await
     }
 
-    /// `browser_wait_for`: wait for timeout or load state.
-    pub async fn wait(
-        &self,
-        run_id: &str,
-        ms: Option<u64>,
-        load_state: Option<String>,
-    ) -> Result<Value, String> {
-        let params = json!({
-            "ms": ms,
-            "loadState": load_state,
-        });
+    /// `browser_wait_for`: wait for a duration and/or verify a page condition.
+    pub async fn wait(&self, run_id: &str, params: Value) -> Result<Value, String> {
         self.call(run_id, "browser_wait_for", params).await
     }
 
@@ -891,13 +896,24 @@ fn parse_action_meta(
             None,
         ),
         "browser_wait_for" => {
-            let ms = param_u64(params, &["ms"]).unwrap_or(0);
-            (
-                BrowserActionType::WaitFor,
-                format!("等待页面加载或延时 ({}ms)", ms),
-                None,
-                None,
-            )
+            let expect = params.get("expect").filter(|value| value.is_object());
+            let label = expect
+                .and_then(|value| value.get("text_contains"))
+                .and_then(Value::as_str)
+                .map(|text| format!("等待页面出现「{}」", text))
+                .or_else(|| {
+                    expect
+                        .and_then(|value| value.get("url_contains"))
+                        .and_then(Value::as_str)
+                        .map(|url| format!("验证页面地址包含 {}", url))
+                })
+                .unwrap_or_else(|| {
+                    format!(
+                        "等待页面加载或延时 ({}ms)",
+                        param_u64(params, &["ms"]).unwrap_or(0)
+                    )
+                });
+            (BrowserActionType::WaitFor, label, None, None)
         }
         "browser_tabs" => {
             let action = param_string(params, &["action"]).unwrap_or_else(|| "list".to_string());
@@ -917,22 +933,20 @@ fn parse_action_meta(
         "browser_click" => {
             let sel =
                 param_string(params, &["selector"]).or_else(|| param_string(params, &["ref"]));
-            (
-                BrowserActionType::Click,
-                format!("点击元素: {}", sel.as_deref().unwrap_or("")),
-                None,
-                sel,
-            )
+            let label = param_string(params, &["target_label"]);
+            let desc = label
+                .map(|label| format!("点击「{}」", label))
+                .unwrap_or_else(|| format!("点击元素: {}", sel.as_deref().unwrap_or("")));
+            (BrowserActionType::Click, desc, None, sel)
         }
         "browser_type" => {
             let sel =
                 param_string(params, &["selector"]).or_else(|| param_string(params, &["ref"]));
-            (
-                BrowserActionType::Type,
-                format!("在元素 {} 中输入文本", sel.as_deref().unwrap_or("")),
-                None,
-                sel,
-            )
+            let label = param_string(params, &["target_label"]);
+            let desc = label
+                .map(|label| format!("在「{}」中输入文本", label))
+                .unwrap_or_else(|| format!("在元素 {} 中输入文本", sel.as_deref().unwrap_or("")));
+            (BrowserActionType::Type, desc, None, sel)
         }
         "browser_select_option" => {
             let sel =

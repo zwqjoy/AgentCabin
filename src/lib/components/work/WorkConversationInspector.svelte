@@ -225,6 +225,7 @@
   // between tool calls or while the answer is being composed.
   let browserActivitySeenFor = $state("");
   let browserActivitySeen = $state(false);
+  let browserAutoOpenedFor = $state("");
   // SessionInfo.runId is stable for the whole conversation, while the
   // WorkRun projection can arrive later and use a different identifier.
   let browserActivityScope = $derived(sessionInfo?.runId ?? "");
@@ -238,6 +239,17 @@
     if (browserActivityHint) browserActivitySeen = true;
   });
   let hasBrowserActivity = $derived(browserActivitySeen);
+
+  // Mount the run-scoped BrowserInspector as soon as the first browser tool
+  // starts. Its embedded WebContentsView registers the CDP relay that the
+  // Browser Worker waits for before executing the first action.
+  $effect(() => {
+    const scope = browserActivityScope;
+    if (scope && hasBrowserActivity && browserAutoOpenedFor !== scope) {
+      browserOpen = true;
+      browserAutoOpenedFor = scope;
+    }
+  });
 
   let attemptedTaskId = $state("");
   $effect(() => {
