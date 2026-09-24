@@ -468,11 +468,11 @@
         {/if}
       </div>
 
-      <!-- Subtle separator -->
-      <span class="text-foreground/20 shrink-0">·</span>
-
       <!-- Status dot + Status text (clean header, no runtime/stream noise) -->
       {#if running || statusText || (agent && agent !== "pi")}
+        <!-- Subtle separator -->
+        <span class="text-foreground/20 shrink-0">·</span>
+
         <div
           class="inline-flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground/70 select-none"
         >
@@ -481,7 +481,13 @@
             ></span>
             <span class="font-normal text-foreground/80">{statusText || "正在工作"}</span>
           {:else if statusText}
-            <span class="font-normal text-muted-foreground/70">{statusText}</span>
+            {#if statusText.includes("等待")}
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"
+              ></span>
+              <span class="font-normal text-orange-600 dark:text-orange-400">{statusText}</span>
+            {:else}
+              <span class="font-normal text-muted-foreground/70">{statusText}</span>
+            {/if}
           {:else if agent && agent !== "pi"}
             {#if onStatusClick}
               <button

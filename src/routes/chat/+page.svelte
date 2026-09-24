@@ -6733,7 +6733,7 @@
       <!-- Status bar -->
       <SessionStatusBar
         bind:this={statusBarRef}
-        running={store.sessionAlive}
+        running={store.isRunning}
         run={store.run}
         agent={effectiveAgent}
         model={effectiveAgent === "codex"
@@ -6770,7 +6770,11 @@
         !store.isRunning
           ? handleRewind
           : undefined}
-        statusText={store.sessionAlive ? "正在工作" : ""}
+        statusText={store.isRunning
+          ? "正在工作"
+          : store.hasPendingPermission || store.hasElicitation
+            ? "等待你处理"
+            : ""}
         toolsCount={runEffectiveCapabilities
           ? (runEffectiveCapabilities.enabledSkills?.length ?? 0) +
             (runEffectiveCapabilities.mcpServers?.length ?? 0) +

@@ -1216,6 +1216,25 @@
     if (session.run) return "等待下一条消息";
     return "尚未启动会话";
   });
+  let workHeaderStatus = $derived.by(() => {
+    if (workSession.starting) {
+      return { running: true, text: "正在启动" };
+    }
+    if (session.isRunning) {
+      return { running: true, text: "正在执行" };
+    }
+    if (currentPendingInteractions.length > 0) {
+      const isQuestion = currentPendingInteractions.some(isQuestionInteraction);
+      return { running: false, text: isQuestion ? "等待你的回答" : "等待你处理" };
+    }
+    if (session.hasElicitation) {
+      return { running: false, text: "等待你的回答" };
+    }
+    if (session.hasPendingPermission) {
+      return { running: false, text: "等待你处理" };
+    }
+    return { running: false, text: "" };
+  });
   let calculatedSessionAlive = $derived(Boolean(session.run && session.sessionAlive));
   let progressTasks = $derived.by(() => {
     if (session.workTaskState !== null) return session.workTaskState.plan;
@@ -2494,11 +2513,11 @@
     run={session.run}
     agent={effectiveWorkAgent}
     model={session.model}
-    running={session.sessionAlive}
+    running={workHeaderStatus.running}
     onToggleSidebar={toggleAppSidebar}
     sidebarOpen={appSidebarOpen}
     cwd={isStandalone ? "" : workspace?.name || session.sessionCwd || workspace?.root || ""}
-    statusText={session.sessionAlive ? "正在执行" : ""}
+    statusText={workHeaderStatus.text}
     {modelOptions}
     onModelChange={(model) => void handleModelChange(model)}
     effort={currentEffort}
