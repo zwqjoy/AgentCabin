@@ -442,6 +442,21 @@ async fn spawn_actor_with_launch(
     }
     crate::agent::pi_permission::sync_for_spawn(settings, &permission_env);
     let args = build_rpc_args(settings, launch.as_ref())?;
+    if settings.pi_provider.is_some() || !settings.global_providers.is_empty() {
+        if let Some(code_profile_dir) = settings.pi_code_profile_dir.as_deref() {
+            // pi-subagents starts fresh Pi processes; make the same explicit
+            // extension set available to children through their profile defaults.
+            let extension_sources = args
+                .windows(2)
+                .filter(|pair| pair[0] == "-e")
+                .map(|pair| pair[1].clone())
+                .collect::<Vec<_>>();
+            pi_provider_bridge::enable_for_subagents(
+                &PathBuf::from(code_profile_dir),
+                &extension_sources,
+            )?;
+        }
+    }
 
     log::debug!(
         "[pi_rpc_actor] spawn: run_id={}, binary={}, args={:?}, cwd={}",
