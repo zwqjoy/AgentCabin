@@ -28,13 +28,14 @@ import {
 const MAX_READ_BYTES = 1024 * 1024;
 const CONVERSATION_HTML_GUIDANCE = `
 ## 对话内图表展示
-用户要求“展示图表、折线图、可视化”或图表有助于解释时，优先直接在助手回复的对应位置输出 Markdown 围栏代码块，语言标记为 html-preview。前端会在对话中原位渲染，支持预览/代码切换；过程回复和最终回复均可使用，无需先写文件或登记 Artifact。
+用户要求“展示图表、流程图、可视化”或图解有助于解释时，直接在助手回复的对应位置输出对话可渲染的代码围栏。流程图、时序图、架构图等 Mermaid 图解使用小写 mermaid 围栏，在对话中原生渲染；精确数值图表使用小写 echarts 围栏；自定义可视化使用完整、自包含的 HTML，优先使用 html type="renderer"，也兼容 html-preview。前端会在对话中原位渲染；过程回复和最终回复均可使用，无需先写文件或登记 Artifact。
 示例格式：
-\`\`\`html-preview
+\`\`\`html type="renderer"
 <figure><svg viewBox="0 0 320 120" role="img" aria-label="示例趋势图"><polyline points="20,100 160,60 300,20" fill="none" stroke="#2563eb" stroke-width="3"/></svg><figcaption>示例趋势（仅为格式示例）</figcaption></figure>
 \`\`\`
-图表必须基于实际取得的数据；格式示例不是业务数据。输出完整、自包含 HTML，使用内联 CSS、SVG 或内联 JavaScript/Canvas；支持 HTML 片段，无需完整网页外壳。预览处于隔离 iframe，外部脚本/CDN、fetch、相对资源路径和本地文件地址不可用，优先内联 SVG。关闭围栏后即可显示图表，后续说明可继续输出。
-仅为对话展示时，不要将任务自动改为创建 output/ 文件、注册成果或启动本地 HTTP 服务。用户明确要求保存/下载/交付文件，或任务本身确实需要文件时，才同时生成并登记文件成果；文件路径或 Markdown 数据表不能替代用户要求的对话图表。已有 HTML 文件可用 work_read_file 读取后，将所需图表内容放入 html-preview 块。
+图表必须基于实际取得的数据；格式示例不是业务数据。输出完整、自包含 HTML，使用内联 CSS、SVG 或内联 JavaScript/Canvas；支持 HTML 片段，无需完整网页外壳。预览处于隔离 iframe，外部脚本/CDN、fetch、相对资源路径和本地文件地址不可用；HTTPS 图片可以直接引用，其他资源优先内联。关闭围栏后即可显示图表，后续说明可继续输出。
+用户提供 HTTPS 图片 URL 并要求在对话中显示时，把 URL 直接放入 HTML renderer 的 <img src="...">；不要把链接当作导航任务，不要仅为显示、确认或加载图片而调用浏览器/Web 工具或下载图片。只有用户另行要求浏览网页、搜索资料或核验地址时才使用这些工具。
+仅为对话展示时，不要将任务自动改为创建 output/ 文件、注册成果或启动本地 HTTP 服务。用户明确要求保存/下载/交付文件，或任务本身确实需要文件时，才同时生成并登记文件成果；文件路径或 Markdown 数据表不能替代用户要求的对话图表。已有 HTML 文件可用 work_read_file 读取后，将所需图表内容放入 renderer 块。
 浏览器的 file:// 或 loopback 访问失败不代表对话内预览不可用。不要为了启用对话内预览调用浏览器或启动服务；若没有完成浏览器视觉验证，应如实说明验证范围，不得把结构检查称为视觉验证。
 `;
 const MAX_WRITE_BYTES = 4 * 1024 * 1024;

@@ -1,5 +1,86 @@
 use crate::models::{PluginOperationResult, StandaloneSkill};
+use include_dir::{include_dir, Dir, DirEntry};
 use std::path::Path;
+
+static BUILTIN_VISUALIZATION_SKILL: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/resources/skills/agentcabin-visualization");
+
+/// Materialize the packaged visualization skill into the shared skills catalog.
+/// Existing user-owned skills with the same ID are preserved.
+pub fn ensure_builtin_visualization_skill_with_root(root: &Path) -> Result<(), String> {
+    let skills_root = crate::storage::profile_bindings::shared_skills_dir_with_root(root);
+    crate::storage::profile_bindings::ensure_managed_directory(
+        &skills_root,
+        "shared skills directory",
+    )?;
+
+    let target = skills_root.join("agentcabin-visualization");
+    if let Ok(metadata) = std::fs::symlink_metadata(&target) {
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(format!(
+                "Built-in visualization skill target is not a real directory: {}",
+                target.display()
+            ));
+        }
+        if !is_builtin_skill_dir(&target) {
+            return Err(format!(
+                "Preserving user-managed skill that uses the built-in ID: {}",
+                target.display()
+            ));
+        }
+    } else {
+        crate::storage::profile_bindings::ensure_managed_directory(
+            &target,
+            "built-in visualization skill directory",
+        )?;
+    }
+
+    copy_embedded_skill_files(&BUILTIN_VISUALIZATION_SKILL, &target)?;
+    crate::storage::profile_bindings::write_managed_file(
+        &target.join(".origin"),
+        "builtin\n",
+        "built-in skill origin",
+    )?;
+    Ok(())
+}
+
+pub fn ensure_builtin_visualization_skill() -> Result<(), String> {
+    ensure_builtin_visualization_skill_with_root(&crate::storage::data_dir())
+}
+
+fn copy_embedded_skill_files(source: &Dir<'_>, target: &Path) -> Result<(), String> {
+    for entry in source.entries() {
+        match entry {
+            DirEntry::Dir(directory) => {
+                let name = directory
+                    .path()
+                    .file_name()
+                    .ok_or_else(|| "Built-in skill contains an invalid directory".to_string())?;
+                let child = target.join(name);
+                crate::storage::profile_bindings::ensure_managed_directory(
+                    &child,
+                    "built-in skill resource directory",
+                )?;
+                copy_embedded_skill_files(directory, &child)?;
+            }
+            DirEntry::File(file) => {
+                if file.path().file_name().and_then(|name| name.to_str()) == Some(".DS_Store") {
+                    continue;
+                }
+                let name = file
+                    .path()
+                    .file_name()
+                    .ok_or_else(|| "Built-in skill contains an invalid file".to_string())?;
+                crate::storage::profile_bindings::write_managed_file(
+                    &target.join(name),
+                    file.contents(),
+                    "built-in skill resource",
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
 
 pub fn list_skills(_cwd: Option<&str>) -> Vec<StandaloneSkill> {
     list_skills_with_root(&crate::storage::data_dir())

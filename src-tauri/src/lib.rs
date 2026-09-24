@@ -102,6 +102,9 @@ pub fn run() {
         log::warn!("[pi/profile] Legacy Code Pi profile migration skipped: {error}");
     }
     storage::profile_bindings::migrate_legacy_skills_if_needed().ok();
+    if let Err(error) = storage::skills::ensure_builtin_visualization_skill() {
+        log::warn!("[skills] Built-in visualization skill setup skipped: {error}");
+    }
     if let Err(error) = work::twork_migration::sync_from_twork_if_present() {
         log::warn!("[twork/sync] Startup sync from T-Work skipped or partial: {error}");
     }

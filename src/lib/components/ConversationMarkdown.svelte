@@ -1,6 +1,8 @@
 <script lang="ts">
   import MarkdownContent from "./MarkdownContent.svelte";
   import ConversationHtmlPreview from "./ConversationHtmlPreview.svelte";
+  import ConversationEchartsPreview from "./ConversationEchartsPreview.svelte";
+  import ConversationMermaidPreview from "./ConversationMermaidPreview.svelte";
   import { conversationParts } from "$lib/utils/conversation-html";
   let {
     text = "",
@@ -40,6 +42,10 @@
 {#each parts as part, index (index)}
   {#if part.kind === "html"}
     <ConversationHtmlPreview content={part.content} pending={part.pending} />
+  {:else if part.kind === "echarts"}
+    <ConversationEchartsPreview content={part.content} pending={part.pending} />
+  {:else if part.kind === "mermaid"}
+    <ConversationMermaidPreview content={part.content} pending={part.pending} />
   {:else}
     <MarkdownContent text={part.content} {streaming} {basePath} {workspaceId} {lazy} />
   {/if}

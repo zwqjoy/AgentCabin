@@ -112,7 +112,7 @@
 
 <div
   bind:this={host}
-  class="relative aspect-[16/10] min-h-64 w-full bg-white dark:bg-zinc-900"
+  class="relative h-full min-h-0 w-full bg-white dark:bg-zinc-900"
   data-testid="embedded-browser-surface"
 >
   {#if !attached}

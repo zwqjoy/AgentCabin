@@ -151,7 +151,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_navigate",
     label: "browser_navigate",
-    description: "Navigate the active browser page to a public HTTP/HTTPS URL. For generated HTML, use a file:// URL under the current WorkRun output/ directory; other local files, localhost, and private LAN networks remain blocked for SSRF protection.",
+    description: "Navigate the active browser page for a user-requested website task. Do not open a URL merely to display or load an image in the conversation; embed user-provided HTTPS image URLs directly in an HTML renderer instead. For generated HTML browser inspection, use a file:// URL under the current WorkRun output/ directory; other local files, localhost, and private LAN networks remain blocked for SSRF protection.",
     parameters: NavigateSchema,
     async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_navigate", "navigate", params, signal);

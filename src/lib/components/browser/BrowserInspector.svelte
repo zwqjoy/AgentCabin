@@ -46,6 +46,8 @@
   const BROWSER_STATE_TIMEOUT_MS = 5_000;
 
   let interactError = $state("");
+  let pageHidden = $state(false);
+  let lastPageUrl = "";
 
   function isTerminalStatus(status: string | undefined): boolean {
     return status === "completed" || status === "failed";
@@ -160,6 +162,14 @@
     }
   });
 
+  $effect(() => {
+    const currentUrl = session?.currentUrl ?? "";
+    if (currentUrl && currentUrl !== lastPageUrl) {
+      lastPageUrl = currentUrl;
+      pageHidden = false;
+    }
+  });
+
   async function performInteract(action: string, params: Record<string, unknown> = {}) {
     const id = effectiveRunId;
     if (!id || interacting || isTerminal) return;
@@ -198,56 +208,10 @@
   });
 </script>
 
-<div class="flex h-full w-full flex-col overflow-hidden bg-card text-foreground">
-  <!-- Header Bar -->
-  <div class="flex items-center justify-between border-b border-border/70 px-4 py-3 bg-muted/20">
-    <div class="flex items-center gap-2.5 min-w-0">
-      <span
-        class="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-xs font-bold text-blue-600 dark:text-blue-400"
-      >
-        🌐
-      </span>
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-semibold text-foreground truncate">
-            {session?.pageTitle || "受控浏览器会话"}
-          </span>
-          <span
-            class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-medium {displayStatusMeta.colorClass}"
-          >
-            <span class="h-1.5 w-1.5 rounded-full {displayStatusMeta.dotClass}"></span>
-            <span>{displayStatusMeta.label}</span>
-          </span>
-          <span
-            class="rounded bg-secondary/80 px-1.5 py-0.2 text-[9px] font-mono text-muted-foreground uppercase"
-          >
-            {mode}
-          </span>
-          <span
-            class="rounded bg-blue-500/10 px-1.5 py-0.2 text-[9px] font-medium text-blue-600 dark:text-blue-400"
-          >
-            {session?.surface === "embedded"
-              ? t("browser_surfaceEmbedded")
-              : t("browser_surfaceManaged")}
-          </span>
-        </div>
-      </div>
-    </div>
-
-    {#if onClose}
-      <button
-        type="button"
-        class="rounded-lg p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-        onclick={onClose}
-      >
-        ✕
-      </button>
-    {/if}
-  </div>
-
+<div class="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
   <!-- Codex-style Browser Navigation Bar -->
   <div
-    class="flex items-center gap-1.5 border-b border-border/60 bg-background/80 px-3 py-1.5 text-xs"
+    class="flex min-h-11 shrink-0 items-center gap-1.5 border-b border-border/70 bg-muted/20 px-3 py-1.5 text-xs"
   >
     <div class="flex items-center gap-0.5 shrink-0">
       <button
@@ -296,196 +260,156 @@
     {#if session?.currentUrl}
       <button
         type="button"
-        class="text-[10px] text-primary hover:underline shrink-0 px-1"
-        title="复制完整网址"
-        onclick={() => navigator.clipboard.writeText(session?.currentUrl || "")}
+        class="shrink-0 rounded-md border border-border/70 px-2 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        title={pageHidden ? "显示当前网页" : "隐藏当前网页"}
+        aria-label={pageHidden ? "显示当前网页" : "隐藏当前网页"}
+        onclick={() => (pageHidden = !pageHidden)}
       >
-        复制
+        {pageHidden ? "显示页面" : "隐藏页面"}
+      </button>
+    {/if}
+    <span
+      class="hidden shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] text-muted-foreground sm:inline-flex"
+      title={`${mode.toUpperCase()} · ${session?.surface === "embedded" ? t("browser_surfaceEmbedded") : t("browser_surfaceManaged")}`}
+    >
+      <span class="h-1.5 w-1.5 rounded-full {displayStatusMeta.dotClass}"></span>
+      {displayStatusMeta.label}
+    </span>
+    {#if onClose}
+      <button
+        type="button"
+        class="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        onclick={onClose}
+        aria-label="关闭浏览器"
+        title="关闭浏览器"
+      >
+        ✕
       </button>
     {/if}
   </div>
 
   {#if interactError}
     <div
-      class="mx-3 my-1.5 flex items-center justify-between rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-600 dark:text-red-400"
+      class="flex shrink-0 items-center justify-between gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
     >
       <span class="truncate">{interactError}</span>
       <button
         type="button"
-        class="ml-2 shrink-0 font-bold hover:opacity-80"
+        class="shrink-0 rounded px-1 hover:bg-destructive/10"
         onclick={() => (interactError = "")}
+        aria-label="关闭错误提示">✕</button
       >
-        ✕
-      </button>
     </div>
   {/if}
 
-  <!-- Main Split: Live Interactive Viewport & Action Traces -->
-  <div class="flex-1 overflow-y-auto p-4 space-y-4">
-    <!-- Live Interactive Canvas Card -->
-    <div class="rounded-xl border border-border/80 bg-background/60 p-2.5 shadow-xs space-y-2">
-      <div class="flex items-center justify-between text-xs px-1">
-        <div class="flex items-center gap-1.5">
-          <span class="font-semibold text-foreground flex items-center gap-1">
-            <span>🖥️</span>
-            <span>内嵌交互画布</span>
-          </span>
-          {#if interacting}
-            <span
-              class="inline-flex items-center gap-1 text-[10px] text-primary animate-pulse font-medium"
-            >
-              <span class="h-1.5 w-1.5 rounded-full bg-primary animate-ping"></span>
-              响应中…
-            </span>
-          {/if}
-        </div>
-        {#if !useEmbeddedSurface && session?.lastScreenshot}
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="text-[11px] text-primary hover:underline"
-              onclick={() => (previewImageModal = session?.lastScreenshot || null)}
-            >
-              放大查看
-            </button>
-          </div>
-        {/if}
-      </div>
-
-      {#if useEmbeddedSurface}
-        <EmbeddedBrowserSurface
-          viewId={embeddedViewId}
-          runId={effectiveRunId}
-          initialUrl={session?.currentUrl ?? ""}
-          visible={surfaceVisible && !overlayOpen}
-          onError={() => (embeddedAttachFailed = true)}
-        />
-      {:else if loading && !session}
+  <div class="relative min-h-0 flex-1 overflow-hidden bg-white dark:bg-zinc-900">
+    {#if useEmbeddedSurface}
+      <EmbeddedBrowserSurface
+        viewId={embeddedViewId}
+        runId={effectiveRunId}
+        initialUrl={session?.currentUrl ?? ""}
+        visible={surfaceVisible && !overlayOpen && !pageHidden}
+        onError={() => (embeddedAttachFailed = true)}
+      />
+      {#if pageHidden}
         <div
-          class="flex h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border/70 text-xs text-muted-foreground bg-muted/10 space-y-1"
+          class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background px-6 text-center"
         >
-          <span class="text-xl">🖥️</span>
-          <span>正在连接受控浏览器…</span>
-        </div>
-      {:else if session?.lastScreenshot}
-        <div
-          class="relative w-full overflow-hidden rounded-lg border border-border/70 bg-black/5 aspect-[16/10] select-none"
-        >
-          <img
-            src={session.lastScreenshot}
-            alt="受控浏览器页面"
-            class="h-full w-full object-contain bg-white dark:bg-zinc-900 pointer-events-none"
-          />
-        </div>
-      {:else}
-        <div
-          class="flex h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border/70 text-xs text-muted-foreground bg-muted/10 space-y-1.5 text-center px-4"
-        >
-          <span class="text-2xl">🌐</span>
-          <span class="font-medium text-foreground">等待网页加载</span>
-          <span class="text-[10px] text-muted-foreground"
-            >在上方地址栏输入网址按回车，或向 Agent 发出浏览指令</span
+          <span class="text-sm font-medium">网页已隐藏</span>
+          <span class="max-w-xs text-xs text-muted-foreground"
+            >浏览器会话仍保留；需要时可以重新显示当前页面。</span
+          >
+          <button
+            type="button"
+            class="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
+            onclick={() => (pageHidden = false)}>重新显示</button
           >
         </div>
       {/if}
-    </div>
-
-    <!-- Actions Control Bar -->
-    {#if isTerminal}
+    {:else if loading && !session}
       <div
-        class="flex items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/30 p-2.5 text-xs shadow-xs"
+        class="flex h-full min-h-64 flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground"
       >
-        <div class="flex items-center gap-2.5 min-w-0">
-          <span
-            class="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs shrink-0"
-          >
-            ✓
-          </span>
-          <div class="min-w-0">
-            <div class="font-medium text-foreground text-xs truncate">
-              任务已完成 · 浏览器会话已归档
-            </div>
-            <div class="text-[11px] text-muted-foreground truncate">
-              当前为最终页面快照与时序操作轨迹回顾（只读）
-            </div>
-          </div>
-        </div>
+        <span class="text-xl">🌐</span>
+        <span>正在连接浏览器…</span>
+      </div>
+    {:else if session?.lastScreenshot}
+      <div class="flex h-full items-center justify-center overflow-auto bg-muted/10 p-4">
+        <img
+          src={session.lastScreenshot}
+          alt="受控浏览器页面"
+          class="max-h-full max-w-full object-contain"
+        />
       </div>
     {:else}
-      <div
-        class="flex items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/30 p-2 text-xs"
-      >
-        <div class="flex items-center gap-2 min-w-0 px-1">
-          <span class="text-muted-foreground text-[11px] truncate"
-            >💡 可直接在上方画面中点击或滚动交互</span
-          >
-        </div>
+      <div class="flex h-full min-h-64 flex-col items-center justify-center gap-2 px-6 text-center">
+        <span class="text-muted-foreground">🌐</span>
+        <span class="text-sm font-medium">开始浏览</span>
+        <span class="text-xs text-muted-foreground">输入网址并按回车打开页面</span>
       </div>
     {/if}
+  </div>
 
-    <!-- Action Traces Timeline -->
-    <div class="space-y-2.5">
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-semibold text-foreground flex items-center gap-1.5">
-          <span>⚡</span>
-          <span>操作轨迹时序 ({filteredTraces.length})</span>
-        </span>
-        <input
-          type="text"
-          placeholder="检索步骤…"
-          class="w-32 rounded-lg border border-border/80 bg-background px-2 py-0.5 text-[10px] text-foreground outline-none focus:border-primary"
-          bind:value={searchQuery}
-        />
-      </div>
-
+  <details class="max-h-48 shrink-0 overflow-hidden border-t border-border/70 bg-muted/10">
+    <summary
+      class="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 text-xs text-muted-foreground hover:bg-muted/40"
+    >
+      <span class="font-medium text-foreground">操作轨迹</span>
+      <span>({filteredTraces.length})</span>
+      <span class="ml-auto"
+        >{isTerminal ? "会话已归档 · 只读" : interacting ? "正在响应…" : "点击查看"}</span
+      >
+    </summary>
+    <div class="max-h-36 space-y-2 overflow-y-auto border-t border-border/60 p-3">
       {#if traces.length === 0}
-        <div class="flex h-24 items-center justify-center text-xs text-muted-foreground">
-          等待浏览器动作触发…
-        </div>
+        <p class="py-3 text-center text-xs text-muted-foreground">暂无浏览器操作记录</p>
       {:else}
-        <div class="space-y-2">
-          {#each filteredTraces as trace (trace.stepIndex)}
-            {@const actMeta = formatBrowserAction(trace.actionType)}
-            <div
-              class="flex items-start gap-2 rounded-xl border border-border/70 bg-card p-2.5 text-xs transition-colors hover:bg-muted/20"
-            >
-              <span
-                class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-bold bg-muted text-muted-foreground"
-              >
-                {trace.stepIndex}
-              </span>
-              <div class="min-w-0 flex-1 space-y-0.5">
-                <div class="flex items-center justify-between gap-1">
-                  <span
-                    class="inline-flex items-center gap-1 rounded border px-1.5 py-0.2 text-[9px] font-medium {actMeta.badgeClass}"
-                  >
-                    <span>{actMeta.icon}</span>
-                    <span>{actMeta.label}</span>
-                  </span>
-                  <span class="text-[10px] font-mono text-muted-foreground">
-                    {trace.durationMs > 0 ? `${trace.durationMs}ms` : ""}
-                  </span>
-                </div>
-                <p class="font-medium text-foreground leading-snug break-all text-[11px]">
-                  {sanitizeTraceText(trace.description)}
-                </p>
-                {#if trace.selector}
-                  <div class="font-mono text-[10px] text-muted-foreground/80 truncate">
-                    Selector: {trace.selector}
-                  </div>
-                {/if}
-                {#if trace.error}
-                  <div class="rounded bg-red-500/10 p-1 text-[10px] text-red-600 dark:text-red-400">
-                    {trace.error}
-                  </div>
-                {/if}
-              </div>
-            </div>
-          {/each}
+        <div class="mb-2 flex justify-end">
+          <input
+            type="text"
+            placeholder="检索步骤…"
+            aria-label="检索浏览器操作步骤"
+            class="w-40 rounded-md border border-border/80 bg-background px-2 py-1 text-[10px] text-foreground outline-none focus:border-primary"
+            bind:value={searchQuery}
+          />
         </div>
+        {#each filteredTraces as trace (trace.stepIndex)}
+          {@const actMeta = formatBrowserAction(trace.actionType)}
+          <div
+            class="flex items-start gap-2 rounded-lg border border-border/70 bg-card p-2.5 text-xs"
+          >
+            <span
+              class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted text-[11px] font-bold text-muted-foreground"
+              >{trace.stepIndex}</span
+            >
+            <div class="min-w-0 flex-1 space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <span
+                  class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-medium {actMeta.badgeClass}"
+                >
+                  <span>{actMeta.icon}</span><span>{actMeta.label}</span>
+                </span>
+                <span class="text-[10px] font-mono text-muted-foreground"
+                  >{trace.durationMs > 0 ? `${trace.durationMs}ms` : ""}</span
+                >
+              </div>
+              <p class="break-all text-[11px] leading-snug text-foreground">
+                {sanitizeTraceText(trace.description)}
+              </p>
+              {#if trace.selector}<div class="truncate font-mono text-[10px] text-muted-foreground">
+                  Selector: {trace.selector}
+                </div>{/if}
+              {#if trace.error}<div
+                  class="rounded bg-destructive/10 p-1 text-[10px] text-destructive"
+                >
+                  {trace.error}
+                </div>{/if}
+            </div>
+          </div>
+        {/each}
       {/if}
     </div>
-  </div>
+  </details>
 </div>
 
 <!-- Screenshot Full Preview Modal -->

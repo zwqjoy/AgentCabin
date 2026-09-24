@@ -2,7 +2,7 @@
  * Injects strict CSP meta tag into raw HTML for secure iframe rendering.
  */
 export function injectCsp(rawHtml: string): string {
-  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' data:; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; worker-src 'none'; manifest-src 'none';">`;
+  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' data:; img-src data: blob: https:; font-src data:; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; worker-src 'none'; manifest-src 'none';">`;
 
   if (!rawHtml) return cspMeta;
 
