@@ -19,10 +19,9 @@
     settings: UserSettings;
     onToggleAgent: (agent: RuntimeProviderId) => void;
     onNavigate: (tab: string, section?: string) => void;
-    onOpenWizard: () => void;
   }
 
-  let { settings, onToggleAgent, onNavigate, onOpenWizard }: Props = $props();
+  let { settings, onToggleAgent, onNavigate }: Props = $props();
 
   let loading = $state(false);
   let statuses = $state<Record<string, RuntimeProviderStatus>>({});
@@ -86,13 +85,6 @@
           >
           <span>刷新检测</span>
         {/if}
-      </button>
-      <button
-        type="button"
-        class="rounded-lg border border-border/70 bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-        onclick={onOpenWizard}
-      >
-        运行向导
       </button>
     </div>
   </div>

@@ -1607,10 +1607,6 @@
     }
   }
 
-  function openSetupWizard() {
-    window.dispatchEvent(new CustomEvent("agentcabin:show-wizard"));
-  }
-
   onMount(async () => {
     try {
       appVersion = await platform.app.getVersion();
@@ -1901,7 +1897,6 @@
           {settings}
           onToggleAgent={(agent) => toggleAgentEnabled(agent)}
           onNavigate={(t) => handleSelectTab(t)}
-          onOpenWizard={openSetupWizard}
         />
       {/if}
     {:else if activeTab === "remote-access"}
