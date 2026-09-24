@@ -1701,8 +1701,13 @@ mod tests {
                 .unwrap();
         assert_eq!(info.work_run_id, standalone.id);
         assert_eq!(info.workspace_id, None);
-        assert_eq!(info.task_id.as_deref(), Some(standalone.id.as_str()));
+        assert_eq!(info.task_id, None);
         assert_eq!(info.proxy_url.as_deref(), Some("http://127.0.0.1:7897"));
+
+        standalone.workspace_id = Some("workspace-chat".to_string());
+        let info = WorkBridgeLaunchInfo::from_run(&standalone, None).unwrap();
+        assert_eq!(info.workspace_id.as_deref(), Some("workspace-chat"));
+        assert_eq!(info.task_id, None);
 
         standalone.workspace_id = Some("workspace-1".to_string());
         standalone.work_task_id = Some("task-1".to_string());
