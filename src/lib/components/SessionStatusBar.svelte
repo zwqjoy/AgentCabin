@@ -35,6 +35,7 @@
     cwd = "",
     activeTaskCount = 0,
     mode = "",
+    statusText = "",
     toolsCount = 0,
     onToolsClick,
     onRename,
@@ -74,6 +75,7 @@
     cwd?: string;
     activeTaskCount?: number;
     mode?: string;
+    statusText?: string;
     toolsCount?: number;
     onToolsClick?: () => void;
     onRename?: (name: string) => void;
@@ -469,31 +471,33 @@
       <!-- Subtle separator -->
       <span class="text-foreground/20 shrink-0">·</span>
 
-      <!-- Status dot + Runtime Provider & Mode (neutral secondary desktop header, no background badge) -->
-      <div
-        class="inline-flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground/70 select-none"
-      >
-        {#if running}
-          <span class="inline-block h-1.5 w-1.5 rounded-full {agentDotClass} animate-pulse"></span>
-        {/if}
-        {#if onStatusClick}
-          <button
-            type="button"
-            class="hover:text-foreground transition-colors font-normal"
-            onclick={onStatusClick}
-            title={t("toolActivity_tabInfo")}
-          >
-            <span>{visibleAgentDisplayName}</span>
-          </button>
-        {:else}
-          <span class="font-normal">{visibleAgentDisplayName}</span>
-        {/if}
-
-        {#if mode}
-          <span class="text-muted-foreground/30">·</span>
-          <span>{mode}</span>
-        {/if}
-      </div>
+      <!-- Status dot + Status text (clean header, no runtime/stream noise) -->
+      {#if running || statusText || (agent && agent !== "pi")}
+        <div
+          class="inline-flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground/70 select-none"
+        >
+          {#if running}
+            <span class="inline-block h-1.5 w-1.5 rounded-full {agentDotClass} animate-pulse"
+            ></span>
+            <span class="font-normal text-foreground/80">{statusText || "正在工作"}</span>
+          {:else if statusText}
+            <span class="font-normal text-muted-foreground/70">{statusText}</span>
+          {:else if agent && agent !== "pi"}
+            {#if onStatusClick}
+              <button
+                type="button"
+                class="hover:text-foreground transition-colors font-normal"
+                onclick={onStatusClick}
+                title={t("toolActivity_tabInfo")}
+              >
+                <span>{visibleAgentDisplayName}</span>
+              </button>
+            {:else}
+              <span class="font-normal">{visibleAgentDisplayName}</span>
+            {/if}
+          {/if}
+        </div>
+      {/if}
 
       <!-- Background task count (if any) -->
       {#if activeTaskCount && activeTaskCount > 0}

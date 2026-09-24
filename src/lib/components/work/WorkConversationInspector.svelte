@@ -3,12 +3,10 @@
   import WorkArtifactPanel from "./WorkArtifactPanel.svelte";
   import WorkProgressPanel from "./WorkProgressPanel.svelte";
   import WorkRunReceiptPanel from "./WorkRunReceiptPanel.svelte";
-  import BrowserInspector from "$lib/components/browser/BrowserInspector.svelte";
   import { workTaskStore } from "$lib/stores/work-task-store.svelte";
   import { hasOperationalWorkEvidence, hasWorkCompletionEvidence } from "$lib/utils/work-result";
   import { normalizeWorkIdentity } from "$lib/utils/work-identity";
   import { isQuestionInteraction } from "$lib/utils/work-interactions";
-  import { isBrowserToolName } from "$lib/utils/work-browser";
   import { workRunProgressDisplayPhase } from "$lib/utils/work-progress";
   import type { SessionInfoData } from "$lib/types";
   import type {
@@ -71,7 +69,6 @@
   // other operational details remain available on demand.
   let progressOpen = $state(true);
   let artifactsOpen = $state(false);
-  let browserOpen = $state(false);
   let receiptOpen = $state(false);
   let infoOpen = $state(false);
 
@@ -209,48 +206,6 @@
       requiredArtifacts.length > 0 ||
       Boolean(recovery?.acceptance?.checks?.length),
   );
-  let browserActivityHint = $derived.by(() => {
-    const activityHint = [
-      progressView?.currentActivity?.kind,
-      progressView?.currentActivity?.toolName,
-      progress?.activeToolName,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return isBrowserToolName(activityHint);
-  });
-  // `currentActivity` is intentionally transient: it changes as soon as the
-  // agent starts thinking about the next step. Keep the Browser Use entry
-  // mounted after the first browser action so the inspector does not vanish
-  // between tool calls or while the answer is being composed.
-  let browserActivitySeenFor = $state("");
-  let browserActivitySeen = $state(false);
-  let browserAutoOpenedFor = $state("");
-  // SessionInfo.runId is stable for the whole conversation, while the
-  // WorkRun projection can arrive later and use a different identifier.
-  let browserActivityScope = $derived(sessionInfo?.runId ?? "");
-  $effect(() => {
-    const scope = browserActivityScope;
-    if (!scope) return;
-    if (scope !== browserActivitySeenFor) {
-      if (browserActivitySeenFor) browserActivitySeen = false;
-      browserActivitySeenFor = scope;
-    }
-    if (browserActivityHint) browserActivitySeen = true;
-  });
-  let hasBrowserActivity = $derived(browserActivitySeen);
-
-  // Mount the run-scoped BrowserInspector as soon as the first browser tool
-  // starts. Its embedded WebContentsView registers the CDP relay that the
-  // Browser Worker waits for before executing the first action.
-  $effect(() => {
-    const scope = browserActivityScope;
-    if (scope && hasBrowserActivity && browserAutoOpenedFor !== scope) {
-      browserOpen = true;
-      browserAutoOpenedFor = scope;
-    }
-  });
-
   let attemptedTaskId = $state("");
   $effect(() => {
     const taskId = effectiveTaskId;
@@ -316,8 +271,7 @@
       normalPendingInteractions.length > 0 ||
       hasOperationalWork ||
       tasks.length > 0 ||
-      hasArtifactDetails ||
-      Boolean(hasBrowserActivity && receiptKey && receiptKey !== "__none__"),
+      hasArtifactDetails,
   );
 </script>
 
@@ -478,39 +432,6 @@
       </section>
     {/if}
 
-    {#if hasBrowserActivity && receiptKey && receiptKey !== "__none__"}
-      <section class="border-b border-border/60">
-        <button
-          type="button"
-          class="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
-          aria-expanded={browserOpen}
-          onclick={() => (browserOpen = !browserOpen)}
-        >
-          <span class="flex items-center gap-2.5">
-            <span
-              class="text-muted-foreground transition-transform {browserOpen ? 'rotate-90' : ''}"
-              aria-hidden="true">›</span
-            >
-            <span class="text-sm font-semibold text-foreground">浏览器操作 / Browser Use</span>
-          </span>
-        </button>
-        {#if browserOpen}
-          <div class="px-3 pb-3">
-            <BrowserInspector
-              runId={receiptKey}
-              mode="work"
-              {readOnly}
-              isTaskCompleted={phase === "completed" ||
-                phase === "failed" ||
-                phase === "cancelled" ||
-                phase === "stopped" ||
-                readOnly}
-            />
-          </div>
-        {/if}
-      </section>
-    {/if}
-
     {#if getReceipt && hasOperationalWork}
       <section class="border-b border-border/60">
         <div class="flex min-h-14 items-center gap-1 pr-2">
@@ -603,7 +524,7 @@
       </div>
       <div class="text-xs font-medium text-foreground/80">暂无任务进度与成果</div>
       <p class="mt-1.5 max-w-[240px] text-[11px] leading-relaxed text-muted-foreground/60">
-        当前为常规问答。当发起多步骤任务、调用子 Agent 或生成交付文件时，实时状态将显示在这里。
+        当前为常规问答。当发起多步骤任务或生成交付文件时，实时状态将显示在这里。
       </p>
     </div>
   {/if}

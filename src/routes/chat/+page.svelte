@@ -6770,8 +6770,7 @@
         !store.isRunning
           ? handleRewind
           : undefined}
-        activeTaskCount={store.activeBackgroundTasks.length}
-        mode={store.run ? (store.useStreamSession ? "Stream" : "CLI") : ""}
+        statusText={store.sessionAlive ? "正在工作" : ""}
         toolsCount={runEffectiveCapabilities
           ? (runEffectiveCapabilities.enabledSkills?.length ?? 0) +
             (runEffectiveCapabilities.mcpServers?.length ?? 0) +

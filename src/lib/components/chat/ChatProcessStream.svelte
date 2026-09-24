@@ -88,15 +88,11 @@
   const processSummary = $derived.by(() => {
     let toolCallCount = 0;
     let messageCount = 0;
-    let subagentCount = 0;
     let hasReasoning = false;
 
     for (const block of turn.processBlocks) {
       if (block.type === "activity-group") {
         toolCallCount += block.activities.length;
-        for (const act of block.activities) {
-          if (act.iconKind === "bot") subagentCount++;
-        }
       } else if (block.type === "narration") {
         messageCount++;
       } else if (block.type === "reasoning") {
@@ -107,7 +103,6 @@
     const parts: string[] = [];
     if (toolCallCount > 0) parts.push(`${toolCallCount} 次工具调用`);
     if (messageCount > 0) parts.push(`${messageCount} 条消息`);
-    if (subagentCount > 0) parts.push(`${subagentCount} 个 subagent`);
 
     if (parts.length === 0 && hasReasoning) {
       return "已思考";

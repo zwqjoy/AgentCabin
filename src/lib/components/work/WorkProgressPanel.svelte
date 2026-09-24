@@ -403,15 +403,6 @@
         </p>
       </div>
       <div class="flex items-center gap-1.5 shrink-0">
-        {#if health && healthStatus !== "healthy"}
-          <span
-            class="rounded-full border px-2 py-0.5 text-[10px] font-medium {healthStatusClass(
-              healthStatus,
-            )}"
-          >
-            状态：{healthStatusLabel(healthStatus)}
-          </span>
-        {/if}
         <span class="shrink-0 rounded-full px-2 py-1 text-[10px] font-medium {phaseClass}"
           >{phaseLabel}</span
         >
@@ -547,53 +538,6 @@
       <span class="shrink-0 text-[10px] font-medium text-orange-700/80 dark:text-orange-300/80">
         在当前对话中处理
       </span>
-    </div>
-  {/if}
-
-  <!-- Runtime diagnostic alert card (when no active attention banner) -->
-  {#if health && (healthStatus !== "healthy" || healthReason) && !isTerminal && !allTasksCompleted && !dismissedAnomaly && !visibleAttention && visiblePendingInteractions.length === 0}
-    <div class="mt-3 rounded-lg border px-2.5 py-2 text-[10px] {healthStatusClass(healthStatus)}">
-      <div class="flex items-center justify-between gap-2 font-semibold">
-        <span class="flex items-center gap-1.5">
-          <span
-            class="h-1.5 w-1.5 animate-pulse rounded-full {healthStatus === 'stalled' ||
-            healthStatus === 'needs_attention'
-              ? 'bg-red-500'
-              : 'bg-amber-500'}"
-          ></span>
-          <span>运行异常 · {healthStatusLabel(healthStatus)}</span>
-        </span>
-        <div class="flex items-center gap-1.5">
-          {#if liveness && liveness !== "alive"}
-            <span class="text-[9px] opacity-80 font-normal">({livenessLabel(liveness)})</span>
-          {/if}
-          <button
-            type="button"
-            onclick={() => {
-              dismissedAnomaly = true;
-            }}
-            class="rounded-md p-0.5 opacity-70 hover:opacity-100 transition-opacity"
-            title="忽略此提示"
-            aria-label="忽略此提示"
-          >
-            <svg
-              class="h-3.5 w-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="2"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </div>
-      {#if healthReason}
-        <p class="mt-1 leading-4 opacity-90">{healthReason}</p>
-      {/if}
-      {#if health.stalledSince}
-        <p class="mt-0.5 text-[9px] opacity-75">停滞起始：{health.stalledSince}</p>
-      {/if}
     </div>
   {/if}
 
@@ -776,23 +720,6 @@
       >
         {resolvedSnapshot.error}
       </p>
-    </div>
-  {/if}
-
-  <!-- Tool Operations Summary -->
-  {#if toolSummary && toolSummary.started > 0}
-    <div
-      class="mt-4 flex items-center justify-between text-[10px] text-muted-foreground border-t border-border/40 pt-2.5"
-    >
-      <span>工具执行</span>
-      <span>
-        {toolSummary.completed} 成功 · {toolSummary.failed} 失败
-        {#if toolSummary.running > 0}
-          · <span class="text-amber-600 dark:text-amber-400 font-medium"
-            >{toolSummary.running} 运行中</span
-          >
-        {/if}
-      </span>
     </div>
   {/if}
 

@@ -2498,7 +2498,7 @@
     onToggleSidebar={toggleAppSidebar}
     sidebarOpen={appSidebarOpen}
     cwd={isStandalone ? "" : workspace?.name || session.sessionCwd || workspace?.root || ""}
-    mode={session.run ? "Stream" : ""}
+    statusText={session.sessionAlive ? "正在执行" : ""}
     {modelOptions}
     onModelChange={(model) => void handleModelChange(model)}
     effort={currentEffort}
