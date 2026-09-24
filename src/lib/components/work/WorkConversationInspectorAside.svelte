@@ -220,115 +220,87 @@
   });
 </script>
 
-{#if open}
-  {#if resizing && !isMaximized}
-    <!-- Ghost line during drag: zero-cost preview, no layout reflow elsewhere -->
-    <div
-      bind:this={ghostEl}
-      class="fixed top-0 bottom-0 z-[9999] pointer-events-none bg-primary"
-      style="left: {ghostX - 1}px; width: 3px; box-shadow: 0 0 8px hsl(var(--primary) / 0.6);"
-    ></div>
-  {/if}
+{#if resizing && open && !isMaximized}
+  <!-- Ghost line during drag: zero-cost preview, no layout reflow elsewhere -->
+  <div
+    bind:this={ghostEl}
+    class="fixed top-0 bottom-0 z-[9999] pointer-events-none bg-primary"
+    style="left: {ghostX - 1}px; width: 3px; box-shadow: 0 0 8px hsl(var(--primary) / 0.6);"
+  ></div>
+{/if}
 
-  <aside
-    bind:this={asideEl}
-    class="pointer-events-auto flex min-h-0 shrink-0 flex-col overflow-hidden bg-background {isMaximized
+<aside
+  bind:this={asideEl}
+  class="pointer-events-auto flex min-h-0 shrink-0 flex-col overflow-hidden bg-background {!open
+    ? 'invisible pointer-events-none'
+    : isMaximized
       ? 'absolute inset-0 z-30 w-full'
       : 'relative border-l border-border/60'}"
-    style={isMaximized ? "width: 100%;" : `width: ${effectiveWidth}px;`}
-  >
-    {#if !isMaximized}
-      <!-- Resize handle on the left edge -->
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        tabindex="-1"
-        class="group absolute left-0 top-0 bottom-0 w-2 -translate-x-1/2 cursor-col-resize z-20 hover:bg-primary/20 active:bg-primary/30 transition-colors {resizing
-          ? 'bg-primary/30'
-          : ''}"
-        onpointerdown={startResize}
-        ondblclick={resetWidth}
-        title="拖动调整左右宽度，双击恢复默认"
-      >
-        <div
-          class="h-full w-0.5 mx-auto transition-colors group-hover:bg-primary/50 group-active:bg-primary {resizing
-            ? 'bg-primary'
-            : 'bg-transparent'}"
-        ></div>
-      </div>
-    {/if}
-
+  style={isMaximized && open ? "width: 100%;" : `width: ${open ? effectiveWidth : 0}px;`}
+>
+  {#if open && !isMaximized}
+    <!-- Resize handle on the left edge -->
     <div
-      class="shrink-0 border-b border-border/60 px-3 py-2 flex items-center justify-between bg-muted/20"
+      role="separator"
+      aria-orientation="vertical"
+      tabindex="-1"
+      class="group absolute left-0 top-0 bottom-0 w-2 -translate-x-1/2 cursor-col-resize z-20 hover:bg-primary/20 active:bg-primary/30 transition-colors {resizing
+        ? 'bg-primary/30'
+        : ''}"
+      onpointerdown={startResize}
+      ondblclick={resetWidth}
+      title="拖动调整左右宽度，双击恢复默认"
     >
-      <!-- Tabs matching Code mode / modern IDE style -->
-      <div class="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/60">
-        <button
-          type="button"
-          class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors {activeTab ===
-          'tasks'
-            ? 'bg-background text-foreground shadow-xs'
-            : 'text-muted-foreground hover:text-foreground'}"
-          onclick={() => (activeTab = "tasks")}
-        >
-          <span class="text-xs">📋</span>
-          <span>任务与成果</span>
-        </button>
-        <button
-          type="button"
-          class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors relative {activeTab ===
-          'browser'
-            ? 'bg-background text-foreground shadow-xs'
-            : 'text-muted-foreground hover:text-foreground'}"
-          onclick={() => (activeTab = "browser")}
-          title="受控浏览器与交互画布"
-        >
-          <span class="text-xs">🌐</span>
-          <span>浏览器</span>
-          {#if hasBrowserActivity}
-            <span class="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-          {/if}
-        </button>
-      </div>
+      <div
+        class="h-full w-0.5 mx-auto transition-colors group-hover:bg-primary/50 group-active:bg-primary {resizing
+          ? 'bg-primary'
+          : 'bg-transparent'}"
+      ></div>
+    </div>
+  {/if}
 
-      <div class="flex items-center gap-1">
-        <button
-          type="button"
-          class="rounded p-1 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
-          onclick={() => (isMaximized = !isMaximized)}
-          title={isMaximized ? "还原面板" : "最大化面板"}
-          aria-label={isMaximized ? "还原面板" : "最大化面板"}
-        >
-          {#if isMaximized}
-            <svg
-              viewBox="0 0 24 24"
-              class="h-3.5 w-3.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <rect x="4" y="8" width="12" height="12" rx="1.5" />
-              <path d="M8 4h10a2 2 0 0 1 2 2v10" />
-            </svg>
-          {:else}
-            <svg
-              viewBox="0 0 24 24"
-              class="h-3.5 w-3.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-            </svg>
-          {/if}
-        </button>
-        <button
-          type="button"
-          class="rounded p-1 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
-          onclick={onClose}
-          aria-label="关闭侧边栏"
-          title="关闭"
-        >
+  <div
+    class="shrink-0 border-b border-border/60 px-3 py-2 flex items-center justify-between bg-muted/20"
+  >
+    <!-- Tabs matching Code mode / modern IDE style -->
+    <div class="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/60">
+      <button
+        type="button"
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors {activeTab ===
+        'tasks'
+          ? 'bg-background text-foreground shadow-xs'
+          : 'text-muted-foreground hover:text-foreground'}"
+        onclick={() => (activeTab = "tasks")}
+      >
+        <span class="text-xs">📋</span>
+        <span>任务与成果</span>
+      </button>
+      <button
+        type="button"
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors relative {activeTab ===
+        'browser'
+          ? 'bg-background text-foreground shadow-xs'
+          : 'text-muted-foreground hover:text-foreground'}"
+        onclick={() => (activeTab = "browser")}
+        title="受控浏览器与交互画布"
+      >
+        <span class="text-xs">🌐</span>
+        <span>浏览器</span>
+        {#if hasBrowserActivity}
+          <span class="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+        {/if}
+      </button>
+    </div>
+
+    <div class="flex items-center gap-1">
+      <button
+        type="button"
+        class="rounded p-1 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
+        onclick={() => (isMaximized = !isMaximized)}
+        title={isMaximized ? "还原面板" : "最大化面板"}
+        aria-label={isMaximized ? "还原面板" : "最大化面板"}
+      >
+        {#if isMaximized}
           <svg
             viewBox="0 0 24 24"
             class="h-3.5 w-3.5"
@@ -336,51 +308,81 @@
             stroke="currentColor"
             stroke-width="2"
           >
-            <path d="M18 6L6 18M6 6l12 12" />
+            <rect x="4" y="8" width="12" height="12" rx="1.5" />
+            <path d="M8 4h10a2 2 0 0 1 2 2v10" />
           </svg>
-        </button>
-      </div>
-    </div>
-
-    <div class="relative flex-1 min-h-0 overflow-hidden">
-      {#if activeTab === "tasks"}
-        <div class="h-full w-full overflow-hidden">
-          <WorkConversationInspector
-            {sessionInfo}
-            {progress}
-            {progressView}
-            {recovery}
-            {readOnly}
-            {artifacts}
-            {pendingInteractions}
-            {workspaceRoot}
-            {primaryWorkRoot}
-            {artifactStorageMode}
-            {onExportArtifact}
-            {onOpenArtifact}
-            {onDeleteArtifact}
-            {onCopyArtifactToPrimary}
-            {onValidateArtifact}
-            {onDeliverArtifact}
-            {onOpenArtifactDirectory}
-            {onSaveOfficeArtifact}
-            {getReceipt}
-          />
-        </div>
-      {/if}
-      <div
-        class="absolute inset-0 overflow-hidden {activeTab === 'browser'
-          ? 'visible pointer-events-auto'
-          : 'invisible pointer-events-none'}"
+        {:else}
+          <svg
+            viewBox="0 0 24 24"
+            class="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+          </svg>
+        {/if}
+      </button>
+      <button
+        type="button"
+        class="rounded p-1 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
+        onclick={onClose}
+        aria-label="关闭侧边栏"
+        title="关闭"
       >
+        <svg
+          viewBox="0 0 24 24"
+          class="h-3.5 w-3.5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="relative flex-1 min-h-0 overflow-hidden">
+    {#if activeTab === "tasks"}
+      <div class="h-full w-full overflow-hidden">
+        <WorkConversationInspector
+          {sessionInfo}
+          {progress}
+          {progressView}
+          {recovery}
+          {readOnly}
+          {artifacts}
+          {pendingInteractions}
+          {workspaceRoot}
+          {primaryWorkRoot}
+          {artifactStorageMode}
+          {onExportArtifact}
+          {onOpenArtifact}
+          {onDeleteArtifact}
+          {onCopyArtifactToPrimary}
+          {onValidateArtifact}
+          {onDeliverArtifact}
+          {onOpenArtifactDirectory}
+          {onSaveOfficeArtifact}
+          {getReceipt}
+        />
+      </div>
+    {/if}
+    <div
+      class="absolute inset-0 overflow-hidden {open && activeTab === 'browser'
+        ? 'visible pointer-events-auto'
+        : 'invisible pointer-events-none'}"
+    >
+      {#if browserRunId}
         <BrowserInspector
           runId={browserRunId}
           mode="work"
           {readOnly}
           {isTaskCompleted}
-          surfaceVisible={activeTab === "browser"}
+          surfaceVisible={open && activeTab === "browser"}
         />
-      </div>
+      {/if}
     </div>
-  </aside>
-{/if}
+  </div>
+</aside>

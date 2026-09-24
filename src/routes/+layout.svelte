@@ -2090,48 +2090,92 @@
         >
           <!-- Panel header: Brand identity & Mode selection (TianGong Work style) -->
           <div
-            class="app-shell-sidebar-header mode-header-multiline shrink-0 flex flex-col justify-end px-3.5 {IS_MAC
-              ? 'pt-9 pb-2.5'
+            class="app-shell-sidebar-header mode-header-multiline shrink-0 flex flex-col {IS_MAC
+              ? 'pt-0 pb-2.5'
               : 'pt-3 pb-2.5'}"
             data-window-drag-region
             data-tauri-drag-region
           >
-            {#if isChatPage || isMemoryPage || isWorkPage || isPluginsPage || currentPath === "/"}
-              <div class="flex items-center gap-2.5 w-full">
-                <img
-                  src="/logo.png"
-                  alt="AgentCabin Logo"
-                  class="h-8 w-8 rounded-xl shadow-xs object-cover shrink-0 select-none pointer-events-none"
-                />
-                <div class="flex flex-col min-w-0 flex-1 leading-tight justify-center">
-                  <span
-                    class="truncate text-[14px] font-bold tracking-tight text-sidebar-foreground whitespace-nowrap"
-                  >
-                    {t("layout_appName")}
-                  </span>
-                  <span
-                    class="text-[10.5px] text-muted-foreground/75 font-normal tracking-wide truncate mt-0.5 whitespace-nowrap"
-                  >
-                    {t("layout_appSubtitle")}
-                  </span>
-                </div>
-                <div class="shrink-0">
-                  <ModeSwitcher
-                    realm={appRealm}
-                    {piSubMode}
-                    onSelectRealm={handleRealmSelect}
-                    workEnabled={settings?.work_mode_enabled !== false &&
-                      getTransport().isDesktop()}
-                  />
-                </div>
-              </div>
-            {:else}
-              <div class="flex h-9 w-full items-center">
-                <span class="flex-1 min-w-0 truncate text-sm font-medium text-sidebar-foreground"
-                  >{pageName}</span
+            {#if IS_MAC}
+              <!-- Codex-style titlebar row: traffic-lights spacer + icon buttons -->
+              <div class="flex items-center h-9 px-1 shrink-0" style="-webkit-app-region: no-drag;">
+                <!-- Spacer for the macOS traffic lights (≈ 72 px) -->
+                <div
+                  class="w-[72px] shrink-0 pointer-events-none"
+                  style="-webkit-app-region: drag;"
+                ></div>
+                <!-- Sidebar toggle button -->
+                <button
+                  class="no-drag flex h-7 w-7 items-center justify-center rounded-md text-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
+                  style="-webkit-app-region: no-drag;"
+                  onpointerdown={(event) => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleSidebar();
+                  }}
+                  onkeydown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      toggleSidebar();
+                    }
+                  }}
+                  title={t("layout_toggleSidebar")}
+                  aria-label={t("layout_toggleSidebar")}
                 >
+                  <svg
+                    class="h-[15px] w-[15px]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    ><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></svg
+                  >
+                </button>
               </div>
             {/if}
+            <!-- Branding row -->
+            <div class="px-3.5 flex flex-col justify-end flex-1">
+              {#if isChatPage || isMemoryPage || isWorkPage || isPluginsPage || currentPath === "/"}
+                <div class="flex items-center gap-2.5 w-full">
+                  <img
+                    src="/logo.png"
+                    alt="AgentCabin Logo"
+                    class="h-8 w-8 rounded-xl shadow-xs object-cover shrink-0 select-none pointer-events-none"
+                  />
+                  <div class="flex flex-col min-w-0 flex-1 leading-tight justify-center">
+                    <span
+                      class="truncate text-[14px] font-bold tracking-tight text-sidebar-foreground whitespace-nowrap"
+                    >
+                      {t("layout_appName")}
+                    </span>
+                    <span
+                      class="text-[10.5px] text-muted-foreground/75 font-normal tracking-wide truncate mt-0.5 whitespace-nowrap"
+                    >
+                      {t("layout_appSubtitle")}
+                    </span>
+                  </div>
+                  <div class="shrink-0">
+                    <ModeSwitcher
+                      realm={appRealm}
+                      {piSubMode}
+                      onSelectRealm={handleRealmSelect}
+                      workEnabled={settings?.work_mode_enabled !== false &&
+                        getTransport().isDesktop()}
+                    />
+                  </div>
+                </div>
+              {:else}
+                <div class="flex h-9 w-full items-center">
+                  <span class="flex-1 min-w-0 truncate text-sm font-medium text-sidebar-foreground"
+                    >{pageName}</span
+                  >
+                </div>
+              {/if}
+            </div>
+            <!-- end branding row wrapper -->
           </div>
 
           {#if chatSearchOpen}
@@ -2801,27 +2845,28 @@
     {#if !isChatPage && !isSettingsPage && currentPath !== "/"}
       <header
         class="flex h-11 items-center gap-3 border-b px-4"
-        style:padding-left={IS_MAC && !sidebarOpen ? "80px" : undefined}
+        style:padding-left={IS_MAC && !sidebarOpen ? "128px" : undefined}
         data-window-drag-region
         data-tauri-drag-region
       >
-        <button
-          class="rounded-md p-1.5 hover:bg-accent transition-all duration-150"
-          onclick={toggleSidebar}
-          title={t("layout_toggleSidebar")}
-        >
-          <svg
-            class="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            ><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></svg
+        {#if !IS_MAC}
+          <button
+            class="rounded-md p-1.5 hover:bg-accent transition-all duration-150"
+            onclick={toggleSidebar}
+            title={t("layout_toggleSidebar")}
           >
-        </button>
-
+            <svg
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></svg
+            >
+          </button>
+        {/if}
         <div class="flex items-center gap-2 text-sm">
           <span class="text-muted-foreground">{t("layout_appName")}</span>
           <svg
@@ -2931,10 +2976,17 @@
     min-height: 52px !important;
   }
 
+  /* Mac: titlebar row (h-9 = 36px) + branding row (≈52px) — no longer uses pt-9 */
+  :global(.app-shell-sidebar-header.mode-header-multiline.pt-0) {
+    height: 88px !important;
+    min-height: 88px !important;
+  }
+
+  /* Keep legacy pt-9/pt-7 rules in case they're used elsewhere */
   :global(.app-shell-sidebar-header.mode-header-multiline.pt-9),
   :global(.app-shell-sidebar-header.mode-header-multiline.pt-7) {
-    height: 84px !important;
-    min-height: 84px !important;
+    height: 92px !important;
+    min-height: 92px !important;
   }
 
   :global(

@@ -358,11 +358,11 @@
   <!-- Single-row Modern Header: 44px (h-11) like Codex / ZCode -->
   <div
     class="flex h-11 items-center justify-between px-3"
-    style:padding-left={IS_MAC && !sidebarOpen ? "80px" : undefined}
+    style:padding-left={IS_MAC && !sidebarOpen ? "76px" : undefined}
   >
     <!-- Left: Session title & identity -->
     <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden pr-2">
-      {#if onToggleSidebar}
+      {#if onToggleSidebar && !IS_MAC}
         <button
           class="rounded p-1 -ml-1 hover:bg-accent text-foreground/70 hover:text-foreground transition-colors shrink-0"
           onclick={onToggleSidebar}
@@ -370,6 +370,32 @@
         >
           <svg
             class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            ><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></svg
+          >
+        </button>
+      {/if}
+      {#if onToggleSidebar && IS_MAC && !sidebarOpen}
+        <!-- Mac: sidebar is closed — button lives here (inside drag region) so Tauri
+             correctly marks it as no-drag via [data-tauri-drag-region] button rule -->
+        <button
+          class="no-drag flex h-7 w-7 items-center justify-center rounded-md text-foreground/50 hover:bg-accent hover:text-foreground transition-colors shrink-0 -ml-1"
+          onpointerdown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onToggleSidebar();
+          }}
+          title={t("statusbar_toggleSidebar")}
+          aria-label={t("statusbar_toggleSidebar")}
+        >
+          <svg
+            class="h-[15px] w-[15px]"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"

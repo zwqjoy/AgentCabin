@@ -687,6 +687,10 @@ code,
     user-select: none;
     -webkit-user-select: none;
   }
+  .app-shell-sidebar-toggle {
+    -webkit-app-region: no-drag !important;
+    pointer-events: auto !important;
+  }
   [data-tauri-drag-region] button,
   [data-tauri-drag-region] input,
   [data-tauri-drag-region] textarea,
