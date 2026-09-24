@@ -106,7 +106,12 @@
   }
 
   function handleWorkspaceRowClick(id: string) {
-    const action = getWorkspaceRowAction(selectedId, selectedRunId, false, id);
+    const action = getWorkspaceRowAction(
+      selectedId,
+      selectedRunId,
+      pageUrl.searchParams.get("newSession") === "1",
+      id,
+    );
     if (action.kind === "stay") return;
     sidebar.startedRunId = "";
     void goto(action.href);
