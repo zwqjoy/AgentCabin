@@ -581,7 +581,7 @@
     requestAnimationFrame(() => {
       codeAsideRequestedTab = "file";
       codeAsideRequestedPath = filePath;
-      codeAsideOpen = true;
+      setCodeAsideOpen(true);
     });
   }
 
@@ -1202,7 +1202,7 @@
     if (!entry.diff.trim()) return;
     turnReviewDiff = entry.diff;
     codeAsideRequestedTab = "review";
-    codeAsideOpen = true;
+    setCodeAsideOpen(true);
     turnReviewOpen = false;
   }
 
@@ -2626,6 +2626,26 @@
 
   // ── URL-derived (primitive values only — avoids $effect re-trigger on unrelated URL changes) ──
   let runId = $derived($page.url.searchParams.get("run") ?? "");
+  let codeAsideRunId = runId;
+  const codeAsideOpenByRun = new Map<string, boolean>();
+
+  function setCodeAsideOpen(open: boolean) {
+    codeAsideOpen = open;
+    codeAsideOpenByRun.set(runId, open);
+  }
+
+  // Keep the Code aside visibility with its conversation as the chat page is
+  // reused while switching between runs.
+  $effect(() => {
+    const activeRunId = runId;
+    if (activeRunId === codeAsideRunId) return;
+    codeAsideOpenByRun.set(codeAsideRunId, codeAsideOpen);
+    codeAsideRunId = activeRunId;
+    codeAsideOpen = codeAsideOpenByRun.get(activeRunId) ?? false;
+    turnReviewOpen = false;
+    turnReviewDiff = "";
+  });
+
   let hasResumeParam = $derived($page.url.searchParams.has("resume"));
   let folderParam = $derived($page.url.searchParams.get("folder"));
   let hostParam = $derived($page.url.searchParams.get("host"));
@@ -6764,7 +6784,7 @@
         {bottomPanelOpen}
         rightSidebarOpen={codeAsideOpen}
         onToggleRightSidebar={() => {
-          codeAsideOpen = !codeAsideOpen;
+          setCodeAsideOpen(!codeAsideOpen);
           if (turnReviewOpen) turnReviewOpen = false;
         }}
         onToggleBottomPanel={toggleBottomPanel}
@@ -8478,7 +8498,7 @@
   <!-- Code Mode Multi-Tab Workspace Aside -->
   <CodeAsideWorkspace
     open={codeAsideOpen}
-    onClose={() => (codeAsideOpen = false)}
+    onClose={() => setCodeAsideOpen(false)}
     cwd={store.effectiveCwd || getProjectCwdForEditor()}
     runId={store.run?.id ?? ""}
     turnDiff={turnReviewDiff || effectiveTurnDiff}
