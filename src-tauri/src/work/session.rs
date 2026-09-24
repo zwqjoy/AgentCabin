@@ -615,7 +615,18 @@ pub async fn start_work_session_with_overrides(
         launch_overrides.effort = target.default_effort.clone();
     }
     let effective_model = launch_overrides.model.clone();
-    let permission_mode = execution_mode_cli(target.default_policy.execution_mode);
+    let effective_policy = if let Some(task_id) = task_id {
+        let task = crate::work::tasks::TaskManager::new(paths.clone())
+            .get_task(task_id)
+            .map_err(|error| format!("Cannot resolve WorkTask policy before launch: {error}"))?;
+        if task.workspace_id != workspace_id {
+            return Err("WorkTask belongs to a different Workspace".to_string());
+        }
+        task.policy
+    } else {
+        target.default_policy.clone()
+    };
+    let permission_mode = execution_mode_cli(effective_policy.execution_mode);
     let mut meta = storage::runs::create_run_with_context(
         &id,
         &message,

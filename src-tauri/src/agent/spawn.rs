@@ -288,6 +288,7 @@ mod tests {
             pi_workspace_root: None,
             pi_work_access_roots: vec![],
             pi_work_attachment_root: None,
+            pi_work_full_access: false,
             pi_permission_system_enabled: false,
             pi_plan_mode_enabled: false,
             pi_goal_enabled: false,

@@ -72,6 +72,10 @@ pub struct AdapterSettings {
     pub pi_work_access_roots: Vec<(String, bool)>,
     /// Work-only current-message attachment directory, kept outside the Workspace.
     pub pi_work_attachment_root: Option<String>,
+    /// Explicit Work policy decision to launch Pi outside the OS sandbox.
+    /// Kept separate from Code-mode Pi `permission_mode` so Work isolation
+    /// cannot erase or inherit this decision accidentally.
+    pub pi_work_full_access: bool,
     /// Pi `-e npm:pi-permission-system` — load the built-in permission system.
     /// This is always true for Pi Code sessions; Work clears it while applying its own sandbox.
     pub pi_permission_system_enabled: bool,
@@ -340,6 +344,7 @@ pub fn build_adapter_settings(
         pi_workspace_root: None,
         pi_work_access_roots: Vec::new(),
         pi_work_attachment_root: None,
+        pi_work_full_access: false,
         pi_permission_system_enabled,
         pi_plan_mode_enabled,
         pi_goal_enabled,
@@ -563,6 +568,7 @@ mod tests {
             pi_workspace_root: None,
             pi_work_access_roots: vec![],
             pi_work_attachment_root: None,
+            pi_work_full_access: false,
             pi_permission_system_enabled: false,
             pi_plan_mode_enabled: false,
             pi_goal_enabled: false,

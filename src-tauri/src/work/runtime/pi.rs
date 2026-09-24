@@ -205,9 +205,11 @@ impl PiWorkRuntimeAdapter {
         let mut settings =
             adapter::build_adapter_settings(&agent_settings, &user_settings, run.model.clone());
         adapter::append_continuation_context(&mut settings, run.continuation_context.as_deref());
-        if let Some(mode) = permission_mode_override.filter(|m| !m.trim().is_empty()) {
-            settings.permission_mode = Some(mode.to_string());
-        }
+        let effective_permission_mode = effective_work_permission_mode(
+            permission_mode_override,
+            run.permission_mode.as_deref(),
+        );
+        apply_work_execution_mode(&mut settings, effective_permission_mode);
 
         // Apply per-run launch overrides if supplied (e.g. Smoke runner)
         if let Some(overrides) = &request.launch_overrides {
@@ -531,6 +533,21 @@ fn isolate_work_pi_features(settings: &mut AdapterSettings) {
     settings.pi_lsp_enabled = false;
 }
 
+fn apply_work_execution_mode(settings: &mut AdapterSettings, permission_mode: Option<&str>) {
+    settings.pi_work_full_access = permission_mode
+        .and_then(crate::work::models::WorkExecutionMode::from_permission_mode)
+        == Some(crate::work::models::WorkExecutionMode::FullAccess);
+}
+
+fn effective_work_permission_mode<'a>(
+    permission_mode_override: Option<&'a str>,
+    persisted_permission_mode: Option<&'a str>,
+) -> Option<&'a str> {
+    permission_mode_override
+        .filter(|mode| !mode.trim().is_empty())
+        .or(persisted_permission_mode)
+}
+
 fn append_work_system_prompt(settings: &mut AdapterSettings, system_prompt: &str) {
     if system_prompt.is_empty() {
         return;
@@ -543,5 +560,45 @@ fn append_work_system_prompt(settings: &mut AdapterSettings, system_prompt: &str
         None => {
             settings.append_system_prompt = Some(system_prompt.to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings() -> AdapterSettings {
+        adapter::build_adapter_settings(
+            &crate::models::AgentSettings::default_for("pi"),
+            &crate::models::UserSettings::default(),
+            None,
+        )
+    }
+
+    #[test]
+    fn work_full_access_survives_code_permission_isolation_only_when_explicit() {
+        let mut inherited = settings();
+        inherited.permission_mode = Some("bypassPermissions".into());
+        apply_work_execution_mode(&mut inherited, None);
+        isolate_work_pi_features(&mut inherited);
+        assert_eq!(inherited.permission_mode, None);
+        assert!(!inherited.pi_work_full_access);
+
+        let mut work_grant = settings();
+        work_grant.permission_mode = Some("default".into());
+        apply_work_execution_mode(&mut work_grant, Some("bypassPermissions"));
+        isolate_work_pi_features(&mut work_grant);
+        assert_eq!(work_grant.permission_mode, None);
+        assert!(work_grant.pi_work_full_access);
+    }
+
+    #[test]
+    fn resumed_work_session_restores_persisted_full_access_mode() {
+        let mut resumed = settings();
+        let mode = effective_work_permission_mode(None, Some("bypassPermissions"));
+        apply_work_execution_mode(&mut resumed, mode);
+        isolate_work_pi_features(&mut resumed);
+        assert!(resumed.pi_work_full_access);
+        assert_eq!(resumed.permission_mode, None);
     }
 }

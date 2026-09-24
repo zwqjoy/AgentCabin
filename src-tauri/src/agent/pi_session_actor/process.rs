@@ -34,11 +34,7 @@ enum PiSessionLaunch {
 /// Keep this scoped to isolated Work sessions; a non-Work Pi session may use
 /// the same provider-facing permission name for unrelated reasons.
 fn is_work_full_access(settings: &AdapterSettings) -> bool {
-    settings.pi_agent_dir.is_some()
-        && matches!(
-            settings.permission_mode.as_deref(),
-            Some("full_access" | "fullAccess" | "bypass" | "bypassPermissions")
-        )
+    settings.pi_agent_dir.is_some() && settings.pi_work_full_access
 }
 
 fn build_rpc_args(
@@ -825,6 +821,7 @@ mod tests {
             pi_workspace_root: None,
             pi_work_access_roots: vec![],
             pi_work_attachment_root: None,
+            pi_work_full_access: false,
             pi_permission_system_enabled: false,
             pi_plan_mode_enabled: false,
             pi_goal_enabled: false,
@@ -865,8 +862,12 @@ mod tests {
         assert!(!is_work_full_access(&settings));
 
         settings.pi_agent_dir = Some("/work/profile".into());
+        assert!(!is_work_full_access(&settings));
+
+        settings.pi_work_full_access = true;
         assert!(is_work_full_access(&settings));
 
+        settings.pi_work_full_access = false;
         settings.permission_mode = Some("auto".into());
         assert!(!is_work_full_access(&settings));
     }

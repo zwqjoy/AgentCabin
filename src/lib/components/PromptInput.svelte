@@ -267,12 +267,10 @@
       options: Array<{
         value: string;
         label: string;
-        hint?: string;
+        description?: string;
         disabled?: boolean;
         /** Text colour classes for the option row. */
         cls?: string;
-        /** Full button colour classes applied when this option is the active value. */
-        activeCls?: string;
       }>;
       onSelect: (value: string) => void;
     } | null;
@@ -435,43 +433,38 @@
 
   const PI_PERMISSION_MODES: Array<{
     value: PiPermissionState["mode"];
-    label: string;
-    description: string;
+    label: () => string;
+    shortLabel: () => string;
+    description: () => string;
     cls: string;
   }> = [
     {
       value: "guarded",
-      label: t("prompt_permAskLabel"),
-      description: t("prompt_piPermAskDesc"),
+      label: () => t("prompt_permAskLabel"),
+      shortLabel: () => t("prompt_permAskShort"),
+      description: () => t("prompt_piPermAskDesc"),
       cls: "text-muted-foreground hover:text-foreground",
     },
     {
       value: "accept_edits",
-      label: t("prompt_permAutoReadLabel"),
-      description: t("prompt_piPermEditDesc"),
+      label: () => t("prompt_permAutoReadLabel"),
+      shortLabel: () => t("prompt_permAutoReadShort"),
+      description: () => t("prompt_piPermEditDesc"),
       cls: "text-muted-foreground hover:text-foreground",
     },
     {
       value: "auto_approve",
-      label: t("prompt_permAutoAllLabel"),
-      description: t("prompt_piPermBypassDesc"),
+      label: () => t("prompt_piPermAutoLabel"),
+      shortLabel: () => t("prompt_piPermAutoShort"),
+      description: () => t("prompt_piPermBypassDesc"),
       cls: "text-amber-500",
     },
   ];
 
   let modeDropdownOpen = $state(false);
-  let modeBtnEl: HTMLButtonElement | undefined = $state();
-  let piPermissionBtnEl: HTMLButtonElement | undefined = $state();
+  let permissionBtnEl: HTMLButtonElement | undefined = $state();
   let modeDropdownEl: HTMLDivElement | undefined = $state();
   let modeDropdownStyle = $state("");
-
-  const piPermissionLabel = $derived(
-    piPermission?.mode === "accept_edits"
-      ? t("prompt_permAutoReadShort")
-      : piPermission?.mode === "auto_approve"
-        ? t("prompt_permAutoAllShort")
-        : t("prompt_permAskShort"),
-  );
 
   // ── Project picker (Code mode) ────────────────────────────────────────────
   let projectDropdownOpen = $state(false);
@@ -541,10 +534,6 @@
     }
   }
 
-  let currentMode = $derived(
-    PERMISSION_MODES.find((m) => m.value === permissionMode) ?? PERMISSION_MODES[1],
-  );
-
   // Agent-native plan state is separate from permission policy.
   let planActive = $derived(planModeActive);
   let featurePlanActive = $derived(agent === "pi" ? piPlan?.phase === "active" : planModeActive);
@@ -553,6 +542,90 @@
       ? ["active", "paused", "budget_limited", "complete"].includes(piGoal?.phase ?? "")
       : goalActive,
   );
+  interface PermissionSelectorOption {
+    value: string;
+    label: string;
+    shortLabel?: string;
+    description: string;
+    cls: string;
+    disabled?: boolean;
+  }
+
+  let permissionSelectorAvailable = $derived(
+    !!permissionPicker || (agent === "pi" && !!piPermission) || !!onPermissionModeChange,
+  );
+  let permissionSelectorOptions = $derived.by((): PermissionSelectorOption[] => {
+    if (permissionPicker) {
+      return permissionPicker.options.map((option) => ({
+        value: option.value,
+        label: option.label,
+        description: option.description ?? "",
+        cls: option.cls ?? "",
+        disabled: option.disabled,
+      }));
+    }
+    if (agent === "pi" && piPermission) {
+      return PI_PERMISSION_MODES.map((mode) => ({
+        value: mode.value,
+        label: mode.label(),
+        shortLabel: mode.shortLabel(),
+        description: mode.description(),
+        cls: mode.cls,
+      }));
+    }
+    if (onPermissionModeChange) {
+      return PERMISSION_MODES.map((mode) => ({
+        value: mode.value,
+        label: mode.label(),
+        shortLabel: mode.shortLabel(),
+        description: mode.description(),
+        cls: mode.cls,
+      }));
+    }
+    return [];
+  });
+  let permissionSelectorValue = $derived(
+    permissionPicker?.value ??
+      (agent === "pi" && piPermission ? piPermission.mode : permissionMode),
+  );
+  let permissionSelectorActiveOption = $derived(
+    permissionSelectorOptions.find((option) => option.value === permissionSelectorValue),
+  );
+  let permissionSelectorBusy = $derived(
+    permissionPicker
+      ? !!permissionPicker.busy
+      : agent === "pi" && piPermission
+        ? piPermissionBusy
+        : false,
+  );
+  let permissionSelectorDisabled = $derived(
+    disabled ||
+      permissionSelectorBusy ||
+      (!permissionPicker && !(agent === "pi" && piPermission) && planActive),
+  );
+  let permissionSelectorLabel = $derived(
+    permissionSelectorActiveOption?.shortLabel ??
+      permissionSelectorActiveOption?.label ??
+      permissionSelectorValue,
+  );
+  let permissionSelectorTitle = $derived.by(() => {
+    if (permissionPicker?.title) return permissionPicker.title;
+    if (agent === "pi" && piPermission) {
+      return permissionSelectorBusy
+        ? t("prompt_permissionModeSwitchingTitle")
+        : t("prompt_piPermissionModeSelectTitle");
+    }
+    if (planActive) return t("prompt_permissionPlanActiveTitle");
+    return t("prompt_permissionModeTitle", {
+      mode: permissionSelectorActiveOption?.label ?? permissionSelectorValue,
+    });
+  });
+
+  $effect(() => {
+    if ((!permissionSelectorAvailable || permissionSelectorDisabled) && modeDropdownOpen) {
+      modeDropdownOpen = false;
+    }
+  });
   let nativeModeSelector = $derived(
     capabilities.protocol.sessionModeControl &&
       sessionModes.length > 1 &&
@@ -570,25 +643,21 @@
     capabilities.runtime.attachments || (!hasRun && capabilities.execution.sessionActor),
   );
 
-  // ── Generic permission picker (e.g. Work-mode execution_mode) ───────────
-  // Reuses the shared modeDropdownOpen state and dropdown surface, so it is
-  // mutually exclusive with the Pi/Claude permission dropdowns.
-  let pickerBtnEl: HTMLButtonElement | undefined = $state();
-
-  function togglePickerDropdown() {
-    if (permissionPicker?.busy) return;
+  // ── Shared permission selector (Code and Work) ───────────────────────────
+  function togglePermissionDropdown() {
+    if (permissionSelectorDisabled) return;
     if (modeDropdownOpen) {
       modeDropdownOpen = false;
       return;
     }
-    if (slashMenuOpen) closeSlashMenu("picker-open");
-    if (atMenuOpen) closeAtMenu("picker-open");
+    if (slashMenuOpen) closeSlashMenu("permission-open");
+    if (atMenuOpen) closeAtMenu("permission-open");
     if (wsDropdownOpen) wsDropdownOpen = false;
     if (projectDropdownOpen) projectDropdownOpen = false;
 
     modeDropdownOpen = true;
-    if (pickerBtnEl) {
-      const rect = pickerBtnEl.getBoundingClientRect();
+    if (permissionBtnEl) {
+      const rect = permissionBtnEl.getBoundingClientRect();
       const openUpward = rect.bottom + 220 > window.innerHeight;
       if (openUpward) {
         modeDropdownStyle = `position:fixed; bottom:${window.innerHeight - rect.top + 4}px; left:${rect.left}px; z-index:50;`;
@@ -598,65 +667,20 @@
     }
   }
 
-  function selectPickerOption(value: string) {
-    modeDropdownOpen = false;
-    permissionPicker?.onSelect(value);
-  }
+  function selectPermissionOption(value: string) {
+    const option = permissionSelectorOptions.find((candidate) => candidate.value === value);
+    if (!option || option.disabled || permissionSelectorDisabled) return;
 
-  function toggleModeDropdown() {
-    if (modeDropdownOpen) {
-      modeDropdownOpen = false;
+    modeDropdownOpen = false;
+    if (permissionPicker) {
+      permissionPicker.onSelect(value);
       return;
     }
-    // Close other menus
-    if (slashMenuOpen) closeSlashMenu("mode-open");
-    if (atMenuOpen) closeAtMenu("mode-open");
-    if (wsDropdownOpen) wsDropdownOpen = false;
-    if (projectDropdownOpen) projectDropdownOpen = false;
-
-    modeDropdownOpen = true;
-    if (modeBtnEl) {
-      const rect = modeBtnEl.getBoundingClientRect();
-      const openUpward = rect.bottom + 220 > window.innerHeight;
-      if (openUpward) {
-        modeDropdownStyle = `position:fixed; bottom:${window.innerHeight - rect.top + 4}px; left:${rect.left}px; z-index:50;`;
-      } else {
-        modeDropdownStyle = `position:fixed; top:${rect.bottom + 4}px; left:${rect.left}px; z-index:50;`;
-      }
-    }
-  }
-
-  function selectMode(mode: string) {
-    modeDropdownOpen = false;
-    onPermissionModeChange?.(mode);
-  }
-
-  function togglePiPermissionDropdown() {
-    if (piPermissionBusy) return;
-    if (modeDropdownOpen) {
-      modeDropdownOpen = false;
+    if (agent === "pi" && piPermission) {
+      void onPiPermission?.(value as PiPermissionState["mode"]);
       return;
     }
-    if (slashMenuOpen) closeSlashMenu("pi-permission-open");
-    if (atMenuOpen) closeAtMenu("pi-permission-open");
-    if (wsDropdownOpen) wsDropdownOpen = false;
-    if (projectDropdownOpen) projectDropdownOpen = false;
-
-    modeDropdownOpen = true;
-    if (piPermissionBtnEl) {
-      const rect = piPermissionBtnEl.getBoundingClientRect();
-      const openUpward = rect.bottom + 220 > window.innerHeight;
-      if (openUpward) {
-        modeDropdownStyle = `position:fixed; bottom:${window.innerHeight - rect.top + 4}px; left:${rect.left}px; z-index:50;`;
-      } else {
-        modeDropdownStyle = `position:fixed; top:${rect.bottom + 4}px; left:${rect.left}px; z-index:50;`;
-      }
-    }
-  }
-
-  function selectPiPermission(mode: PiPermissionState["mode"]) {
-    modeDropdownOpen = false;
-    void onPiPermission?.(mode);
+    onPermissionModeChange?.(value);
   }
 
   interface PastedBlock {
@@ -2475,9 +2499,7 @@
     function onDocClick(e: MouseEvent) {
       const target = e.target as Node;
       const clickedTrigger =
-        modeBtnEl?.contains(target) === true ||
-        piPermissionBtnEl?.contains(target) === true ||
-        pickerBtnEl?.contains(target) === true ||
+        permissionBtnEl?.contains(target) === true ||
         projectPickerBtnEl?.contains(target) === true ||
         wsPickerBtnEl?.contains(target) === true;
       if (
@@ -3518,16 +3540,20 @@
           </label>
         {/if}
 
-        {#if agent === "pi" && piPermission}
+        {#if permissionSelectorAvailable}
           <button
-            bind:this={piPermissionBtnEl}
-            disabled={disabled || piPermissionBusy}
+            bind:this={permissionBtnEl}
+            disabled={permissionSelectorDisabled}
             aria-haspopup="menu"
             aria-expanded={modeDropdownOpen}
             class="flex items-center gap-1 rounded-md border border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground transition-colors
-              {piPermissionBusy ? 'cursor-wait opacity-60' : ''}"
-            onclick={togglePiPermissionDropdown}
-            title={piPermissionBusy ? "正在切换 Pi 权限模式" : "选择 Pi 权限模式"}
+              {permissionSelectorBusy
+              ? 'cursor-wait opacity-60'
+              : permissionSelectorDisabled
+                ? 'cursor-not-allowed opacity-40'
+                : ''}"
+            onclick={togglePermissionDropdown}
+            title={permissionSelectorTitle}
           >
             <svg
               class="h-3 w-3"
@@ -3542,83 +3568,7 @@
                 d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
               />
             </svg>
-            <span>{piPermissionLabel}</span>
-            <svg
-              class="h-2.5 w-2.5 opacity-50"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-        {:else if onPermissionModeChange}
-          <button
-            bind:this={modeBtnEl}
-            disabled={planActive}
-            class="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium transition-colors {planActive
-              ? 'opacity-40 cursor-not-allowed'
-              : currentMode.cls + ' hover:bg-accent border border-transparent hover:border-border'}"
-            onclick={toggleModeDropdown}
-            title={planActive
-              ? "计划模式已激活"
-              : t("prompt_permissionModeTitle", { mode: currentMode.label() })}
-          >
-            <svg
-              class="h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path
-                d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
-              />
-            </svg>
-            {currentMode.shortLabel()}
-            <svg
-              class="h-2.5 w-2.5 opacity-50"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"><path d="m6 9 6 6 6-6" /></svg
-            >
-          </button>
-        {/if}
-        {#if permissionPicker}
-          {@const activeOpt = permissionPicker.options.find(
-            (o) => o.value === permissionPicker.value,
-          )}
-          <button
-            bind:this={pickerBtnEl}
-            disabled={disabled || permissionPicker.busy}
-            aria-haspopup="menu"
-            aria-expanded={modeDropdownOpen}
-            class="flex items-center gap-1 rounded-md border border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground transition-colors
-              {permissionPicker.busy ? 'cursor-wait opacity-60' : ''}"
-            onclick={togglePickerDropdown}
-            title={permissionPicker.title ?? "选择权限模式"}
-          >
-            <svg
-              class="h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path
-                d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
-              />
-            </svg>
-            <span>{activeOpt?.label ?? permissionPicker.value}</span>
+            <span>{permissionSelectorLabel}</span>
             <svg
               class="h-2.5 w-2.5 opacity-50"
               viewBox="0 0 24 24"
@@ -3860,88 +3810,36 @@
       style={modeDropdownStyle}
     >
       <div class="p-1">
-        {#if permissionPicker}
-          {#each permissionPicker.options as opt (opt.value)}
-            <button
-              role="menuitemradio"
-              aria-checked={permissionPicker.value === opt.value}
-              disabled={opt.disabled}
-              title={opt.hint ?? ""}
-              class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs transition-colors
-                {opt.disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent'}
-                {permissionPicker.value === opt.value ? 'bg-accent font-medium' : ''}"
-              onclick={() => selectPickerOption(opt.value)}
-            >
-              {#if permissionPicker.value === opt.value}
-                <svg
-                  class="h-3 w-3 text-primary shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"><path d="M20 6 9 17l-5-5" /></svg
-                >
-              {:else}
-                <span class="w-3 shrink-0"></span>
-              {/if}
-              <span class="shrink-0 {opt.cls ?? ''}">{opt.label}</span>
-              <span class="flex-1 min-w-0 text-[10px] text-foreground/50 truncate"
-                >{opt.hint ?? ""}</span
+        {#each permissionSelectorOptions as option (option.value)}
+          {@const selected = permissionSelectorValue === option.value}
+          {@const optionDisabled = !!option.disabled || permissionSelectorDisabled}
+          <button
+            role="menuitemradio"
+            aria-checked={selected}
+            disabled={optionDisabled}
+            title={option.description}
+            class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs transition-colors
+              {optionDisabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent'}
+              {selected ? 'bg-accent font-medium' : ''}"
+            onclick={() => selectPermissionOption(option.value)}
+          >
+            {#if selected}
+              <svg
+                class="h-3 w-3 text-primary shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"><path d="M20 6 9 17l-5-5" /></svg
               >
-            </button>
-          {/each}
-        {:else if agent === "pi" && piPermission}
-          {#each PI_PERMISSION_MODES as mode}
-            <button
-              role="menuitemradio"
-              aria-checked={piPermission.mode === mode.value}
-              class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs hover:bg-accent transition-colors
-                {piPermission.mode === mode.value ? 'bg-accent font-medium' : ''}"
-              onclick={() => selectPiPermission(mode.value)}
+            {:else}
+              <span class="w-3 shrink-0"></span>
+            {/if}
+            <span class="shrink-0 {option.cls}">{option.label}</span>
+            <span class="flex-1 min-w-0 text-[10px] text-foreground/50 truncate"
+              >{option.description}</span
             >
-              {#if piPermission.mode === mode.value}
-                <svg
-                  class="h-3 w-3 text-primary shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"><path d="M20 6 9 17l-5-5" /></svg
-                >
-              {:else}
-                <span class="w-3 shrink-0"></span>
-              {/if}
-              <span class="shrink-0 {mode.cls}">{mode.label}</span>
-              <span class="flex-1 min-w-0 text-[10px] text-foreground/50 truncate"
-                >{mode.description}</span
-              >
-            </button>
-          {/each}
-        {:else}
-          {#each PERMISSION_MODES as mode}
-            <button
-              role="menuitemradio"
-              aria-checked={permissionMode === mode.value}
-              class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs hover:bg-accent transition-colors
-                {permissionMode === mode.value ? 'bg-accent font-medium' : ''}"
-              onclick={() => selectMode(mode.value)}
-            >
-              {#if permissionMode === mode.value}
-                <svg
-                  class="h-3 w-3 text-primary shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"><path d="M20 6 9 17l-5-5" /></svg
-                >
-              {:else}
-                <span class="w-3 shrink-0"></span>
-              {/if}
-              <span class="shrink-0 {mode.cls}">{mode.label()}</span>
-              <span class="flex-1 min-w-0 text-[10px] text-foreground/50 truncate"
-                >{mode.description()}</span
-              >
-            </button>
-          {/each}
-        {/if}
+          </button>
+        {/each}
       </div>
     </div>
   {/if}

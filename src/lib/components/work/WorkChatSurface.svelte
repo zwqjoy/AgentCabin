@@ -445,29 +445,27 @@
     }
   }
 
-  const WORK_MODE_OPTIONS: Array<{
-    value: WorkExecutionMode;
-    label: string;
-    hint: string;
-    cls: string;
-    activeCls: string;
-  }> = [
-    {
-      value: "auto",
-      label: "默认权限",
-      hint: "工作区内自动执行，超出 Work 安全边界时请求批准",
-      cls: "text-amber-600 dark:text-amber-400",
-      activeCls:
-        "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium",
-    },
-    {
-      value: "full_access",
-      label: "完全访问",
-      hint: "不受路径沙箱和常规审批限制，请谨慎使用",
-      cls: "text-red-600 dark:text-red-400",
-      activeCls: "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400 font-medium",
-    },
-  ];
+  let WORK_MODE_OPTIONS = $derived.by(
+    (): Array<{
+      value: WorkExecutionMode;
+      label: string;
+      description: string;
+      cls: string;
+    }> => [
+      {
+        value: "auto",
+        label: t("work_permissionAutoLabel"),
+        description: t("work_permissionAutoDescription"),
+        cls: "text-amber-600 dark:text-amber-400",
+      },
+      {
+        value: "full_access",
+        label: t("work_permissionFullAccessLabel"),
+        description: t("work_permissionFullAccessDescription"),
+        cls: "text-red-600 dark:text-red-400",
+      },
+    ],
+  );
 
   function executionModeLabel(mode: WorkExecutionMode): string {
     return (
@@ -533,9 +531,9 @@
       busy: permissionModeBusy,
       title: isStandalone
         ? session.run?.id
-          ? "选择权限模式（后续尚未发起的操作生效）"
-          : "选择权限模式（首次发送时生效）"
-        : "选择工作空间权限模式",
+          ? t("work_permissionModeNextActionsTitle")
+          : t("work_permissionModeFirstSendTitle")
+        : t("work_permissionModeWorkspaceTitle"),
       options: WORK_MODE_OPTIONS.map((opt) => ({
         ...opt,
       })),

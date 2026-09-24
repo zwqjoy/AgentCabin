@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 const EXTENSION_ID: &str = "pi-permission-system";
+const EXTENSION_PACKAGE: &str = "@gotgenes/pi-permission-system";
 
 /// Normalize AgentCabin/Claude-style names to the three Pi modes exposed by
 /// the UI. The extension itself continues to evaluate allow/ask/deny rules.
@@ -48,6 +49,75 @@ fn permission_config_path(agent_dir: &Path) -> PathBuf {
         .join("extensions")
         .join(EXTENSION_ID)
         .join("config.json")
+}
+
+fn extension_entry_from_package(package_dir: &Path) -> Option<PathBuf> {
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(package_dir.join("package.json")).ok()?).ok()?;
+    let entry = manifest
+        .get("pi")?
+        .get("extensions")?
+        .as_array()?
+        .first()?
+        .as_str()?
+        .trim();
+    if entry.is_empty() {
+        return None;
+    }
+    let entry = Path::new(entry);
+    let resolved = if entry.is_absolute() {
+        entry.to_path_buf()
+    } else {
+        package_dir.join(entry)
+    };
+    resolved.is_file().then_some(resolved)
+}
+
+fn permission_extension_entry(agent_dir: &Path) -> Option<PathBuf> {
+    let installed_package = agent_dir
+        .join("npm")
+        .join("node_modules")
+        .join(EXTENSION_PACKAGE);
+    extension_entry_from_package(&installed_package).or_else(|| {
+        crate::agent::claude_stream::bundled_pi_package_path(EXTENSION_PACKAGE)
+            .and_then(|path| extension_entry_from_package(Path::new(&path)))
+    })
+}
+
+/// The config directory is also inspected by `pi-subagents` when it decides
+/// whether to carry this permission extension into child Pi sessions. Give its
+/// package manifest the real bundled entrypoint instead of a config-only marker.
+fn sync_extension_package_manifest(config_path: &Path) {
+    let Some(extension_dir) = config_path.parent() else {
+        return;
+    };
+    let Some(agent_dir) = extension_dir.parent().and_then(Path::parent) else {
+        return;
+    };
+    let manifest_path = extension_dir.join("package.json");
+    if manifest_path.exists() {
+        let is_config_marker = std::fs::read(&manifest_path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .as_ref()
+            .and_then(|manifest| manifest.get("name"))
+            .and_then(Value::as_str)
+            == Some("pi-permission-system-config");
+        if !is_config_marker {
+            return;
+        }
+    }
+    let Some(entry) = permission_extension_entry(agent_dir) else {
+        return;
+    };
+    let manifest = serde_json::json!({
+        "name": "pi-permission-system-config",
+        "private": true,
+        "pi": { "extensions": [entry.to_string_lossy().into_owned()] }
+    });
+    if let Ok(contents) = serde_json::to_vec_pretty(&manifest) {
+        let _ = std::fs::write(manifest_path, contents);
+    }
 }
 
 fn object_or_insert<'a>(
@@ -370,13 +440,7 @@ fn sync_config_file_with_workspace(
         std::fs::create_dir_all(parent).map_err(|error| {
             format!("Failed to create Pi permission config directory: {}", error)
         })?;
-        let pkg_manifest = parent.join("package.json");
-        if !pkg_manifest.exists() {
-            let _ = std::fs::write(
-                &pkg_manifest,
-                "{\n  \"name\": \"pi-permission-system-config\",\n  \"private\": true\n}\n",
-            );
-        }
+        sync_extension_package_manifest(path);
     }
     let temp_path = path.with_extension("json.tmp");
     std::fs::write(&temp_path, format!("{}\n", serialized))
@@ -454,6 +518,32 @@ mod tests {
         assert_eq!(value["yoloMode"], Value::Bool(true));
         assert_eq!(value["debugLog"], Value::Bool(true));
         assert_eq!(value["permission"]["bash"]["git status"], "allow");
+    }
+
+    #[test]
+    fn generated_permission_package_manifest_declares_its_extension_entry() {
+        let dir = tempdir().unwrap();
+        let agent_dir = dir.path();
+        let package_dir = agent_dir.join("npm/node_modules").join(EXTENSION_PACKAGE);
+        std::fs::create_dir_all(package_dir.join("dist")).unwrap();
+        std::fs::write(package_dir.join("dist/index.js"), "export {};\n").unwrap();
+        std::fs::write(
+            package_dir.join("package.json"),
+            r#"{"pi":{"extensions":["dist/index.js"]}}"#,
+        )
+        .unwrap();
+
+        let config_path = permission_config_path(agent_dir);
+        sync_config_file(&config_path, Some("bypassPermissions")).unwrap();
+
+        let manifest: Value = serde_json::from_slice(
+            &std::fs::read(config_path.parent().unwrap().join("package.json")).unwrap(),
+        )
+        .unwrap();
+        let entry = manifest["pi"]["extensions"][0].as_str().unwrap();
+        assert!(!entry.trim().is_empty());
+        assert_eq!(Path::new(entry), package_dir.join("dist/index.js"));
+        assert!(Path::new(entry).is_file());
     }
 
     #[test]
