@@ -14,10 +14,14 @@
   import BrowserInspector from "$lib/components/browser/BrowserInspector.svelte";
   import { isBrowserToolName } from "$lib/utils/work-browser";
 
+  type WorkAsideTab = "tasks" | "browser";
+
   interface Props {
     open: boolean;
     onClose: () => void;
     onRequestOpenBrowser?: () => void;
+    activeTab: WorkAsideTab;
+    browserActivitySeen?: boolean;
     sessionInfo: SessionInfoData | null;
     progress: WorkProgressSnapshot | null;
     progressView?: WorkRunProgressView | null;
@@ -44,6 +48,8 @@
     open,
     onClose,
     onRequestOpenBrowser,
+    activeTab = $bindable<WorkAsideTab>("tasks"),
+    browserActivitySeen = false,
     sessionInfo,
     progress,
     progressView = null,
@@ -66,9 +72,6 @@
     onArtifactsChanged,
   }: Props = $props();
 
-  type WorkAsideTab = "tasks" | "browser";
-  let activeTab = $state<WorkAsideTab>("tasks");
-
   const browserRunId = $derived(sessionInfo?.runId ?? progressView?.workRunId ?? "");
   let autoOpenedBrowserRunId = $state("");
 
@@ -80,7 +83,7 @@
     ]
       .filter(Boolean)
       .join(" ");
-    return isBrowserToolName(hint);
+    return browserActivitySeen || isBrowserToolName(hint);
   });
 
   // Open the outer inspector on the first browser action for each run. This
