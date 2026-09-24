@@ -826,6 +826,20 @@ pub enum WorkExecutionMode {
     FullAccess,
 }
 
+impl WorkExecutionMode {
+    /// Parse the legacy Pi/AgentCabin permission-mode spellings used at
+    /// session boundaries into the canonical Work policy mode.
+    pub fn from_permission_mode(mode: &str) -> Option<Self> {
+        match mode.trim().to_ascii_lowercase().as_str() {
+            "plan" | "plan_first" | "planfirst" => Some(Self::PlanFirst),
+            "direct" | "ask" | "default" => Some(Self::Direct),
+            "auto" | "auto_all" => Some(Self::Auto),
+            "full_access" | "fullaccess" | "bypass" | "bypasspermissions" => Some(Self::FullAccess),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolRiskClass {
@@ -2643,6 +2657,22 @@ mod tests {
             serde_json::to_string(&WorkExecutionMode::FullAccess).unwrap(),
             "\"full_access\""
         );
+    }
+
+    #[test]
+    fn work_execution_mode_parses_legacy_permission_spellings() {
+        for spelling in ["full_access", "fullAccess", "bypass", "bypassPermissions"] {
+            assert_eq!(
+                WorkExecutionMode::from_permission_mode(spelling),
+                Some(WorkExecutionMode::FullAccess),
+                "{spelling} should select the canonical Work FullAccess policy"
+            );
+        }
+        assert_eq!(
+            WorkExecutionMode::from_permission_mode("auto"),
+            Some(WorkExecutionMode::Auto)
+        );
+        assert_eq!(WorkExecutionMode::from_permission_mode("unknown"), None);
     }
 
     #[test]

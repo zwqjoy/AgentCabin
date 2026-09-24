@@ -746,6 +746,7 @@ pub struct TrustedWorkContext {
     pub token_info: ProcessBridgeTokenInfo,
     pub task: Option<crate::work::models::WorkTask>,
     pub work_run: Option<crate::work::models::WorkRun>,
+    pub workspace: Option<crate::work::models::WorkWorkspace>,
 }
 
 pub async fn authenticate_work_context(
@@ -753,7 +754,29 @@ pub async fn authenticate_work_context(
     headers: &HeaderMap,
 ) -> Result<TrustedWorkContext, (StatusCode, Json<serde_json::Value>)> {
     let token_info = authenticate_token(state, headers).await?;
+    trusted_work_context_for_token(token_info, &crate::work::paths::WorkPaths::app())
+}
 
+fn lookup_context_error(resource: &str, error: String) -> (StatusCode, Json<serde_json::Value>) {
+    let missing = error.to_ascii_lowercase().contains("not found");
+    let status = if missing {
+        StatusCode::FORBIDDEN
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    log::warn!("[work/bridge] Failed to verify authenticated {resource}: {error}");
+    let message = if missing {
+        format!("Authenticated {resource} is unavailable")
+    } else {
+        format!("Unable to verify authenticated {resource}")
+    };
+    (status, Json(json!({ "error": message })))
+}
+
+fn trusted_work_context_for_token(
+    token_info: ProcessBridgeTokenInfo,
+    paths: &crate::work::paths::WorkPaths,
+) -> Result<TrustedWorkContext, (StatusCode, Json<serde_json::Value>)> {
     // Standalone Work uses an empty workspace id as its canonical authority
     // marker. Its task_id carries the run/ledger namespace so lifecycle facts
     // survive restarts, but it is not a persisted WorkTask id and must never
@@ -765,30 +788,36 @@ pub async fn authenticate_work_context(
             token_info,
             task: None,
             work_run: None,
+            workspace: None,
         });
     }
 
+    let workspace = crate::work::workspace::WorkspaceManager::new(paths.clone())
+        .get(&token_info.workspace_id)
+        .map_err(|error| lookup_context_error("Workspace", error))?;
+
     let task_id = match token_info.task_id.as_deref() {
-        Some(tid) if !tid.is_empty() => tid,
-        _ => {
+        None => {
             return Ok(TrustedWorkContext {
                 token_info,
                 task: None,
                 work_run: None,
+                workspace: Some(workspace),
             });
+        }
+        Some(task_id) if !task_id.trim().is_empty() => task_id,
+        Some(_) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Authenticated WorkTask ID is invalid" })),
+            ));
         }
     };
 
-    let task_manager = crate::work::tasks::TaskManager::new(crate::work::paths::WorkPaths::app());
+    let task_manager = crate::work::tasks::TaskManager::new(paths.clone());
     let task = match task_manager.get_task(task_id) {
         Ok(task) => task,
-        Err(_) => {
-            return Ok(TrustedWorkContext {
-                token_info,
-                task: None,
-                work_run: None,
-            });
-        }
+        Err(error) => return Err(lookup_context_error("WorkTask", error)),
     };
 
     if task.workspace_id != token_info.workspace_id {
@@ -810,13 +839,14 @@ pub async fn authenticate_work_context(
             }
             Some(run)
         }
-        Err(_) => None,
+        Err(error) => return Err(lookup_context_error("WorkRun", error)),
     };
 
     Ok(TrustedWorkContext {
         token_info,
         task: Some(task),
         work_run,
+        workspace: Some(workspace),
     })
 }
 
@@ -825,44 +855,36 @@ fn resolve_policy_for_context(
 ) -> (String, crate::work::models::WorkPolicy) {
     if let Some(task) = ctx.task.as_ref() {
         (task.id.clone(), task.policy.clone())
+    } else if let Some(workspace) = ctx.workspace.as_ref() {
+        (
+            ctx.token_info.run_id.clone(),
+            workspace.default_policy.clone(),
+        )
     } else {
         let task_id = ctx.token_info.run_id.clone();
         let execution_mode = crate::storage::runs::get_run(&task_id)
             .and_then(|m| m.permission_mode)
-            .and_then(|pm| match pm.as_str() {
-                "plan_first" | "plan" => Some(crate::work::models::WorkExecutionMode::PlanFirst),
-                "direct" | "ask" | "default" => {
-                    Some(crate::work::models::WorkExecutionMode::Direct)
-                }
-                "auto" | "auto_all" => Some(crate::work::models::WorkExecutionMode::Auto),
-                "full_access" | "fullAccess" | "bypass" | "bypassPermissions" => {
-                    Some(crate::work::models::WorkExecutionMode::FullAccess)
-                }
-                _ => None,
-            })
+            .and_then(|mode| crate::work::models::WorkExecutionMode::from_permission_mode(&mode))
             .unwrap_or(crate::work::models::WorkExecutionMode::Auto);
 
+        // Standalone Work has no Workspace policy to inherit. Preserve its
+        // established connector default and run-scoped standing rules while
+        // parsing the same canonical execution mode used by workspace runs.
         let paths = crate::work::paths::WorkPaths::app();
-        let standing_rules = if let Ok(dir) = paths.standalone_task_dir(&task_id) {
-            let rules_path = dir.join("standing_rules.json");
-            if rules_path.exists() {
-                std::fs::read_to_string(&rules_path)
-                    .ok()
-                    .and_then(|s| serde_json::from_str(&s).ok())
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
+        let standing_rules = paths
+            .standalone_task_dir(&task_id)
+            .ok()
+            .map(|dir| dir.join("standing_rules.json"))
+            .filter(|path| path.exists())
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|content| serde_json::from_str(&content).ok())
+            .unwrap_or_default();
 
         let policy = crate::work::models::WorkPolicy {
             execution_mode,
-            max_automated_steps: 50,
             allow_external_connectors: true,
             standing_rules,
-            guardian_config: None,
+            ..crate::work::models::WorkPolicy::default()
         };
         (task_id, policy)
     }
@@ -2637,11 +2659,119 @@ mod tests {
             },
             task: None,
             work_run: None,
+            workspace: None,
         };
         let (task_id, policy) = super::resolve_policy_for_context(&ctx);
         assert_eq!(task_id, "non-existent-standalone-run");
         // Defaults to Auto when no run is in storage
         assert_eq!(policy.execution_mode, WorkExecutionMode::Auto);
+    }
+
+    #[test]
+    fn taskless_workspace_bridge_context_uses_workspace_default_policy() {
+        use crate::work::models::WorkExecutionMode;
+
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::work::paths::WorkPaths::new(temp.path().to_path_buf());
+        let workspaces = crate::work::workspace::WorkspaceManager::new(paths.clone());
+        let mut workspace = workspaces.create("Workspace chat policy test").unwrap();
+        workspace.default_policy.execution_mode = WorkExecutionMode::FullAccess;
+        workspace.default_policy.allow_external_connectors = true;
+        workspaces.update(&mut workspace).unwrap();
+
+        let context = trusted_work_context_for_token(
+            test_bridge_token(&workspace.id, None, "workspace-chat-run"),
+            &paths,
+        )
+        .unwrap();
+        let (policy_scope, policy) = resolve_policy_for_context(&context);
+
+        assert_eq!(policy_scope, "workspace-chat-run");
+        assert_eq!(policy, workspace.default_policy);
+        assert_eq!(policy.execution_mode, WorkExecutionMode::FullAccess);
+        assert!(policy.allow_external_connectors);
+    }
+
+    fn test_bridge_token(
+        workspace_id: &str,
+        task_id: Option<&str>,
+        run_id: &str,
+    ) -> ProcessBridgeTokenInfo {
+        ProcessBridgeTokenInfo {
+            token: "test-token".to_string(),
+            run_id: run_id.to_string(),
+            task_id: task_id.map(str::to_string),
+            workspace_id: workspace_id.to_string(),
+            execution_context: crate::work::models::ExecutionContext::Attended,
+            proxy_url: None,
+            subject: BridgeSubject::Root,
+        }
+    }
+
+    #[test]
+    fn task_manifest_read_failure_rejects_bridge_context() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::work::paths::WorkPaths::new(temp.path().to_path_buf());
+        let workspace = crate::work::workspace::WorkspaceManager::new(paths.clone())
+            .create("Bridge auth test")
+            .unwrap();
+        let task_manifest = paths.task_manifest_path("task-broken").unwrap();
+        std::fs::create_dir_all(&task_manifest).unwrap();
+
+        let error = trusted_work_context_for_token(
+            test_bridge_token(&workspace.id, Some("task-broken"), "run-1"),
+            &paths,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.0, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn work_run_read_failure_rejects_bridge_context() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::work::paths::WorkPaths::new(temp.path().to_path_buf());
+        let workspace = crate::work::workspace::WorkspaceManager::new(paths.clone())
+            .create("Bridge run auth test")
+            .unwrap();
+        let tasks = crate::work::tasks::TaskManager::new(paths.clone());
+        let task = tasks.create_task(&workspace.id, "Task", "", None).unwrap();
+        let run = tasks
+            .start_run(&task.id, None, crate::work::models::WorkRunTrigger::Manual)
+            .unwrap();
+        let run_path = paths
+            .task_runs_dir(&task.id)
+            .unwrap()
+            .join(format!("{}.json", run.id));
+        std::fs::write(run_path, "not-json").unwrap();
+
+        let error = trusted_work_context_for_token(
+            test_bridge_token(&workspace.id, Some(&task.id), &run.id),
+            &paths,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.0, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn task_bound_bridge_context_rejects_missing_work_run() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::work::paths::WorkPaths::new(temp.path().to_path_buf());
+        let workspace = crate::work::workspace::WorkspaceManager::new(paths.clone())
+            .create("Bridge missing run test")
+            .unwrap();
+        let task = crate::work::tasks::TaskManager::new(paths.clone())
+            .create_task(&workspace.id, "Task", "", None)
+            .unwrap();
+
+        let error = trusted_work_context_for_token(
+            test_bridge_token(&workspace.id, Some(&task.id), "run-missing"),
+            &paths,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.0, StatusCode::FORBIDDEN);
     }
 
     #[test]
@@ -3464,7 +3594,9 @@ mod tests {
                     token: token.clone(),
                     run_id: run_id.clone(),
                     task_id: None,
-                    workspace_id: "test-workspace".to_string(),
+                    // Workspace-less standalone context; no Workspace
+                    // manifest is required for this task-state bridge test.
+                    workspace_id: String::new(),
                     execution_context: ExecutionContext::Attended,
                     proxy_url: None,
                     subject: BridgeSubject::Root,

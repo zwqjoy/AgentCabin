@@ -140,9 +140,11 @@ impl WorkRuntimeLaunchTrace {
 /// The bridge is owned by Work Core, so provider adapters receive its canonical
 /// identity and host-selected proxy instead of deriving workspace/task state
 /// themselves. Standalone Work chats use the run as their durable WorkRun
-/// identity; workspace-backed runs must carry the full Task/WorkRun tuple and
-/// fail closed when it is incomplete. The adapter may project the identity into
-/// its own transport, but cannot create a second Work authority.
+/// identity; Task-bound workspace runs must carry the full Task/WorkRun tuple
+/// and fail closed when it is incomplete. Taskless workspace conversations
+/// remain valid and use their Work session run as the ledger namespace. The
+/// adapter may project the identity into its own transport, but cannot create
+/// a second Work authority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkBridgeLaunchInfo {
     pub work_run_id: String,
@@ -161,8 +163,11 @@ impl WorkBridgeLaunchInfo {
         let execution_context = run
             .work_execution_context
             .unwrap_or(crate::work::models::ExecutionContext::Attended);
-        // If an automation task id exists, use it; otherwise use run.id as the stable namespace
-        let task_id = run.work_task_id.clone().or_else(|| Some(run.id.clone()));
+        // Only attach a Task identity when this run is actually Task-bound.
+        // Workspace conversations and standalone chats use run_id as their
+        // own ledger namespace and must not be mistaken for missing Tasks by
+        // the authenticated bridge.
+        let task_id = run.work_task_id.clone();
 
         Ok(Self {
             work_run_id,
