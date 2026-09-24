@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::Json;
 use axum::routing::{get, post};
 use axum::Router;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -26,13 +26,6 @@ use crate::work::paths::WorkPaths;
 
 const BRIDGE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum BridgeSubject {
-    #[default]
-    Root,
-}
-
 #[derive(Debug, Clone)]
 pub struct ProcessBridgeTokenInfo {
     pub token: String,
@@ -43,11 +36,10 @@ pub struct ProcessBridgeTokenInfo {
     pub execution_context: ExecutionContext,
     /// System proxy bound by the host when this Pi process was launched.
     ///
-    /// The Work Pi child receives the same value through its environment, but
+    /// The Main Work Pi process receives the same value through its environment, but
     /// the authenticated bridge must use the host-bound copy because the
     /// bridge handlers run in the host process.
     pub proxy_url: Option<String>,
-    pub subject: BridgeSubject,
 }
 
 #[derive(Clone)]
@@ -91,71 +83,23 @@ async fn wait_for_port(state: &InternalBridgeState) -> Result<u16, String> {
     }
 }
 
-/// Register a root Work Runtime process and generate a unique bearer token.
+/// Register a Work Runtime process and generate a unique bearer token.
 pub async fn register_session_token(
     run_id: &str,
     workspace_id: &str,
     task_id: Option<&str>,
     execution_context: ExecutionContext,
 ) -> Result<(u16, String), String> {
-    register_session_token_with_subject_and_proxy(
-        run_id,
-        workspace_id,
-        task_id,
-        execution_context,
-        BridgeSubject::Root,
-        None,
-    )
-    .await
+    register_session_token_with_proxy(run_id, workspace_id, task_id, execution_context, None).await
 }
 
-/// Register a root Pi process with the proxy configuration selected by the
+/// Register a Pi process with the proxy configuration selected by the
 /// host for this Work launch.
 pub async fn register_session_token_with_proxy(
     run_id: &str,
     workspace_id: &str,
     task_id: Option<&str>,
     execution_context: ExecutionContext,
-    proxy_url: Option<String>,
-) -> Result<(u16, String), String> {
-    register_session_token_with_subject_and_proxy(
-        run_id,
-        workspace_id,
-        task_id,
-        execution_context,
-        BridgeSubject::Root,
-        proxy_url,
-    )
-    .await
-}
-
-/// Register a Work Runtime process with an explicit subject identity.
-pub async fn register_session_token_with_subject(
-    run_id: &str,
-    workspace_id: &str,
-    task_id: Option<&str>,
-    execution_context: ExecutionContext,
-    subject: BridgeSubject,
-) -> Result<(u16, String), String> {
-    register_session_token_with_subject_and_proxy(
-        run_id,
-        workspace_id,
-        task_id,
-        execution_context,
-        subject,
-        None,
-    )
-    .await
-}
-
-/// Register a Work Runtime process while preserving host-selected network
-/// policy across the authenticated bridge.
-pub async fn register_session_token_with_subject_and_proxy(
-    run_id: &str,
-    workspace_id: &str,
-    task_id: Option<&str>,
-    execution_context: ExecutionContext,
-    subject: BridgeSubject,
     proxy_url: Option<String>,
 ) -> Result<(u16, String), String> {
     let state = bridge_state();
@@ -168,7 +112,6 @@ pub async fn register_session_token_with_subject_and_proxy(
         workspace_id: workspace_id.to_string(),
         execution_context,
         proxy_url,
-        subject,
     };
     state.tokens.write().await.insert(token.clone(), info);
     Ok((port, token))
@@ -1887,15 +1830,10 @@ mod tests {
     async fn standalone_context_keeps_ledger_namespace_out_of_task_lookup() {
         start_internal_bridge().await.unwrap();
         let run_id = format!("standalone-auth-{}", Uuid::new_v4());
-        let (_, token) = register_session_token_with_subject(
-            &run_id,
-            "",
-            Some(&run_id),
-            ExecutionContext::Attended,
-            BridgeSubject::Root,
-        )
-        .await
-        .unwrap();
+        let (_, token) =
+            register_session_token(&run_id, "", Some(&run_id), ExecutionContext::Attended)
+                .await
+                .unwrap();
 
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -1928,7 +1866,6 @@ mod tests {
             workspace_id: "workspace-token-replacement".to_string(),
             execution_context: ExecutionContext::Attended,
             proxy_url: None,
-            subject: BridgeSubject::Root,
         };
         {
             let mut tokens = state.tokens.write().await;
@@ -1987,7 +1924,6 @@ mod tests {
                 workspace_id: String::new(),
                 execution_context: ExecutionContext::Attended,
                 proxy_url: None,
-                subject: BridgeSubject::Root,
             },
             task: None,
             work_run: None,
@@ -2036,7 +1972,6 @@ mod tests {
             workspace_id: workspace_id.to_string(),
             execution_context: crate::work::models::ExecutionContext::Attended,
             proxy_url: None,
-            subject: BridgeSubject::Root,
         }
     }
 
@@ -2123,7 +2058,6 @@ mod tests {
             workspace_id: workspace_id.to_string(),
             execution_context: crate::work::models::ExecutionContext::Attended,
             proxy_url: None,
-            subject: BridgeSubject::Root,
         };
         state
             .tokens
@@ -2295,7 +2229,6 @@ mod tests {
                     workspace_id: String::new(),
                     execution_context: ExecutionContext::Attended,
                     proxy_url: None,
-                    subject: BridgeSubject::Root,
                 },
             );
         }

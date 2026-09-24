@@ -5,7 +5,7 @@
 //!     + latest durable WorkTaskState (goal, plan, checkpoint)
 //!     + RuntimeFact Ledger (tool lifecycle, step lifecycle)
 //!     + PendingInteraction / Inbox (human attention)
-//!     + Host Subagent Registry / facts (multi-agent progress)
+//!     + Legacy Subagent Ledger facts (historical replay only)
 //!   -> WorkRunProgressView
 //!
 //! Progress is a pure read-only projection (no new persistent authority entity).
@@ -434,7 +434,7 @@ pub(crate) fn resolve_latest_task_state(
     run.task_state.clone()
 }
 
-/// Resolve subagents by reading durable ledger facts and overlaying in-memory registry.
+/// Resolve legacy subagent state from historical ledger facts only.
 pub(crate) fn resolve_subagents(
     paths: &WorkPaths,
     task_id: &str,

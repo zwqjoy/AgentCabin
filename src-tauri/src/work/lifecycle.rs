@@ -1201,7 +1201,6 @@ mod tests {
                 workspace_id: workspace.id.clone(),
                 execution_context: crate::work::models::ExecutionContext::Attended,
                 proxy_url: None,
-                subject: crate::work::internal_bridge::BridgeSubject::Root,
             },
         );
 

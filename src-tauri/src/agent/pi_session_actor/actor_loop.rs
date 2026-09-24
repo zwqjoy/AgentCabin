@@ -2259,7 +2259,6 @@ mod tests {
             workspace_id: "workspace-actor-cleanup".to_string(),
             execution_context: crate::work::models::ExecutionContext::Attended,
             proxy_url: None,
-            subject: crate::work::internal_bridge::BridgeSubject::Root,
         };
         {
             let mut tokens = state.tokens.write().await;
