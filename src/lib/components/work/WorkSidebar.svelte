@@ -206,7 +206,7 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
   <div class="work-sidebar-body flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">
-    <!-- The recent task list is mode-wide; workspace trees below provide context. -->
+    <!-- Standalone conversations appear here; workspace conversations stay under their workspace. -->
     <div class="mb-2 shrink-0">
       <SidebarSectionLabel label="任务" count={recentConversations.length} class="mb-0.5" />
       {#if recentConversations.length > 0}

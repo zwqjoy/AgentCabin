@@ -1244,8 +1244,7 @@
     ),
   );
 
-  // Keep a short mode-wide task list above the project tree, while conversations
-  // remain grouped under their project below (matching Work's recent / spaces split).
+  // Keep standalone Code tasks above the project tree; project conversations stay grouped below.
   let recentCodeTasks = $derived.by(() =>
     buildProjectFolders(scopedRuns, favoriteRunIds, pinnedCwds, removedCwds, false)
       .flatMap((folder) =>

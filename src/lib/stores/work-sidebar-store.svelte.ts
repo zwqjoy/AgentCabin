@@ -111,12 +111,18 @@ export class WorkSidebarStore {
     );
   }
 
-  /** Newest Work conversations across standalone tasks and workspaces. */
+  /** Newest standalone Work conversations; workspace chats stay in their workspace tree. */
   getRecentConversations(matches: (session: TaskRun) => boolean): TaskRun[] {
-    return filterRecentWorkSessions(this.recentSessions, matches).slice(
-      0,
-      RECENT_CONVERSATIONS_LIMIT,
-    );
+    return filterRecentWorkSessions(
+      this.standaloneSessions.filter((session) => !session.workspace_id),
+      matches,
+    )
+      .sort((left, right) =>
+        (right.last_activity_at ?? right.started_at).localeCompare(
+          left.last_activity_at ?? left.started_at,
+        ),
+      )
+      .slice(0, RECENT_CONVERSATIONS_LIMIT);
   }
 
   getArchivedConversations(matches: (session: TaskRun) => boolean): TaskRun[] {
