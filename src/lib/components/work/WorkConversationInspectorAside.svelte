@@ -17,6 +17,7 @@
   interface Props {
     open: boolean;
     onClose: () => void;
+    onRequestOpenBrowser?: () => void;
     sessionInfo: SessionInfoData | null;
     progress: WorkProgressSnapshot | null;
     progressView?: WorkRunProgressView | null;
@@ -42,6 +43,7 @@
   let {
     open,
     onClose,
+    onRequestOpenBrowser,
     sessionInfo,
     progress,
     progressView = null,
@@ -68,6 +70,7 @@
   let activeTab = $state<WorkAsideTab>("tasks");
 
   const browserRunId = $derived(sessionInfo?.runId ?? progressView?.workRunId ?? "");
+  let autoOpenedBrowserRunId = $state("");
 
   let hasBrowserActivity = $derived.by(() => {
     const hint = [
@@ -80,11 +83,15 @@
     return isBrowserToolName(hint);
   });
 
-  // Auto-switch to browser tab when agent initiates browser actions
+  // Open the outer inspector on the first browser action for each run. This
+  // component stays mounted while the aside is closed, so it can request the
+  // parent to reveal the Browser surface before its contents mount.
   $effect(() => {
-    if (hasBrowserActivity && activeTab !== "browser") {
-      activeTab = "browser";
-    }
+    const runId = browserRunId;
+    if (!hasBrowserActivity || !runId || autoOpenedBrowserRunId === runId) return;
+    autoOpenedBrowserRunId = runId;
+    activeTab = "browser";
+    if (!open) onRequestOpenBrowser?.();
   });
 
   const isTaskCompleted = $derived.by(() => {

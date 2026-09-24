@@ -78,7 +78,14 @@ test("pi_browser_operator_adapter registers all 10 tools and executes through To
       if (toolName === "browser_click") {
         return {
           success: true,
-          stdout: JSON.stringify({ ref: args.ref, button: "left" }),
+          stdout: JSON.stringify({
+            ref: args.ref,
+            button: "left",
+            url: "https://example.com/after-click",
+            title: "Submitted",
+            tree: '[ref=e1] heading "Submitted"',
+            screenshot: "data:image/png;base64,aGVsbG8=",
+          }),
         };
       }
       if (toolName === "browser_type") {
@@ -160,10 +167,25 @@ test("pi_browser_operator_adapter registers all 10 tools and executes through To
     const click = registeredTools.get("browser_click");
     const clickRes = await click.execute("call-2", {
       ref: "e3",
-    });
+    }, undefined, undefined, { model: { input: ["text", "image"] } });
     assert.equal(executedToolName, "browser_click");
     assert.equal(executedArgs.ref, "e3");
-    assert.match(clickRes.content[0].text, /Clicked element \[ref=e3\]/);
+    assert.match(clickRes.content[0].text, /Click action executed on \[ref=e3\]/);
+    assert.equal(clickRes.content[1].type, "image");
+    assert.equal(clickRes.content[1].mimeType, "image/png");
+    assert.equal(clickRes.content[1].data, "aGVsbG8=");
+    assert.match(clickRes.content[0].text, /URL: https:\/\/example\.com\/after-click/);
+    assert.match(clickRes.content[0].text, /Title: Submitted/);
+    assert.equal(clickRes.details.tree, '[ref=e1] heading "Submitted"');
+    assert.equal(clickRes.details.screenshot, "data:image/png;base64,aGVsbG8=");
+
+    const textOnlyClickRes = await click.execute("call-2-text-only", { ref: "e3" }, undefined, undefined, {
+      model: { input: ["text"] },
+    });
+    assert.equal(textOnlyClickRes.content.length, 1);
+    assert.equal(textOnlyClickRes.content[0].type, "text");
+    assert.match(textOnlyClickRes.content[0].text, /Page snapshot:\n\[ref=e1\] heading "Submitted"/);
+    assert.equal(textOnlyClickRes.details.screenshot, "data:image/png;base64,aGVsbG8=");
 
     // 4. Test type execution
     const typeTool = registeredTools.get("browser_type");
@@ -174,7 +196,7 @@ test("pi_browser_operator_adapter registers all 10 tools and executes through To
     });
     assert.equal(executedToolName, "browser_type");
     assert.equal(executedArgs.text, "admin@example.com");
-    assert.match(typeRes.content[0].text, /Typed into \[ref=e2\]/);
+    assert.match(typeRes.content[0].text, /Text input action executed on \[ref=e2\]/);
 
     // 5. Test select execution
     const select = registeredTools.get("browser_select_option");

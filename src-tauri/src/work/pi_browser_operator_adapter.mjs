@@ -98,12 +98,35 @@ function imageContent(details) {
   return base64 ? [{ type: "image", data: base64, mimeType }] : [];
 }
 
-function result(text, details = {}) {
-  return { content: [{ type: "text", text }, ...imageContent(details)], details };
+function supportsImages(ctx) {
+  return Array.isArray(ctx?.model?.input) && ctx.model.input.includes("image");
 }
 
-function fail(message, details = {}) {
-  return result(message, { ok: false, ...details });
+function result(text, details = {}, includeImage = false) {
+  return {
+    content: [{ type: "text", text }, ...(includeImage ? imageContent(details) : [])],
+    details,
+  };
+}
+
+function fail(message, details = {}, includeImage = false) {
+  return result(message, { ok: false, ...details }, includeImage);
+}
+
+function parseResultPayload(res) {
+  try {
+    return JSON.parse(res?.stdout || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function formatPageObservation(payload) {
+  const lines = [];
+  if (payload?.url) lines.push(`URL: ${payload.url}`);
+  if (payload?.title) lines.push(`Title: ${payload.title}`);
+  if (payload?.tree) lines.push(`Page snapshot:\n${payload.tree}`);
+  return lines.length ? `\n\n${lines.join("\n")}` : "";
 }
 
 export function registerBrowserOperatorTools(pi, options = {}) {
@@ -172,12 +195,11 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     label: "browser_navigate",
     description: "Navigate the active browser page for a user-requested website task. Do not open a URL merely to display or load an image in the conversation; embed user-provided HTTPS image URLs directly in an HTML renderer instead. For generated HTML browser inspection, use a file:// URL under the current WorkRun output/ directory; other local files, localhost, and private LAN networks remain blocked for SSRF protection.",
     parameters: NavigateSchema,
-    async execute(toolCallId, params, signal) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_navigate", "navigate", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Navigation failed", res);
-      let parsed = {};
-      try { parsed = JSON.parse(res.stdout || "{}"); } catch {}
-      return result(`Navigated to ${parsed.url || params?.url}\nTitle: ${parsed.title || "(no title)"}`, { ok: true, ...parsed });
+      const parsed = parseResultPayload(res);
+      return result(`Navigated to ${parsed.url || params?.url}\nTitle: ${parsed.title || "(no title)"}`, { ok: true, ...parsed }, supportsImages(ctx));
     },
   });
 
@@ -187,12 +209,11 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     label: "browser_snapshot",
     description: "Capture the current page's semantic accessibility tree with stable [ref=eX] identifiers and a screenshot image. Use these refs for element click/type/select operations; refresh the snapshot after page changes.",
     parameters: SnapshotSchema,
-    async execute(toolCallId, params, signal) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_snapshot", "snapshot", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Snapshot failed", res);
-      let parsed = {};
-      try { parsed = JSON.parse(res.stdout || "{}"); } catch {}
-      return result(`Page: ${parsed.title || "(untitled)"} (${parsed.url})\n\n${parsed.tree || "(empty)"}`, { ok: true, ...parsed });
+      const parsed = parseResultPayload(res);
+      return result(`Page: ${parsed.title || "(untitled)"} (${parsed.url})\n\n${parsed.tree || "(empty)"}`, { ok: true, ...parsed }, supportsImages(ctx));
     },
   });
 
@@ -202,11 +223,10 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     label: "browser_take_screenshot",
     description: "Take a screenshot of the current page as visual verification. Can return base64 or save to output/.",
     parameters: ScreenshotSchema,
-    async execute(toolCallId, params, signal) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_take_screenshot", "screenshot", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Screenshot failed", res);
-      let parsed = {};
-      try { parsed = JSON.parse(res.stdout || "{}"); } catch {}
+      const parsed = parseResultPayload(res);
       if (parsed.path) {
         return result(`Screenshot saved to ${parsed.path}`, { ok: true, ...parsed });
       }
@@ -215,7 +235,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
         screenshot: parsed.screenshot,
         mimeType: parsed.mimeType || "image/png",
         base64: parsed.base64,
-      });
+      }, supportsImages(ctx));
     },
   });
 
@@ -225,23 +245,23 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     label: "browser_wait_for",
     description: "Wait for a duration or verify page conditions (URL, rendered text, visible element, or absent element). After click/type actions, use expect with the user's requested result; only a successful condition check counts as verified.",
     parameters: WaitSchema,
-    async execute(toolCallId, params, signal) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_wait_for", "wait", params, signal);
-      let parsed = {};
-      try { parsed = JSON.parse(res.stdout || "{}"); } catch {}
+      const parsed = parseResultPayload(res);
       if (!res.success) {
         return fail(res.stderr || res.error || "Expected browser page condition was not met.", {
           ...res,
           ...parsed,
           ok: false,
           resultVerified: false,
-        });
+        }, supportsImages(ctx));
       }
       const verified = parsed.verified === true;
       if (parsed.timedOut) {
         return fail(
           `Expected page condition was not met on ${parsed.url || "page"}: ${(parsed.failures || []).join("; ")}`,
           { ...parsed, ok: false, resultVerified: false },
+          supportsImages(ctx),
         );
       }
       return result(
@@ -249,6 +269,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
           ? `Expected page condition verified on ${parsed.url || "page"}.`
           : `Wait completed on ${parsed.url || "page"}; no expected page condition was checked.`,
         { ok: true, ...parsed, resultVerified: verified },
+        supportsImages(ctx),
       );
     },
   });
@@ -292,10 +313,11 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     label: "browser_click",
     description: "Click an interactive element on the page. Pass 'ref' and its accessible name as target_label from the latest browser_snapshot. The operation returns a fresh page snapshot and screenshot; inspect the result before claiming the requested outcome succeeded.",
     parameters: ClickSchema,
-    async execute(toolCallId, params, signal) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_click", "click", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Click failed", res);
-      return result(`Click action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.`, { ok: true, ...res, actionExecuted: true, resultVerified: false });
+      const parsed = parseResultPayload(res);
+      return result(`Click action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...res, ...parsed, actionExecuted: true, resultVerified: false }, supportsImages(ctx));
     },
   });
 
@@ -305,10 +327,11 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     label: "browser_type",
     description: "Type text into an input field or textarea. Pass 'ref' and its accessible name as target_label from the latest browser_snapshot. The operation returns a fresh page snapshot and screenshot; inspect the result before claiming the requested outcome succeeded.",
     parameters: TypeSchema,
-    async execute(toolCallId, params, signal) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_type", "type", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Type failed", res);
-      return result(`Text input action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.`, { ok: true, ...res, actionExecuted: true, resultVerified: false });
+      const parsed = parseResultPayload(res);
+      return result(`Text input action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...res, ...parsed, actionExecuted: true, resultVerified: false }, supportsImages(ctx));
     },
   });
 
@@ -331,10 +354,11 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     label: "browser_scroll",
     description: "Scroll the page or a scrollable element container in a given direction.",
     parameters: ScrollSchema,
-    async execute(toolCallId, params, signal) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_scroll", "scroll", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Scroll failed", res);
-      return result(`Scrolled ${params?.direction || "down"}`, { ok: true, ...res });
+      const parsed = parseResultPayload(res);
+      return result(`Scrolled ${params?.direction || "down"}.${formatPageObservation(parsed)}`, { ok: true, ...res, ...parsed }, supportsImages(ctx));
     },
   });
 }

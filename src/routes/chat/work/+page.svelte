@@ -534,6 +534,7 @@
             <WorkConversationInspectorAside
               open={showConversationInspector}
               onClose={() => (showConversationInspector = false)}
+              onRequestOpenBrowser={() => (showConversationInspector = true)}
               {sessionInfo}
               {progress}
               {progressView}
@@ -689,6 +690,7 @@
               <WorkConversationInspectorAside
                 open={showConversationInspector}
                 onClose={() => (showConversationInspector = false)}
+                onRequestOpenBrowser={() => (showConversationInspector = true)}
                 {sessionInfo}
                 {progress}
                 {progressView}
