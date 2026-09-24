@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PiExtensionHostState } from "$lib/types";
+  import PiExtensionWidgetContent from "$lib/components/PiExtensionWidgetContent.svelte";
   import { stripAnsi } from "$lib/utils/ansi";
 
   let {
@@ -66,13 +67,10 @@
         <div class="space-y-2">
           {#each activeWidgets as widget (widget.key)}
             <div class="rounded border border-border/60 bg-background/50 p-2">
-              {#if widget.key !== "default"}
+              {#if widget.key !== "default" && widget.key !== "subagent-async"}
                 <div class="font-medium text-[11px] text-muted-foreground mb-1">{widget.key}</div>
               {/if}
-              <pre
-                class="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-muted-foreground text-xs">{widget.lines.join(
-                  "\n",
-                )}</pre>
+              <PiExtensionWidgetContent {widget} />
             </div>
           {/each}
         </div>

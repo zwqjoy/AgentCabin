@@ -2,6 +2,7 @@
   import type { PiExtensionHostState } from "$lib/types";
   import { t } from "$lib/i18n/index.svelte";
   import { stripAnsi } from "$lib/utils/ansi";
+  import PiExtensionWidgetContent from "$lib/components/PiExtensionWidgetContent.svelte";
 
   interface ExtensionNotice {
     noticeType: string;
@@ -142,15 +143,12 @@
         <div class="grid gap-2 md:grid-cols-2">
           {#each activeWidgets as widget (widget.key)}
             <div class="min-w-0 rounded-lg border border-border/60 bg-background/55 p-2">
-              {#if widget.key !== "default"}
+              {#if widget.key !== "default" && widget.key !== "subagent-async"}
                 <div class="mb-1 truncate text-[11px] font-medium text-muted-foreground">
                   {widget.key}
                 </div>
               {/if}
-              <pre
-                class="max-h-32 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-muted-foreground">{widget.lines.join(
-                  "\n",
-                )}</pre>
+              <PiExtensionWidgetContent {widget} />
             </div>
           {/each}
         </div>
