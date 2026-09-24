@@ -520,21 +520,15 @@
     </div>
   {/if}
 
-  <!-- Inbox is the canonical human-action queue. -->
+  <!-- Run interactions are resolved in their originating conversation. -->
   {#if visiblePendingInteractions.length > 0}
     <div
-      class="mt-3 flex items-center justify-between gap-3 rounded-lg border border-orange-500/30 bg-orange-500/10 px-2.5 py-2 text-[10px] text-orange-700 dark:text-orange-300"
+      class="mt-3 flex items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/10 px-2.5 py-2 text-[10px] text-orange-700 dark:text-orange-300"
     >
       <span class="flex min-w-0 items-center gap-1.5 font-semibold">
         <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-orange-500"></span>
-        Inbox 中有 {visiblePendingInteractions.length} 项需要你处理
+        当前对话中有 {visiblePendingInteractions.length} 项需要你处理
       </span>
-      <a
-        href="/chat/work?view=inbox"
-        class="shrink-0 rounded-md bg-orange-500/20 px-2 py-0.5 font-semibold hover:bg-orange-500/30"
-      >
-        打开 Inbox →
-      </a>
     </div>
   {:else if visibleAttention}
     <div
@@ -596,12 +590,11 @@
           </button>
         </div>
       {:else}
-        <a
-          href="/chat/work?view=inbox"
-          class="shrink-0 mt-0.5 rounded-md bg-orange-500/20 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:text-orange-300 hover:bg-orange-500/30 transition-colors"
+        <span
+          class="shrink-0 mt-0.5 text-[10px] font-medium text-orange-700/80 dark:text-orange-300/80"
         >
-          去处理 &rarr;
-        </a>
+          在当前对话中处理
+        </span>
       {/if}
     </div>
   {:else if !isTerminal && currentActivity}
@@ -637,12 +630,9 @@
           >
         {/if}
       </div>
-      <a
-        href="/chat/work?view=inbox"
-        class="shrink-0 rounded-md bg-orange-500/20 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:text-orange-300 hover:bg-orange-500/30 transition-colors"
-      >
-        去处理 &rarr;
-      </a>
+      <span class="shrink-0 text-[10px] font-medium text-orange-700/80 dark:text-orange-300/80">
+        在当前对话中处理
+      </span>
     </div>
   {:else if !isTerminal && resolvedSnapshot?.activeToolName}
     <div
@@ -659,12 +649,9 @@
         <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-orange-500"></span>
         <span class="truncate font-medium">Agent 正在等待你补充信息。</span>
       </div>
-      <a
-        href="/chat/work?view=inbox"
-        class="shrink-0 rounded-md bg-orange-500/20 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:text-orange-300 hover:bg-orange-500/30 transition-colors"
-      >
-        去处理 &rarr;
-      </a>
+      <span class="shrink-0 text-[10px] font-medium text-orange-700/80 dark:text-orange-300/80">
+        在当前对话中处理
+      </span>
     </div>
   {/if}
 

@@ -1,11 +1,5 @@
 <script lang="ts">
-  import {
-    formatDirectoryPath,
-    getInteractionDescription,
-    getInteractionTitle,
-    isAccessRootRequest,
-    isQuestionInteraction,
-  } from "$lib/utils/work-interactions";
+  import { formatDirectoryPath } from "$lib/utils/work-interactions";
   import { workToolLabel } from "$lib/utils/work-activity";
   import { classifyWorkExecutionFailure } from "$lib/utils/work-execution-failure";
   import type { TimelineEntry } from "$lib/types";
@@ -341,10 +335,6 @@
         !resolvedInteraction &&
         !entry.tool.output),
   );
-  let isRecovery = $derived(
-    Boolean(pendingInteraction?.payload.recoveryKey || pendingInteraction?.payload.recoveryAction),
-  );
-
   let isDenied = $derived(
     resolvedInteraction?.status === "rejected" ||
       resolvedInteraction?.status === "cancelled" ||
@@ -462,68 +452,10 @@
       </div>
     </details>
   </div>
-{:else if isPending && pendingInteraction && isQuestionInteraction(pendingInteraction)}
-  <div class={nested ? "w-full my-1" : "chat-content-width py-2"}>
-    <WorkPendingActionItem item={pendingInteraction} onResolve={onResolveInteraction} />
-  </div>
 {:else if isPending && pendingInteraction}
-  <!-- Approvals, authorizations, and recovery stay in Inbox; questions render inline below. -->
-  {@const title = getInteractionTitle(pendingInteraction)}
-  {@const desc = getInteractionDescription(pendingInteraction)}
+  <!-- Run interactions are resolved in their originating conversation. -->
   <div class="{nested ? 'w-full my-1' : 'chat-content-width py-2'} animate-fade-in">
-    <div
-      class="flex items-center gap-3 rounded-xl border border-orange-500/30 bg-orange-500/[0.06] px-3 py-2.5"
-    >
-      <span
-        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400"
-      >
-        {#if isDirAccess || isAccessRootRequest(pendingInteraction)}
-          <svg
-            viewBox="0 0 24 24"
-            class="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            aria-hidden="true"
-          >
-            <path d="M3.5 6.5h6l2 2h9v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
-          </svg>
-        {:else}
-          <svg
-            viewBox="0 0 24 24"
-            class="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-        {/if}
-      </span>
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-2">
-          <h4 class="text-xs font-semibold text-foreground">{title}</h4>
-          <span
-            class="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-semibold text-orange-600 dark:text-orange-400"
-          >
-            {isRecovery ? "等待恢复确认" : "等待你的处理"}
-          </span>
-        </div>
-        <p class="mt-0.5 truncate text-[11px] text-muted-foreground">{desc}</p>
-        {#if displayPath}
-          <p class="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{displayPath}</p>
-        {/if}
-      </div>
-      <a
-        href="/chat/work?view=inbox"
-        class="shrink-0 rounded-lg bg-orange-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-orange-700 transition-colors hover:bg-orange-500/25 dark:text-orange-300"
-      >
-        打开 Inbox →
-      </a>
-    </div>
+    <WorkPendingActionItem item={pendingInteraction} onResolve={onResolveInteraction} />
   </div>
 {:else if isDirAccess && isApproved}
   <!-- Resolved: Approved directory access card -->

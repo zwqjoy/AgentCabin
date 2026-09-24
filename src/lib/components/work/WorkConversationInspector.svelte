@@ -325,11 +325,6 @@
             </div>
             <p class="mt-1 text-[11px] leading-4 text-muted-foreground">{recovery.reason}</p>
           </div>
-          <a
-            href="/chat/work?view=inbox"
-            class="shrink-0 rounded-lg bg-amber-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-500/25 dark:text-amber-300"
-            >打开 Inbox →</a
-          >
         </div>
       </section>
     {/if}
@@ -339,13 +334,8 @@
         <div class="flex items-center justify-between gap-3">
           <span class="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
             <span class="h-2 w-2 shrink-0 animate-pulse rounded-full bg-orange-500"></span>
-            Inbox 中有 {normalPendingInteractions.length} 项需要你处理
+            当前对话中有 {normalPendingInteractions.length} 项需要你处理
           </span>
-          <a
-            href="/chat/work?view=inbox"
-            class="shrink-0 rounded-lg bg-orange-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-orange-700 hover:bg-orange-500/25 dark:text-orange-300"
-            >打开 Inbox →</a
-          >
         </div>
       </section>
     {/if}
