@@ -109,6 +109,7 @@
   import ChatAssistantMessage from "$lib/components/chat/ChatAssistantMessage.svelte";
   import ChatSessionStatsLine from "$lib/components/chat/ChatSessionStatsLine.svelte";
   import { buildChatPresentationTurns } from "$lib/utils/chat-presentation";
+  import { isBrowserToolName } from "$lib/utils/work-browser";
   import SessionStatusBar from "$lib/components/SessionStatusBar.svelte";
   import CapabilityRunInspector from "$lib/components/capabilities/CapabilityRunInspector.svelte";
   import { getRunEffectiveCapabilities } from "$lib/api/work";
@@ -572,6 +573,7 @@
   let codeAsideOpen = $state(false);
   let codeAsideRequestedTab = $state<CodeAsideTabType | null>(null);
   let codeAsideRequestedPath = $state<string | null>(null);
+  let browserAutoOpenedRunId = $state("");
   let turnSummaryRunId = "";
 
   function openFileInCodeAside(filePath: string) {
@@ -2633,6 +2635,22 @@
     codeAsideOpen = open;
     codeAsideOpenByRun.set(runId, open);
   }
+
+  $effect(() => {
+    const activeRunId = store.run?.id ?? runId;
+    const hasBrowserTool = store.timeline.some(
+      (entry) =>
+        entry.kind === "tool" &&
+        entry.tool.status === "running" &&
+        isBrowserToolName(entry.tool.tool_name),
+    );
+    if (!activeRunId || !hasBrowserTool || browserAutoOpenedRunId === activeRunId) return;
+
+    browserAutoOpenedRunId = activeRunId;
+    codeAsideRequestedPath = null;
+    codeAsideRequestedTab = "browser";
+    setCodeAsideOpen(true);
+  });
 
   // Keep the Code aside visibility with its conversation as the chat page is
   // reused while switching between runs.

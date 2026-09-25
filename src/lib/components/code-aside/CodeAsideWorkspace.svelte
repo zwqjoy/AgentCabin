@@ -36,6 +36,9 @@
   let isMaximized = $state(false);
 
   let activeTab = $derived(tabs.find((t) => t.id === activeTabId) ?? null);
+  let browserSurfaceRunId = $derived(
+    runId || (activeTab?.type === "browser" ? "code-browser" : ""),
+  );
 
   // Handle external tab switch requests (e.g. clicking review button in chat)
   let lastHandledRequest = "";
@@ -248,83 +251,94 @@
   });
 </script>
 
-{#if open}
-  {#if resizing && !isMaximized}
-    <div
-      bind:this={ghostEl}
-      class="fixed top-0 bottom-0 z-[9999] pointer-events-none bg-primary"
-      style="left: {ghostX - 1}px; width: 3px; box-shadow: 0 0 8px hsl(var(--primary) / 0.6);"
-    ></div>
-  {/if}
+{#if resizing && open && !isMaximized}
+  <div
+    bind:this={ghostEl}
+    class="fixed top-0 bottom-0 z-[9999] pointer-events-none bg-primary"
+    style="left: {ghostX - 1}px; width: 3px; box-shadow: 0 0 8px hsl(var(--primary) / 0.6);"
+  ></div>
+{/if}
 
-  <aside
-    bind:this={asideEl}
-    class="pointer-events-auto flex min-h-0 shrink-0 flex-col overflow-hidden bg-background {isMaximized
+<aside
+  bind:this={asideEl}
+  class="pointer-events-auto flex min-h-0 shrink-0 flex-col overflow-hidden bg-background {!open
+    ? 'invisible pointer-events-none'
+    : isMaximized
       ? 'absolute inset-0 z-30 w-full'
       : 'relative border-l border-border/70'}"
-    style={isMaximized ? "width: 100%;" : `width: ${effectiveWidth}px;`}
-    aria-label="Code 工作区侧边栏"
-  >
-    {#if !isMaximized}
+  style={isMaximized && open ? "width: 100%;" : `width: ${open ? effectiveWidth : 0}px;`}
+  aria-label="Code 工作区侧边栏"
+>
+  {#if open && !isMaximized}
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      tabindex="-1"
+      class="group absolute left-0 top-0 bottom-0 w-2 -translate-x-1/2 cursor-col-resize z-20 hover:bg-primary/20 active:bg-primary/30 transition-colors {resizing
+        ? 'bg-primary/30'
+        : ''}"
+      onpointerdown={startResize}
+      ondblclick={() => (savedWidth = WIDTH_DEFAULT)}
+      title="拖动调整宽度，双击恢复默认"
+    >
       <div
-        role="separator"
-        aria-orientation="vertical"
-        tabindex="-1"
-        class="group absolute left-0 top-0 bottom-0 w-2 -translate-x-1/2 cursor-col-resize z-20 hover:bg-primary/20 active:bg-primary/30 transition-colors {resizing
-          ? 'bg-primary/30'
-          : ''}"
-        onpointerdown={startResize}
-        ondblclick={() => (savedWidth = WIDTH_DEFAULT)}
-        title="拖动调整宽度，双击恢复默认"
+        class="h-full w-0.5 mx-auto transition-colors group-hover:bg-primary/50 group-active:bg-primary {resizing
+          ? 'bg-primary'
+          : 'bg-transparent'}"
+      ></div>
+    </div>
+  {/if}
+
+  <!-- Tab Bar Header -->
+  <CodeAsideTabBar
+    {tabs}
+    activeTabId={activeTab?.id ?? ""}
+    {isMaximized}
+    onSelectTab={handleSelectTab}
+    onCloseTab={handleCloseTab}
+    onAddTab={handleAddTab}
+    onToggleMaximize={() => (isMaximized = !isMaximized)}
+    onCloseAside={onClose}
+  />
+
+  <!-- Tab Views or Launcher when no tabs open -->
+  <div class="flex-1 min-h-0 overflow-hidden relative">
+    {#if !activeTab || tabs.length === 0}
+      <CodeAsideLauncher onSelect={(type) => ensureTab(type)} />
+    {:else if activeTab.type === "review"}
+      <CodeAsideReviewView
+        diffText={activeTab.turnDiff || turnDiff}
+        bind:showFileTree
+        onToggleFileTree={() => (showFileTree = !showFileTree)}
+      />
+    {:else if activeTab.type === "terminal"}
+      <CodeAsideTerminalView {cwd} sessionId={activeTab.id} />
+    {:else if activeTab.type === "file"}
+      <CodeAsideFileView
+        {cwd}
+        filePath={activeTab.filePath}
+        bind:showFileTree
+        onToggleFileTree={() => (showFileTree = !showFileTree)}
+        onSelectFile={(p) => {
+          if (activeTab) {
+            activeTab.filePath = p;
+            activeTab.title = p.split("/").pop() || "文件";
+          }
+        }}
+      />
+    {/if}
+    {#if browserSurfaceRunId}
+      <div
+        class="absolute inset-0 overflow-hidden {open && activeTab?.type === 'browser'
+          ? 'visible pointer-events-auto'
+          : 'invisible pointer-events-none'}"
       >
-        <div
-          class="h-full w-0.5 mx-auto transition-colors group-hover:bg-primary/50 group-active:bg-primary {resizing
-            ? 'bg-primary'
-            : 'bg-transparent'}"
-        ></div>
+        <CodeAsideBrowserView
+          runId={browserSurfaceRunId}
+          url={activeTab?.type === "browser" ? activeTab.url : undefined}
+          surfaceVisible={open && activeTab?.type === "browser"}
+        />
       </div>
     {/if}
-
-    <!-- Tab Bar Header -->
-    <CodeAsideTabBar
-      {tabs}
-      activeTabId={activeTab?.id ?? ""}
-      {isMaximized}
-      onSelectTab={handleSelectTab}
-      onCloseTab={handleCloseTab}
-      onAddTab={handleAddTab}
-      onToggleMaximize={() => (isMaximized = !isMaximized)}
-      onCloseAside={onClose}
-    />
-
-    <!-- Tab Views or Launcher when no tabs open -->
-    <div class="flex-1 min-h-0 overflow-hidden relative">
-      {#if !activeTab || tabs.length === 0}
-        <CodeAsideLauncher onSelect={(type) => ensureTab(type)} />
-      {:else if activeTab.type === "review"}
-        <CodeAsideReviewView
-          diffText={activeTab.turnDiff || turnDiff}
-          bind:showFileTree
-          onToggleFileTree={() => (showFileTree = !showFileTree)}
-        />
-      {:else if activeTab.type === "terminal"}
-        <CodeAsideTerminalView {cwd} sessionId={activeTab.id} />
-      {:else if activeTab.type === "browser"}
-        <CodeAsideBrowserView {runId} url={activeTab.url} />
-      {:else if activeTab.type === "file"}
-        <CodeAsideFileView
-          {cwd}
-          filePath={activeTab.filePath}
-          bind:showFileTree
-          onToggleFileTree={() => (showFileTree = !showFileTree)}
-          onSelectFile={(p) => {
-            if (activeTab) {
-              activeTab.filePath = p;
-              activeTab.title = p.split("/").pop() || "文件";
-            }
-          }}
-        />
-      {/if}
-    </div>
-  </aside>
-{/if}
+  </div>
+</aside>
