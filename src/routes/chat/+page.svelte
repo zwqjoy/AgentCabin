@@ -2639,10 +2639,7 @@
   $effect(() => {
     const activeRunId = store.run?.id ?? runId;
     const hasBrowserTool = store.timeline.some(
-      (entry) =>
-        entry.kind === "tool" &&
-        entry.tool.status === "running" &&
-        isBrowserToolName(entry.tool.tool_name),
+      (entry) => entry.kind === "tool" && isBrowserToolName(entry.tool.tool_name),
     );
     if (!activeRunId || !hasBrowserTool || browserAutoOpenedRunId === activeRunId) return;
 
@@ -8521,7 +8518,7 @@
     open={codeAsideOpen}
     onClose={() => setCodeAsideOpen(false)}
     cwd={store.effectiveCwd || getProjectCwdForEditor()}
-    runId={store.run?.id ?? ""}
+    runId={store.run?.id ?? runId}
     turnDiff={turnReviewDiff || effectiveTurnDiff}
     requestedTab={codeAsideRequestedTab}
     requestedFilePath={codeAsideRequestedPath}
