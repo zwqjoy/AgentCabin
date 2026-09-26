@@ -3,7 +3,7 @@
   import { computeSurfaceRect } from "$lib/utils/browser-surface-bounds";
   import {
     attachEmbeddedBrowser,
-    detachEmbeddedBrowser,
+    unbindEmbeddedBrowserSurface,
     setEmbeddedBrowserBounds,
     setEmbeddedBrowserVisible,
     type EmbeddedBrowserTab,
@@ -39,6 +39,7 @@
 
   let host: HTMLDivElement | null = $state(null);
   let attached = $state(false);
+  let activeBindingId = $state("");
   let error = $state("");
 
   function report(): void {
@@ -49,7 +50,7 @@
     // a blank surface when the panel is shown again. Keep the last usable
     // bounds and let visibility control whether the native page is displayed.
     if (rect.width <= 1 || rect.height <= 1) return;
-    void setEmbeddedBrowserBounds(viewId, rect);
+    if (activeBindingId) void setEmbeddedBrowserBounds(viewId, activeBindingId, rect);
   }
 
   function getSurfaceRect() {
@@ -71,11 +72,13 @@
     const currentViewId = viewId;
     const currentRunId = runId;
     const currentUrl = untrack(() => initialUrl);
+    const bindingId = crypto.randomUUID();
     let observer: ResizeObserver | null = null;
     let cancelled = false;
     let attachStarted = false;
     let unlistenTabs: (() => void) | null = null;
     attached = false;
+    activeBindingId = bindingId;
     error = "";
     onLoadingChange?.(true);
 
@@ -103,12 +106,13 @@
       void attachEmbeddedBrowser({
         viewId: currentViewId,
         runId: currentRunId,
+        bindingId,
         url: currentUrl || undefined,
         rect,
       })
         .then((result) => {
           if (cancelled) {
-            void detachEmbeddedBrowser(currentViewId);
+            void unbindEmbeddedBrowserSurface(currentViewId, bindingId);
             return;
           }
           attached = true;
@@ -141,12 +145,14 @@
       observer?.disconnect();
       window.removeEventListener("resize", report);
       window.removeEventListener("scroll", report, true);
-      void detachEmbeddedBrowser(currentViewId);
+      if (activeBindingId === bindingId) activeBindingId = "";
+      void unbindEmbeddedBrowserSurface(currentViewId, bindingId);
     };
   });
 
   $effect(() => {
-    if (attached) void setEmbeddedBrowserVisible(viewId, visible);
+    const bindingId = activeBindingId;
+    if (attached && bindingId) void setEmbeddedBrowserVisible(viewId, bindingId, visible);
   });
 </script>
 

@@ -15,7 +15,12 @@ import path from "node:path";
 import { createMainWindow, getAppIconPath, preloadFile, registerWindowIpc } from "./window";
 import { registerCoreIpc, broadcastCoreEvent } from "./ipc/core";
 import { registerSystemIpc } from "./ipc/system";
-import { destroyBrowserViews, registerBrowserIpc } from "./ipc/browser";
+import {
+  destroyBrowserViews,
+  destroyBrowserViewsForWindow,
+  destroyBrowserGroup,
+  registerBrowserIpc,
+} from "./ipc/browser";
 import { unregisterDesktopShortcuts } from "./ipc/desktop";
 import { CoreProcessManager } from "./core-process";
 import { startStaticServer } from "./static-server";
@@ -56,6 +61,14 @@ import { petWindowManager } from "./pet-window";
 
 const coreProcess = new CoreProcessManager((event, payload) => {
   broadcastCoreEvent(event, payload);
+  if (event === "browser-event" && payload && typeof payload === "object") {
+    const browserEvent = payload as { eventType?: unknown; runId?: unknown };
+    if (browserEvent.eventType === "session_closed" && typeof browserEvent.runId === "string") {
+      void destroyBrowserGroup(browserEvent.runId).catch((error: unknown) => {
+        safeLog(`[browser] failed to destroy closed Run group: ${String(error)}`);
+      });
+    }
+  }
   if (event === "bus-event") {
     petWindowManager.handleBusEvent(payload);
   }
@@ -68,18 +81,25 @@ function isDev(): boolean {
 }
 
 async function createWindow(): Promise<void> {
-  mainWindow = createMainWindow(preloadFile());
+  const window = createMainWindow(preloadFile());
+  mainWindow = window;
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
+    void destroyBrowserViewsForWindow(window).catch((error: unknown) => {
+      safeLog(`[browser] failed to clean up views for closed window: ${String(error)}`);
+    });
+  });
 
   let appUrl = DEV_SERVER_URL;
   if (isDev()) {
-    await mainWindow.loadURL(DEV_SERVER_URL);
-    mainWindow.agentcabinAllowedOrigins = [new URL(DEV_SERVER_URL).origin];
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    await window.loadURL(DEV_SERVER_URL);
+    window.agentcabinAllowedOrigins = [new URL(DEV_SERVER_URL).origin];
+    window.webContents.openDevTools({ mode: "detach" });
   } else {
     const { url } = await startStaticServer(RENDERER_DIST);
     appUrl = url;
     mainWindow.agentcabinAllowedOrigins = [url];
-    await mainWindow.loadURL(url);
+    await window.loadURL(url);
   }
 
   petWindowManager.init(preloadFile(), appUrl);
@@ -171,11 +191,15 @@ if (!gotLock) {
   let coreStopped = false;
   app.on("before-quit", (event) => {
     unregisterDesktopShortcuts();
-    destroyBrowserViews((method, params) => coreProcess.invoke(method, params ?? {}));
     if (coreStopped) return;
     // Give the core a chance to shut down its actors gracefully, then exit.
     event.preventDefault();
     coreStopped = true;
-    void coreProcess.stop().then(() => app.exit(0));
+    void destroyBrowserViews()
+      .catch((error: unknown) => {
+        safeLog(`[browser] failed to clean up views during shutdown: ${String(error)}`);
+      })
+      .then(() => coreProcess.stop())
+      .then(() => app.exit(0));
   });
 }

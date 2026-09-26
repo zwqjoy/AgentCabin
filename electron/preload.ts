@@ -126,7 +126,8 @@ const bridge: AgentCabinDesktopBridge = {
     setVisible: (payload) => invoke("browser:set-visible", payload),
     command: (payload) => invoke("browser:command", payload),
     getEndpoint: (payload) => invoke("browser:get-endpoint", payload),
-    detach: (payload) => invoke("browser:detach", payload),
+    unbind: (payload) => invoke("browser:unbind", payload),
+    destroy: (payload) => invoke("browser:destroy", payload),
   },
 };
 

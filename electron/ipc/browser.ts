@@ -28,6 +28,7 @@ interface BrowserTabRecord {
 interface BrowserGroup {
   viewId: string;
   runId: string;
+  surfaceBindingId: string;
   window: BrowserWindow;
   bounds: Rect;
   visible: boolean;
@@ -55,6 +56,7 @@ interface Registry {
   endpoints: Map<string, Endpoint>;
   relays: Map<string, BrowserRelayServer>;
   groups: Map<string, BrowserGroup>;
+  groupsByRunId: Map<string, BrowserGroup>;
   tabGroups: Map<string, BrowserGroup>;
   viewOperations: Map<string, Promise<void>>;
 }
@@ -65,6 +67,7 @@ const registry: Registry = {
   endpoints: new Map(),
   relays: new Map(),
   groups: new Map(),
+  groupsByRunId: new Map(),
   tabGroups: new Map(),
   viewOperations: new Map(),
 };
@@ -156,6 +159,23 @@ async function disposeTab(group: BrowserGroup, tab: BrowserTabRecord): Promise<v
   await tab.relay.close();
 }
 
+async function destroyGroup(group: BrowserGroup): Promise<void> {
+  if (registry.groups.get(group.viewId) === group) registry.groups.delete(group.viewId);
+  if (registry.groupsByRunId.get(group.runId) === group) {
+    registry.groupsByRunId.delete(group.runId);
+  }
+  for (const tab of [...new Set(group.tabsByViewId.values())]) await disposeTab(group, tab);
+  if (group.invokeCore) {
+    try {
+      await group.invokeCore("unregister_embedded_browser", {
+        endpoint: group.registrationEndpoint,
+      });
+    } catch (error) {
+      log("failed to unregister embedded browser from core", error);
+    }
+  }
+}
+
 async function disposeView(viewId: string): Promise<void> {
   const group = registry.groups.get(viewId);
   if (!group) {
@@ -171,17 +191,7 @@ async function disposeView(viewId: string): Promise<void> {
     return;
   }
 
-  registry.groups.delete(viewId);
-  for (const tab of [...new Set(group.tabsByViewId.values())]) await disposeTab(group, tab);
-  if (group.invokeCore) {
-    try {
-      await group.invokeCore("unregister_embedded_browser", {
-        endpoint: group.registrationEndpoint,
-      });
-    } catch (error) {
-      log("failed to unregister embedded browser from core", error);
-    }
-  }
+  await destroyGroup(group);
 }
 
 export function browserViewsForWindow(window: BrowserWindow): EmbeddedBrowserView[] {
@@ -190,10 +200,33 @@ export function browserViewsForWindow(window: BrowserWindow): EmbeddedBrowserVie
     .map(([, view]) => view);
 }
 
-export function destroyBrowserViews(
-  _invokeCore?: (method: string, params?: unknown) => Promise<unknown>,
-): void {
-  for (const viewId of registry.groups.keys()) void disposeView(viewId);
+export async function destroyBrowserViews(): Promise<void> {
+  await Promise.all(
+    [...registry.groupsByRunId.keys()].map((runId) =>
+      serializeViewOperation(runId, async () => {
+        const group = registry.groupsByRunId.get(runId);
+        if (group) await destroyGroup(group);
+      }),
+    ),
+  );
+}
+
+export async function destroyBrowserGroup(runId: string): Promise<void> {
+  await serializeViewOperation(runId, async () => {
+    const group = registry.groupsByRunId.get(runId);
+    if (group) await destroyGroup(group);
+  });
+}
+
+export async function destroyBrowserViewsForWindow(window: BrowserWindow): Promise<void> {
+  await Promise.all(
+    [...registry.groupsByRunId.keys()].map((runId) =>
+      serializeViewOperation(runId, async () => {
+        const group = registry.groupsByRunId.get(runId);
+        if (group?.window === window) await destroyGroup(group);
+      }),
+    ),
+  );
 }
 
 async function activateTab(group: BrowserGroup, targetId: string): Promise<void> {
@@ -378,6 +411,7 @@ export function registerBrowserIpc(
       payload: {
         viewId: string;
         runId: string;
+        bindingId: string;
         url?: string;
         rect?: { x: number; y: number; width: number; height: number };
       },
@@ -385,23 +419,59 @@ export function registerBrowserIpc(
       if (process.env.AGENTCABIN_EMBEDDED_BROWSER === "0") {
         throw new Error("Embedded browser disabled via AGENTCABIN_EMBEDDED_BROWSER=0");
       }
-      if (!payload?.viewId || !payload.runId) throw new Error("viewId and runId are required");
+      if (!payload?.viewId || !payload.runId || !payload.bindingId) {
+        throw new Error("viewId, runId and bindingId are required");
+      }
 
-      return serializeViewOperation(payload.viewId, async () => {
+      return serializeViewOperation(payload.runId, async () => {
         const window = getWindow();
-        if (!window) throw new Error("No main window");
-        await disposeView(payload.viewId);
-        const group: BrowserGroup = {
+        if (!window || window.isDestroyed()) throw new Error("No main window");
+        let group = registry.groupsByRunId.get(payload.runId);
+        if (group && (group.window !== window || registry.groups.get(group.viewId) !== group)) {
+          await destroyGroup(group);
+          group = undefined;
+        }
+        const bounds = payload.rect
+          ? normalizeSurfaceBounds(
+              payload.rect,
+              windowViewport(window),
+              window.webContents.getZoomFactor(),
+            )
+          : { x: 0, y: 0, width: 0, height: 0 };
+        if (group) {
+          if (group.viewId !== payload.viewId) registry.groups.delete(group.viewId);
+          group.viewId = payload.viewId;
+          group.surfaceBindingId = payload.bindingId;
+          group.bounds = bounds;
+          group.visible = false;
+          group.invokeCore = invokeCore;
+          registry.groups.set(payload.viewId, group);
+          for (const tab of group.tabs.values()) {
+            tab.view.setBounds(bounds);
+            tab.view.setVisible(false);
+          }
+          const tab = activeTab(group);
+          if (!tab) throw new Error(`Browser group for run '${payload.runId}' has no tabs`);
+          return {
+            viewId: payload.viewId,
+            bindingId: payload.bindingId,
+            targetId: tab.targetId,
+            endpoint: {
+              host: tab.endpoint.host,
+              port: tab.endpoint.port,
+              token: tab.endpoint.token,
+            },
+            state: tab.view.getState(),
+            tabs: browserTabSummaries(group),
+            activeTargetId: group.activeTargetId,
+          };
+        }
+        group = {
           viewId: payload.viewId,
           runId: payload.runId,
+          surfaceBindingId: payload.bindingId,
           window,
-          bounds: payload.rect
-            ? normalizeSurfaceBounds(
-                payload.rect,
-                windowViewport(window),
-                window.webContents.getZoomFactor(),
-              )
-            : { x: 0, y: 0, width: 0, height: 0 },
+          bounds,
           visible: false,
           activeTargetId: "",
           nextTabSequence: 0,
@@ -412,12 +482,14 @@ export function registerBrowserIpc(
           tabsByViewId: new Map(),
         };
         registry.groups.set(payload.viewId, group);
+        registry.groupsByRunId.set(payload.runId, group);
 
         try {
           const tab = await createTab(group, payload.url || "about:blank");
           await activateTab(group, tab.targetId);
           return {
             viewId: payload.viewId,
+            bindingId: payload.bindingId,
             targetId: tab.targetId,
             endpoint: {
               host: tab.endpoint.host,
@@ -436,36 +508,42 @@ export function registerBrowserIpc(
     },
   );
 
-  ipcMain.handle("browser:set-bounds", (_event, payload: { viewId: string; rect: unknown }) => {
-    const window = getWindow();
-    const group = registry.groups.get(payload?.viewId);
-    if (!window || !group) return;
-    group.bounds = normalizeSurfaceBounds(
-      payload.rect,
-      windowViewport(window),
-      window.webContents.getZoomFactor(),
-    );
-    for (const tab of group.tabs.values()) tab.view.setBounds(group.bounds);
-  });
+  ipcMain.handle(
+    "browser:set-bounds",
+    (_event, payload: { viewId: string; bindingId: string; rect: unknown }) => {
+      const window = getWindow();
+      const group = registry.groups.get(payload?.viewId);
+      if (!window || !group || payload.bindingId !== group.surfaceBindingId) return;
+      group.bounds = normalizeSurfaceBounds(
+        payload.rect,
+        windowViewport(window),
+        window.webContents.getZoomFactor(),
+      );
+      for (const tab of group.tabs.values()) tab.view.setBounds(group.bounds);
+    },
+  );
 
-  ipcMain.handle("browser:set-visible", (_event, payload: { viewId: string; visible: boolean }) => {
-    const group = registry.groups.get(payload?.viewId);
-    if (!group) return;
-    group.visible = Boolean(payload?.visible);
-    if (group.visible) {
-      // A Work run can be replaced while the browser aside remains mounted.
-      // Electron draws child views above the renderer, so ensure that only the
-      // currently selected run owns a visible native browser surface.
-      for (const other of registry.groups.values()) {
-        if (other === group || other.window !== group.window) continue;
-        other.visible = false;
-        for (const tab of other.tabs.values()) tab.view.setVisible(false);
+  ipcMain.handle(
+    "browser:set-visible",
+    (_event, payload: { viewId: string; bindingId: string; visible: boolean }) => {
+      const group = registry.groups.get(payload?.viewId);
+      if (!group || payload.bindingId !== group.surfaceBindingId) return;
+      group.visible = Boolean(payload?.visible);
+      if (group.visible) {
+        // A Work run can be replaced while the browser aside remains mounted.
+        // Electron draws child views above the renderer, so ensure that only the
+        // currently selected run owns a visible native browser surface.
+        for (const other of registry.groups.values()) {
+          if (other === group || other.window !== group.window) continue;
+          other.visible = false;
+          for (const tab of other.tabs.values()) tab.view.setVisible(false);
+        }
       }
-    }
-    for (const [targetId, tab] of group.tabs) {
-      tab.view.setVisible(group.visible && targetId === group.activeTargetId);
-    }
-  });
+      for (const [targetId, tab] of group.tabs) {
+        tab.view.setVisible(group.visible && targetId === group.activeTargetId);
+      }
+    },
+  );
 
   ipcMain.handle("browser:command", (_event, payload: { viewId: string; action: string }) => {
     const group = registry.groups.get(payload?.viewId);
@@ -487,8 +565,16 @@ export function registerBrowserIpc(
     return tab?.endpoint ?? null;
   });
 
-  ipcMain.handle("browser:detach", (_event, payload: { viewId: string }) => {
-    if (!payload?.viewId) return;
-    return serializeViewOperation(payload.viewId, () => disposeView(payload.viewId));
+  ipcMain.handle("browser:unbind", (_event, payload: { viewId: string; bindingId: string }) => {
+    if (!payload?.viewId || !payload.bindingId) return;
+    const group = registry.groups.get(payload.viewId);
+    if (!group || group.surfaceBindingId !== payload.bindingId) return;
+    group.visible = false;
+    for (const tab of group.tabs.values()) tab.view.setVisible(false);
+  });
+
+  ipcMain.handle("browser:destroy", (_event, payload: { runId: string }) => {
+    if (!payload?.runId) return;
+    return destroyBrowserGroup(payload.runId);
   });
 }

@@ -62,7 +62,8 @@ export const INVOKE_CHANNELS = [
   "browser:set-bounds",
   "browser:set-visible",
   "browser:command",
-  "browser:detach",
+  "browser:unbind",
+  "browser:destroy",
   "browser:get-endpoint",
 ] as const;
 
@@ -153,10 +154,12 @@ export interface AgentCabinDesktopBridge {
     attach(payload: {
       viewId: string;
       runId: string;
+      bindingId: string;
       url?: string;
       rect?: { x: number; y: number; width: number; height: number };
     }): Promise<{
       viewId: string;
+      bindingId: string;
       targetId: string;
       endpoint: { host: string; port: number; token: string };
       state: unknown;
@@ -165,9 +168,10 @@ export interface AgentCabinDesktopBridge {
     }>;
     setBounds(payload: {
       viewId: string;
+      bindingId: string;
       rect: { x: number; y: number; width: number; height: number };
     }): Promise<void>;
-    setVisible(payload: { viewId: string; visible: boolean }): Promise<void>;
+    setVisible(payload: { viewId: string; bindingId: string; visible: boolean }): Promise<void>;
     command(payload: {
       viewId: string;
       action: "back" | "forward" | "reload" | "stop";
@@ -178,7 +182,8 @@ export interface AgentCabinDesktopBridge {
       token: string;
       targetId: string;
     } | null>;
-    detach(payload: { viewId: string }): Promise<void>;
+    unbind(payload: { viewId: string; bindingId: string }): Promise<void>;
+    destroy(payload: { runId: string }): Promise<void>;
   };
 }
 

@@ -126,8 +126,12 @@ export class EmbeddedBrowserView {
         // The debugger may already have detached during a renderer crash.
       }
     }
-    this.window.contentView.removeChildView(this.view);
-    this.view.webContents.close();
+    try {
+      this.window.contentView.removeChildView(this.view);
+    } catch {
+      // The BrowserWindow may already be destroyed during its `closed` event.
+    }
+    if (!this.view.webContents.isDestroyed()) this.view.webContents.close();
   }
 
   async resolveTargetId(): Promise<string> {

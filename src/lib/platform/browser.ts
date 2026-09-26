@@ -33,6 +33,7 @@ export function isEmbeddedBrowserAvailable(): boolean {
 export function attachEmbeddedBrowser(payload: {
   viewId: string;
   runId: string;
+  bindingId: string;
   url?: string;
   rect?: { x: number; y: number; width: number; height: number };
 }) {
@@ -41,13 +42,14 @@ export function attachEmbeddedBrowser(payload: {
 
 export function setEmbeddedBrowserBounds(
   viewId: string,
+  bindingId: string,
   rect: { x: number; y: number; width: number; height: number },
 ) {
-  return bridge()!.setBounds({ viewId, rect });
+  return bridge()!.setBounds({ viewId, bindingId, rect });
 }
 
-export function setEmbeddedBrowserVisible(viewId: string, visible: boolean) {
-  return bridge()!.setVisible({ viewId, visible });
+export function setEmbeddedBrowserVisible(viewId: string, bindingId: string, visible: boolean) {
+  return bridge()!.setVisible({ viewId, bindingId, visible });
 }
 
 export function sendEmbeddedBrowserCommand(
@@ -61,6 +63,10 @@ export function getEmbeddedBrowserEndpoint(viewId: string) {
   return bridge()!.getEndpoint({ viewId });
 }
 
-export function detachEmbeddedBrowser(viewId: string) {
-  return bridge()!.detach({ viewId });
+export function unbindEmbeddedBrowserSurface(viewId: string, bindingId: string) {
+  return bridge()!.unbind({ viewId, bindingId });
+}
+
+export function destroyEmbeddedBrowser(runId: string) {
+  return bridge()!.destroy({ runId });
 }
