@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { BusEvent, TimelineEntry } from "$lib/types";
+import type { BusEvent, TaskRun, TimelineEntry } from "$lib/types";
 import type { WorkArtifactSummary, WorkWorkspaceSummary } from "$lib/types/work";
 import {
   deriveWorkProgressPhase,
@@ -466,6 +466,48 @@ describe("Work Session Store & State Transitions", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps an adopted run when an older route load resolves afterward", async () => {
+    const store = new WorkSessionStore();
+    store.workspaceId = dummyWorkspace.id;
+
+    const historicalRun = {
+      id: "run-work-old-route",
+      workspace_id: dummyWorkspace.id,
+      status: "completed" as const,
+      app_mode: "work" as const,
+      agent: "pi" as const,
+      execution_path: "session_actor" as const,
+      cwd: "/path/to/workspace",
+    } as TaskRun;
+    const startedRun = {
+      id: "run-work-adopted",
+      workspace_id: dummyWorkspace.id,
+      status: "pending" as const,
+      app_mode: "work" as const,
+      agent: "pi" as const,
+      execution_path: "session_actor" as const,
+      cwd: "/path/to/workspace",
+    } as TaskRun;
+
+    let resolveHistoricalRun!: (run: TaskRun) => void;
+    vi.mocked(api.getRun).mockImplementationOnce(
+      () => new Promise<TaskRun>((resolve) => (resolveHistoricalRun = resolve)),
+    );
+    const staleRouteLoad = store.load(dummyWorkspace.id, historicalRun.id, false);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    vi.mocked(startWorkSession).mockResolvedValueOnce(startedRun as never);
+    vi.mocked(api.getBusEvents).mockResolvedValue([]);
+    await store.start("新任务");
+
+    resolveHistoricalRun(historicalRun);
+    await staleRouteLoad;
+
+    expect(store.session.run?.id).toBe(startedRun.id);
+    expect(store.loading).toBe(false);
   });
 
   it("projects Pi capabilities from the cold-start baseline to live fail-closed state", async () => {

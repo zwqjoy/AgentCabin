@@ -580,14 +580,10 @@ async fn start_grok_session(
     }
 
     let resumes_existing_session = resume_session_id.is_some();
-    let app_mode = if run.app_mode == crate::work::models::AppMode::Work {
-        crate::work::models::AppMode::Work
-    } else {
-        crate::work::models::AppMode::Code
-    };
-    let desktop_runtime = if app_mode == crate::work::models::AppMode::Code
-        && crate::work::desktop_operator::is_enabled()
-    {
+    // Work runs return through the first-level Work runtime dispatch before
+    // reaching this Code-only provider path.
+    let app_mode = crate::work::models::AppMode::Code;
+    let desktop_runtime = if crate::work::desktop_operator::is_enabled() {
         Some(crate::desktop_runtime::register_session(&run_id).await?)
     } else {
         None
@@ -1208,14 +1204,6 @@ pub(crate) async fn start_session_impl_with_overrides(
         permission_mode_override
     );
 
-    if run.app_mode == crate::work::models::AppMode::Work {
-        if let Some(state) = crate::work::task_state::load(&run_id)? {
-            for event in crate::work::task_state::bus_events(&run_id, &state) {
-                emitter.persist_and_emit(&run_id, &event);
-            }
-        }
-    }
-
     emit_state(emitter, &run_id, "spawning", None);
     storage::runs::update_status(&run_id, RunStatus::Running, None, None).ok();
 
@@ -1237,11 +1225,10 @@ pub(crate) async fn start_session_impl_with_overrides(
     // stopped. `pi_launch_context` prepares the shared adapter and ledger
     // directory, but registering here prevents stop/replace cleanup from
     // revoking the fresh token before the new Pi actor starts.
-    if run.app_mode != crate::work::models::AppMode::Work
-        && extra_env
-            .get("AGENTCABIN_BROWSER_ENABLED")
-            .map(String::as_str)
-            == Some("1")
+    if extra_env
+        .get("AGENTCABIN_BROWSER_ENABLED")
+        .map(String::as_str)
+        == Some("1")
     {
         let browser_run_dir = storage::run_dir(&run.id).join("browser");
         let (browser_port, browser_token) =
@@ -1252,11 +1239,10 @@ pub(crate) async fn start_session_impl_with_overrides(
         );
         extra_env.insert("AGENTCABIN_BROWSER_BRIDGE_TOKEN".to_string(), browser_token);
     }
-    if run.app_mode != crate::work::models::AppMode::Work
-        && extra_env
-            .get("AGENTCABIN_CODE_CONNECTOR_ENABLED")
-            .map(String::as_str)
-            == Some("1")
+    if extra_env
+        .get("AGENTCABIN_CODE_CONNECTOR_ENABLED")
+        .map(String::as_str)
+        == Some("1")
     {
         let (connector_port, connector_token) =
             match crate::code_connector_runtime::register_session(&run.id).await {

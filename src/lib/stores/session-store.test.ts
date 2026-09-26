@@ -1346,6 +1346,37 @@ describe("SessionStore reducer", () => {
       expect(store.phase).toBe("idle"); // settles at idle, no corruption
     });
 
+    it("does not let a delayed terminal metadata read undo a later live turn", async () => {
+      let resolveMetadata!: (run: ReturnType<typeof makeRun>) => void;
+      vi.mocked(api.getRun).mockImplementationOnce(
+        () => new Promise((resolve) => (resolveMetadata = resolve)) as never,
+      );
+      store.run = makeRun("run-live-transition");
+      store.phase = "running";
+
+      store.applyEvent({
+        type: "run_state",
+        run_id: "run-live-transition",
+        state: "completed",
+      } as BusEvent);
+      expect(store.run?.status).toBe("completed");
+
+      // A resume makes the session idle before the next turn begins.
+      store.run = { ...store.run!, status: "idle" };
+      store.phase = "idle";
+      store.applyEvent({
+        type: "run_state",
+        run_id: "run-live-transition",
+        state: "running",
+      } as BusEvent);
+      resolveMetadata(makeRun("run-live-transition", { status: "completed" }));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(store.run?.status).toBe("running");
+      expect(store.phase).toBe("running");
+    });
+
     it("message_delta without message_complete: streaming text accumulates", () => {
       store.run = makeRun("run-1");
       store.phase = "running";

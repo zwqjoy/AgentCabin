@@ -833,14 +833,19 @@ mod tests {
         let clean_cwd = TempDir::new().unwrap();
 
         // 3. Resolve capabilities & inspect runtime projection
-        for provider in [
-            RuntimeProviderKind::Claude,
-            RuntimeProviderKind::Codex,
-            RuntimeProviderKind::Grok,
-            RuntimeProviderKind::Pi,
-            RuntimeProviderKind::Dsh,
+        for (app_mode, providers) in [
+            (
+                AppMode::Code,
+                vec![
+                    RuntimeProviderKind::Claude,
+                    RuntimeProviderKind::Codex,
+                    RuntimeProviderKind::Grok,
+                    RuntimeProviderKind::Pi,
+                ],
+            ),
+            (AppMode::Work, vec![RuntimeProviderKind::Pi]),
         ] {
-            for app_mode in [AppMode::Code, AppMode::Work] {
+            for provider in providers {
                 let caps = CapabilityResolver::resolve(
                     root.path(),
                     app_mode,
@@ -1147,7 +1152,6 @@ mod tests {
             RuntimeProviderKind::Codex,
             RuntimeProviderKind::Grok,
             RuntimeProviderKind::Pi,
-            RuntimeProviderKind::Dsh,
         ] {
             let caps = CapabilityResolver::resolve(
                 root.path(),
@@ -1204,20 +1208,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_five_providers_two_harnesses_matrix() {
+    async fn test_code_providers_and_pi_work_matrix() {
         let root = TempDir::new().unwrap();
         let cwd = TempDir::new().unwrap();
 
-        let providers = [
-            RuntimeProviderKind::Claude,
-            RuntimeProviderKind::Codex,
-            RuntimeProviderKind::Grok,
-            RuntimeProviderKind::Pi,
-            RuntimeProviderKind::Dsh,
+        let provider_matrix = [
+            (
+                AppMode::Code,
+                vec![
+                    RuntimeProviderKind::Claude,
+                    RuntimeProviderKind::Codex,
+                    RuntimeProviderKind::Grok,
+                    RuntimeProviderKind::Pi,
+                ],
+            ),
+            (AppMode::Work, vec![RuntimeProviderKind::Pi]),
         ];
-        let app_modes = [AppMode::Code, AppMode::Work];
 
-        for app_mode in app_modes {
+        for (app_mode, providers) in provider_matrix {
             for provider in providers {
                 let caps = CapabilityResolver::resolve(
                     root.path(),

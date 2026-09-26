@@ -45,6 +45,12 @@ export class WorkSessionStore {
 
   private requestVersion = 0;
 
+  /** A route load must not replace a run that this store has just started or resumed. */
+  private invalidatePendingLoad(): void {
+    this.requestVersion += 1;
+    this.loading = false;
+  }
+
   constructor() {
     this.session.agent = "pi";
   }
@@ -164,6 +170,7 @@ export class WorkSessionStore {
     permissionMode?: WorkExecutionMode,
     preset: WorkPreset = "office",
   ): Promise<TaskRun> {
+    this.invalidatePendingLoad();
     this.starting = true;
     this.error = "";
     const optimisticId = this.session.pushOptimisticUser(message, attachments);
@@ -188,12 +195,7 @@ export class WorkSessionStore {
           this.session.agent,
         );
       }
-      this.session.adoptStartedRun(run, optimisticId);
-      this.middleware.subscribeCurrent(run.id, this.session);
-      // Start navigation immediately. The history catch-up is intentionally
-      // detached so a slow event file or runtime handshake cannot block the
-      // Work composer; live events remain subscribed during the catch-up.
-      void this.session.hydrateStartedRun(run.id);
+      this.adoptStartedRun(run, optimisticId);
       return run;
     } catch (cause) {
       this.session.removeOptimisticUser(optimisticId);
@@ -202,6 +204,21 @@ export class WorkSessionStore {
     } finally {
       this.starting = false;
     }
+  }
+
+  /**
+   * Transfer a backend-created run to this conversation without reloading its
+   * transcript. The store is the owner of the live subscription; URL adoption
+   * is only a later address update and cannot invalidate this run.
+   */
+  adoptStartedRun(run: TaskRun, optimisticId?: string): void {
+    this.invalidatePendingLoad();
+    this.error = "";
+    this.session.adoptStartedRun(run, optimisticId);
+    this.middleware.subscribeCurrent(run.id, this.session);
+    // Catch up asynchronously after subscribing so live events remain visible
+    // and the first response is never blocked on persisted history.
+    void this.session.hydrateStartedRun(run.id);
   }
 
   async send(message: string, attachments?: Attachment[]): Promise<void> {
@@ -248,6 +265,7 @@ export class WorkSessionStore {
   async resume(message?: string, attachments?: Attachment[]): Promise<TaskRun> {
     const runId = this.session.run?.id;
     if (!runId) throw new Error("Work 会话尚未创建");
+    this.invalidatePendingLoad();
     this.starting = true;
     this.error = "";
     const optimisticId = message ? this.session.pushOptimisticUser(message, attachments) : "";

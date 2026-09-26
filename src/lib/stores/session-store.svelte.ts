@@ -2836,7 +2836,12 @@ export class SessionStore {
       void api
         .getRun(runId)
         .then((latest) => {
-          if (latest && this.run?.id === runId) this.run = latest;
+          if (!latest || this.run?.id !== runId) return;
+          // History can be read while new events are arriving. Keep any state
+          // advanced by those live events instead of replacing it with an
+          // older run metadata snapshot.
+          const liveStatus = this.run.status;
+          this.run = { ...latest, status: liveStatus };
         })
         .catch((error) => dbgWarn("store", "hydrateStartedRun metadata refresh failed:", error));
     } catch (error) {
@@ -4902,11 +4907,22 @@ export class SessionStore {
               this._setPhase(termPhase);
               if (this.run) {
                 const snapId = this.run.id;
+                const seqAtTerminalEvent = this._lastProcessedSeq;
+                this.run = { ...this.run, status: termPhase as TaskRun["status"] };
                 api
                   .getRun(snapId)
                   .then((r) => {
-                    // Guard: only update if we're still viewing the same run
-                    if (this.run?.id === snapId) this.run = r;
+                    // Keep the event's terminal state authoritative, and do
+                    // not let a delayed metadata read overwrite a later live
+                    // transition (for example a follow-up turn).
+                    if (
+                      this.run?.id !== snapId ||
+                      this._lastProcessedSeq !== seqAtTerminalEvent ||
+                      this.run.status !== termPhase
+                    ) {
+                      return;
+                    }
+                    this.run = { ...r, status: termPhase as TaskRun["status"] };
                   })
                   .catch((e) => dbgWarn("store", "getRun after terminal state failed:", e));
               }
