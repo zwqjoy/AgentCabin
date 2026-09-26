@@ -69,6 +69,10 @@ async function relayObservation(page, root = {}) {
       name: label,
       label,
       value: item.value === undefined ? undefined : String(item.value),
+      checked: item.checked,
+      selectedLabel: item.selectedLabel,
+      disabled: item.disabled,
+      readOnly: item.readOnly,
       tag: item.tag,
       rect: item.rect,
     };
@@ -237,6 +241,15 @@ async function handleEmbedded(method, runId, params = {}) {
         screenshot: await page.screenshot(),
       };
     }
+    case "browser_select_option": {
+      const selection = await page.selectOption(params.ref, params.selector, params.value ?? "");
+      return {
+        ok: true,
+        ...selection,
+        ...(await generatePageSnapshot(page)),
+        screenshot: await page.screenshot(),
+      };
+    }
     case "browser_interact": {
       if (params.action === "navigate") await page.navigate(params.url);
       else if (params.action === "go_back") await page.goBack();
@@ -255,6 +268,9 @@ async function handleEmbedded(method, runId, params = {}) {
       };
     }
     case "browser_tabs":
+      if (params.action && params.action !== "list") {
+        throw new Error("unsupported_action: the embedded browser currently exposes one tab and cannot open, switch, or close tabs");
+      }
       return {
         ok: true,
         action: "list",
@@ -289,8 +305,6 @@ async function handleEmbedded(method, runId, params = {}) {
       page.close();
       embeddedSessions.delete(runId);
       return { ok: true, runId, closed: true };
-    case "browser_select_option":
-      throw new Error("unsupported_action: browser_select_option is not available on the embedded browser surface");
     default:
       throw new Error(`unsupported_action: ${method} is not available on the embedded browser surface`);
   }

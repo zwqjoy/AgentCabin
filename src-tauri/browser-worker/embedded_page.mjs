@@ -118,6 +118,35 @@ export function createEmbeddedPage({ client }) {
       if (!rect) throw new Error(`stale selector: ${selector} is no longer in the page`);
       return page.clickAt(rect.x + rect.width / 2, rect.y + rect.height / 2);
     },
+    async selectOption(ref, selector, requestedValue) {
+      const safeRef = String(ref || "").replace(/[^a-zA-Z0-9_-]/g, "");
+      const targetSelector = safeRef
+        ? '[data-work-ref="' + safeRef + '"]'
+        : String(selector || "");
+      if (!targetSelector) throw new Error("Select requires a ref or CSS selector");
+
+      await highlightTarget(targetSelector);
+      const outcome = await evaluateValue(
+        "const selector = " + JSON.stringify(targetSelector) + ";\n" +
+        "const requested = " + JSON.stringify(String(requestedValue)) + ";\n" +
+        "const select = document.querySelector(selector);\n" +
+        "if (!select) return { error: 'Select target was not found: ' + selector };\n" +
+        "if (select.tagName !== 'SELECT') return { error: 'Select target is not a native <select> element' };\n" +
+        "if (select.multiple) return { error: 'Selecting options in a multi-select is not supported by this action' };\n" +
+        "const option = Array.from(select.options).find((item) => item.value === requested) || " +
+          "Array.from(select.options).find((item) => item.textContent.trim() === requested);\n" +
+        "if (!option) return { error: 'No <select> option matches value or visible text: ' + requested };\n" +
+        "if (option.disabled || option.closest('optgroup')?.disabled || select.disabled) return { error: 'The requested <select> option is disabled' };\n" +
+        "const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;\n" +
+        "if (setter) setter.call(select, option.value); else select.value = option.value;\n" +
+        "select.dispatchEvent(new Event('input', { bubbles: true }));\n" +
+        "select.dispatchEvent(new Event('change', { bubbles: true }));\n" +
+        "return { selectedValue: select.value, selectedLabel: option.textContent.trim(), selected: select.value === option.value };",
+      );
+      if (outcome?.error) throw new Error(outcome.error);
+      if (!outcome?.selected) throw new Error("The requested <select> option was not selected");
+      return outcome;
+    },
     async typeText(text) {
       for (const char of String(text)) {
         await client.send("Input.dispatchKeyEvent", { type: "keyDown", text: char });

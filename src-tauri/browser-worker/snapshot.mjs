@@ -1,6 +1,7 @@
 /**
  * Browser Worker Snapshot Generator.
- * Converts Accessibility Tree and DOM structure into stable semantic references ([ref=e1], [ref=e2]).
+ * Converts Accessibility Tree and DOM structure into semantic references ([ref=e1], [ref=e2]).
+ * Refs stay attached to their DOM node for the lifetime of the current document.
  */
 
 export async function generatePageSnapshot(page) {
@@ -10,13 +11,9 @@ export async function generatePageSnapshot(page) {
   // Tag DOM elements with unique data-work-ref attributes and extract semantic tree
   const snapshotData = await page
     .evaluate(() => {
-      // Clear previous refs
-      const prevTagged = document.querySelectorAll("[data-work-ref]");
-      for (const el of prevTagged) {
-        el.removeAttribute("data-work-ref");
-      }
-
-      let idCounter = 1;
+      // Keep refs attached to existing nodes so a fresh observation does not
+      // silently point an older ref at a different element.
+      let idCounter = Number(window.__agentCabinWorkRefCounter) || 1;
       const refs = {};
       const lines = [];
 
@@ -76,18 +73,30 @@ export async function generatePageSnapshot(page) {
             el.isContentEditable;
 
           if (isInteractive && isElementVisible(el)) {
-            const refId = `e${idCounter++}`;
-            el.setAttribute("data-work-ref", refId);
+            const taggedRef = el.getAttribute("data-work-ref");
+            const existingRef = /^e\d+$/.test(taggedRef || "") ? taggedRef : "";
+            const refId = existingRef || ("e" + idCounter++);
+            if (!existingRef) el.setAttribute("data-work-ref", refId);
 
             const label = getElementLabel(el);
             const value = el.value !== undefined ? String(el.value).trim() : "";
             const finalRole = role || (tag === "a" ? "link" : tag === "input" ? (el.type === "submit" || el.type === "button" ? "button" : "textbox") : tag);
+            const checked = tag === "input" && (el.type === "checkbox" || el.type === "radio")
+              ? Boolean(el.checked)
+              : undefined;
+            const selectedLabel = tag === "select"
+              ? String(el.selectedOptions?.[0]?.textContent || "").trim()
+              : "";
 
             refs[refId] = {
               ref: refId,
               role: finalRole,
               name: label,
               value: value || undefined,
+              ...(checked === undefined ? {} : { checked }),
+              ...(selectedLabel ? { selectedLabel } : {}),
+              ...(el.disabled ? { disabled: true } : {}),
+              ...(el.readOnly ? { readOnly: true } : {}),
               tag,
             };
 
@@ -95,6 +104,10 @@ export async function generatePageSnapshot(page) {
             let line = `${indent}[ref=${refId}] ${finalRole}`;
             if (label) line += ` "${label}"`;
             if (value) line += ` value="${value}"`;
+            if (selectedLabel) line += ` selected=${JSON.stringify(selectedLabel)}`;
+            if (checked !== undefined) line += checked ? " checked" : " unchecked";
+            if (el.disabled) line += " disabled";
+            if (el.readOnly) line += " readonly";
             lines.push(line);
           } else if (["h1", "h2", "h3", "h4", "h5", "h6", "nav", "main"].includes(tag) && isElementVisible(el)) {
             const label = getElementLabel(el);
@@ -111,6 +124,7 @@ export async function generatePageSnapshot(page) {
       }
 
       traverse(document.body, 0);
+      window.__agentCabinWorkRefCounter = idCounter;
 
       return {
         tree: lines.join("\n"),

@@ -39,14 +39,7 @@ const WaitSchema = Type.Object({
 });
 
 const TabsSchema = Type.Object({
-  action: Type.Union([
-    Type.Literal("list"),
-    Type.Literal("new"),
-    Type.Literal("switch"),
-    Type.Literal("close"),
-  ], { description: "Tab action: list all tabs, open a new tab, switch active tab, or close a tab." }),
-  index: Type.Optional(Type.Number({ description: "Tab index for switch or close." })),
-  url: Type.Optional(Type.String({ description: "Target URL when opening a new tab." })),
+  action: Type.Optional(Type.Literal("list", { description: "The embedded Browser surface currently owns one tab, so only listing is supported." })),
 });
 
 const CloseSchema = Type.Object({});
@@ -125,7 +118,14 @@ function formatPageObservation(payload) {
   const lines = [];
   if (payload?.url) lines.push(`URL: ${payload.url}`);
   if (payload?.title) lines.push(`Title: ${payload.title}`);
-  if (payload?.tree) lines.push(`Page snapshot:\n${payload.tree}`);
+  if (payload?.tree) {
+    const tree = String(payload.tree);
+    const limit = 6000;
+    const excerpt = tree.length > limit
+      ? tree.slice(0, limit) + "\n[Snapshot excerpt truncated; call browser_snapshot for the full tree.]"
+      : tree;
+    lines.push(`Page snapshot:\n${excerpt}`);
+  }
   return lines.length ? `\n\n${lines.join("\n")}` : "";
 }
 
@@ -193,7 +193,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_navigate",
     label: "browser_navigate",
-    description: "Navigate the active browser page for a user-requested website task. Do not open a URL merely to display or load an image in the conversation; embed user-provided HTTPS image URLs directly in an HTML renderer instead. For generated HTML browser inspection, use a file:// URL under the current WorkRun output/ directory; other local files, localhost, and private LAN networks remain blocked for SSRF protection.",
+    description: "Navigate the current embedded browser page. It is a single-tab surface; if the task requires opening a separate tab while preserving this page, report that limitation instead of navigating away as a substitute. Do not open a URL merely to display or load an image in the conversation; embed user-provided HTTPS image URLs directly in an HTML renderer instead. For generated HTML browser inspection, use a file:// URL under the current WorkRun output/ directory; other local files, localhost, and private LAN networks remain blocked for SSRF protection.",
     parameters: NavigateSchema,
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_navigate", "navigate", params, signal);
@@ -207,7 +207,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_snapshot",
     label: "browser_snapshot",
-    description: "Capture the current page's semantic accessibility tree with stable [ref=eX] identifiers and a screenshot image. Use these refs for element click/type/select operations; refresh the snapshot after page changes.",
+    description: "Capture the current page's semantic tree and screenshot. Refs remain attached to the same DOM elements while they exist in this page; refresh the snapshot after navigation or major page changes, and reacquire a ref if an element was replaced.",
     parameters: SnapshotSchema,
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_snapshot", "snapshot", params, signal);
@@ -278,7 +278,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_tabs",
     label: "browser_tabs",
-    description: "Manage browser tabs in the current WorkRun session (list, new, switch, close).",
+    description: "List the current embedded Browser tab. The embedded surface owns one tab; opening, switching, or closing tabs is not supported.",
     parameters: TabsSchema,
     async execute(toolCallId, params, signal) {
       const action = params?.action || "list";
@@ -286,11 +286,9 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       if (!res.success) return fail(res.stderr || res.error || "Tab operation failed", res);
       let parsed = {};
       try { parsed = JSON.parse(res.stdout || "{}"); } catch {}
-      if (action === "list") {
-        const tabLines = (parsed.tabs || []).map((t) => `[Tab ${t.index}] ${t.active ? "*ACTIVE* " : ""}${t.title || "(no title)"} - ${t.url}`);
-        return result(`${tabLines.length} open tab(s):\n${tabLines.join("\n")}`, { ok: true, tabs: parsed.tabs });
-      }
-      return result(`Tab action '${action}' completed.`, { ok: true, ...parsed });
+      if (!Array.isArray(parsed.tabs)) return fail("The browser did not return a tab list.", { ...res, ...parsed });
+      const tabLines = parsed.tabs.map((t) => `[Tab ${t.index}] ${t.active ? "*ACTIVE* " : ""}${t.title || "(no title)"} - ${t.url}`);
+      return result(`${tabLines.length} open tab(s):\n${tabLines.join("\n")}`, { ok: true, tabs: parsed.tabs });
     },
   });
 
@@ -311,7 +309,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_click",
     label: "browser_click",
-    description: "Click an interactive element on the page. Pass 'ref' and its accessible name as target_label from the latest browser_snapshot. The operation returns a fresh page snapshot and screenshot; inspect the result before claiming the requested outcome succeeded.",
+    description: "Click an interactive element on the page. Pass 'ref' and its accessible name as target_label from browser_snapshot. The operation returns a fresh, size-limited semantic observation and optional screenshot; inspect it before claiming success, and call browser_snapshot when you need the complete tree.",
     parameters: ClickSchema,
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_click", "click", params, signal);
@@ -325,7 +323,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_type",
     label: "browser_type",
-    description: "Type text into an input field or textarea. Pass 'ref' and its accessible name as target_label from the latest browser_snapshot. The operation returns a fresh page snapshot and screenshot; inspect the result before claiming the requested outcome succeeded.",
+    description: "Type text into an input field or textarea. Pass 'ref' and its accessible name from browser_snapshot. The operation returns a fresh, size-limited semantic observation and optional screenshot; inspect it before claiming success, and call browser_snapshot when you need the complete tree.",
     parameters: TypeSchema,
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_type", "type", params, signal);
@@ -339,12 +337,27 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_select_option",
     label: "browser_select_option",
-    description: "Select an option from a <select> dropdown by option value or visible text.",
+    description: "Select a native single-select option by exact value or visible text. This action verifies the selected value and returns a fresh page observation; do not use Enter as a fallback if selection fails.",
     parameters: SelectSchema,
-    async execute(toolCallId, params, signal) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const res = await callOperationWithApproval(toolCallId, "browser_select_option", "select", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Select failed", res);
-      return result(`Selected '${params?.value}' in ${params?.ref ? `[ref=${params.ref}]` : params?.selector}`, { ok: true, ...res });
+      const parsed = parseResultPayload(res);
+      if (parsed.selected !== true) {
+        return fail("The browser did not confirm the requested dropdown option.", {
+          ...res,
+          ...parsed,
+          ok: false,
+          actionExecuted: false,
+          resultVerified: false,
+        }, supportsImages(ctx));
+      }
+      const target = params?.ref ? "[ref=" + params.ref + "]" : params?.selector;
+      return result(
+        "Selected dropdown option “" + (parsed.selectedLabel || params?.value) + "” (value=" + parsed.selectedValue + ") in " + target + "." + formatPageObservation(parsed),
+        { ok: true, ...parsed, actionExecuted: true, selectionVerified: true, resultVerified: false },
+        supportsImages(ctx),
+      );
     },
   });
 
