@@ -405,7 +405,7 @@ async fn fail_work_session_launch(
         );
         return Err(error);
     }
-    crate::browser_runtime::revoke_session(run_id).await;
+    crate::browser_runtime::revoke_session_tokens(run_id).await;
     storage::runs::update_status(run_id, RunStatus::Failed, None, Some(error.clone())).ok();
     emit_state(emitter, run_id, "failed", Some(error.clone()));
     Err(error)
@@ -605,7 +605,7 @@ async fn start_grok_session(
     {
         Ok(sender) => sender,
         Err(error) => {
-            crate::browser_runtime::revoke_session(&run_id).await;
+            crate::browser_runtime::revoke_session_tokens(&run_id).await;
             crate::desktop_runtime::revoke_session(&run_id).await;
             storage::runs::update_status(&run_id, RunStatus::Failed, None, Some(error.clone()))
                 .ok();
@@ -1251,7 +1251,7 @@ pub(crate) async fn start_session_impl_with_overrides(
                     // Browser registration above may already have succeeded;
                     // do not leave that session lease behind on a connector
                     // bridge startup failure.
-                    crate::browser_runtime::revoke_session(&run.id).await;
+                    crate::browser_runtime::revoke_session_tokens(&run.id).await;
                     return Err(error);
                 }
             };
@@ -1271,7 +1271,7 @@ pub(crate) async fn start_session_impl_with_overrides(
             match crate::desktop_runtime::register_session(&run.id).await {
                 Ok(value) => value,
                 Err(error) => {
-                    crate::browser_runtime::revoke_session(&run.id).await;
+                    crate::browser_runtime::revoke_session_tokens(&run.id).await;
                     crate::code_connector_runtime::revoke_session(&run.id).await;
                     return Err(error);
                 }
@@ -1298,7 +1298,7 @@ pub(crate) async fn start_session_impl_with_overrides(
     {
         Ok(sender) => sender,
         Err(error) => {
-            crate::browser_runtime::revoke_session(&run_id).await;
+            crate::browser_runtime::revoke_session_tokens(&run_id).await;
             crate::code_connector_runtime::revoke_session(&run_id).await;
             crate::desktop_runtime::revoke_session(&run_id).await;
             storage::runs::update_status(&run_id, RunStatus::Failed, None, Some(error.clone()))

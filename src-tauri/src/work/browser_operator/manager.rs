@@ -645,14 +645,11 @@ impl BrowserOperatorManager {
                 .resolve(run_id)
                 .is_none()
         {
-            let _ = crate::work::browser_operator::browser_session_manager()
-                .close_session(run_id)
-                .await;
+            crate::browser_runtime::close_browser_session(run_id).await;
             return Ok(json!({ "ok": true, "runId": run_id, "skipped": true }));
         }
-        let session_mgr = crate::work::browser_operator::browser_session_manager();
         let res = self.call(run_id, "browser_close", json!({})).await?;
-        let _ = session_mgr.close_session(run_id).await;
+        crate::browser_runtime::close_browser_session(run_id).await;
         Ok(res)
     }
 

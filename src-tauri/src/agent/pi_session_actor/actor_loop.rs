@@ -1783,11 +1783,9 @@ async fn cleanup_actor(
     desktop_token: Option<&str>,
     work_bridge_token: Option<&str>,
 ) {
-    // Code's browser bridge and the process-wide Playwright worker are not
-    // owned by the Pi child process. Clean both up when the actor exits
-    // naturally as well as when the user explicitly stops/replaces it. Work
-    // uses the WorkRun id for its browser context, so these calls are no-ops
-    // for the Work session id and its lifecycle remains Work-owned.
+    // Code's browser bridge credential belongs to this actor; the native
+    // Browser session belongs to the Run. Revoke only this actor's exact
+    // credentials here so natural exit/replacement preserves the user's tabs.
     if let Some(token) = browser_token {
         crate::browser_runtime::revoke_token(token).await;
     }
@@ -1802,10 +1800,6 @@ async fn cleanup_actor(
         // valid while the Pi actor is idle and is revoked only after Pi exits.
         crate::work::internal_bridge::revoke_session_token(token).await;
     }
-    let _ = crate::work::browser_operator::browser_operator_manager()
-        .close_context(run_id)
-        .await;
-
     let mut map = sessions.lock().await;
     let remove = map
         .get(run_id)

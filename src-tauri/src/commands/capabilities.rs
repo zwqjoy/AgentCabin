@@ -1082,7 +1082,7 @@ pub async fn control_browser_session(
                     updated_at: chrono::Utc::now().to_rfc3339(),
                 }
             });
-            let _ = mgr.close_session(&run_id).await;
+            crate::browser_runtime::close_browser_session(&run_id).await;
             let _ = crate::work::browser_operator::browser_operator_manager()
                 .close_context(&run_id)
                 .await;

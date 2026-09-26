@@ -89,12 +89,21 @@ pub async fn register_session(run_id: &str, output_root: &Path) -> Result<(u16, 
     Ok((port, token))
 }
 
-pub async fn revoke_session(run_id: &str) {
-    state()
+pub async fn revoke_session_tokens(run_id: &str) {
+    revoke_session_tokens_from(state(), run_id).await;
+}
+
+async fn revoke_session_tokens_from(runtime: &BrowserRuntimeState, run_id: &str) {
+    runtime
         .tokens
         .write()
         .await
         .retain(|_, info| info.run_id != run_id);
+}
+
+/// Close the run-scoped Browser session after an explicit Browser close.
+/// Actor stop/replacement must only revoke its runtime credentials.
+pub async fn close_browser_session(run_id: &str) {
     let _ = crate::work::browser_operator::browser_session_manager()
         .close_session(run_id)
         .await;
@@ -338,5 +347,55 @@ async fn call_browser_tool(
             "outputs": [],
             "toolCallId": payload.tool_call_id,
         }))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn revoking_run_tokens_does_not_close_browser_session() {
+        let runtime = BrowserRuntimeState::default();
+        let run_id = format!("browser-runtime-revoke-{}", Uuid::new_v4());
+        runtime.tokens.write().await.insert(
+            "test-token".to_string(),
+            BrowserSessionToken {
+                run_id: run_id.clone(),
+                output_root: PathBuf::new(),
+            },
+        );
+        let manager = crate::work::browser_operator::browser_session_manager();
+        manager.get_or_create_session(&run_id, "code").await;
+
+        revoke_session_tokens_from(&runtime, &run_id).await;
+
+        assert!(!runtime.tokens.read().await.contains_key("test-token"));
+        let session = manager
+            .get_session(&run_id)
+            .await
+            .expect("browser session should remain available");
+        assert_ne!(
+            session.status,
+            crate::work::models::BrowserSessionStatus::Closed
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_browser_close_marks_the_run_session_closed() {
+        let run_id = format!("browser-runtime-close-{}", Uuid::new_v4());
+        let manager = crate::work::browser_operator::browser_session_manager();
+        manager.get_or_create_session(&run_id, "code").await;
+
+        close_browser_session(&run_id).await;
+
+        let session = manager
+            .get_session(&run_id)
+            .await
+            .expect("explicitly closed browser session should be retained");
+        assert_eq!(
+            session.status,
+            crate::work::models::BrowserSessionStatus::Closed
+        );
     }
 }
