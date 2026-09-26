@@ -72,7 +72,11 @@
     onArtifactsChanged,
   }: Props = $props();
 
-  const browserRunId = $derived(sessionInfo?.runId ?? progressView?.workRunId ?? "");
+  // Browser sessions in Work are owned by the WorkRun, which may differ from
+  // the parent Pi/session run. Bind the visible WebContentsView to the same ID
+  // used by ToolPipeline or the agent can control one page while this panel
+  // attaches a blank surface for the parent session.
+  const browserRunId = $derived(progressView?.workRunId ?? sessionInfo?.runId ?? "");
   let autoOpenedBrowserRunId = $state("");
 
   let hasBrowserActivity = $derived.by(() => {
@@ -118,7 +122,7 @@
   // ── Width & Resize handling ──
   const WIDTH_MIN = 340;
   const WIDTH_MAX = 1200;
-  const WIDTH_DEFAULT = 440;
+  const WIDTH_DEFAULT = 520;
   const WIDTH_STORAGE_KEY = "agentcabin:work-inspector-width";
 
   function clampWidth(v: number): number {

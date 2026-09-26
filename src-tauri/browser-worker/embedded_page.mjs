@@ -11,6 +11,8 @@ function evaluateExpression(body) {
   };
 }
 
+const SCREENSHOT_TIMEOUT_MS = 4000;
+
 export function createEmbeddedPage({ client }) {
   async function evaluateValue(body) {
     const result = await client.send("Runtime.evaluate", evaluateExpression(body));
@@ -174,8 +176,11 @@ export function createEmbeddedPage({ client }) {
         format: "jpeg",
         quality: 75,
         fromSurface: true,
-        captureBeyondViewport: true,
-      });
+        // Browser observations should represent the visible viewport. Capturing
+        // the full document on every click/type/scroll can create multi-megabyte
+        // images and stall the host while traces are serialized and rendered.
+        captureBeyondViewport: false,
+      }, SCREENSHOT_TIMEOUT_MS);
       return result?.data ? `data:image/jpeg;base64,${result.data}` : null;
     },
     async close() {

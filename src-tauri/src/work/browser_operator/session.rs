@@ -15,6 +15,10 @@ use crate::work::models::{
     BrowserTraceEntry,
 };
 
+const MAX_TRACE_SCREENSHOTS_PER_SESSION: usize = 6;
+const MAX_TRACE_SCREENSHOT_BYTES_PER_SESSION: usize = 4 * 1024 * 1024;
+const MAX_BROWSER_SCREENSHOT_BYTES_TOTAL: usize = 12 * 1024 * 1024;
+
 #[derive(Clone)]
 pub struct BrowserSessionManager {
     sessions: Arc<RwLock<HashMap<String, BrowserSession>>>,
@@ -66,19 +70,52 @@ impl BrowserSessionManager {
 
     /// Get or register a new BrowserSession for a Code or Work run.
     pub async fn get_or_create_session(&self, run_id: &str, mode: &str) -> BrowserSession {
+        self.ensure_session(run_id, mode).await;
+        self.get_session(run_id)
+            .await
+            .expect("ensure_session always creates or preserves the browser session")
+    }
+
+    /// Ensure a session exists without cloning its trace history. Browser
+    /// operations call this on every action, so returning a session here would
+    /// repeatedly copy all retained screenshot data.
+    pub async fn ensure_session(&self, run_id: &str, mode: &str) {
         let mut map = self.sessions.write().await;
-        if let Some(existing) = map.get(run_id) {
-            let mut current = existing.clone();
-            if crate::work::browser_operator::embedded_registry()
+        if let Some(existing) = map.get_mut(run_id) {
+            let embedded_available = crate::work::browser_operator::embedded_registry()
                 .resolve(run_id)
-                .is_some()
-                && current.surface != "embedded"
-            {
-                current.surface = "embedded".to_string();
-                current.updated_at = Utc::now().to_rfc3339();
-                map.insert(run_id.to_string(), current.clone());
+                .is_some();
+            let mut reopened = false;
+            if embedded_available {
+                if existing.surface != "embedded" {
+                    existing.surface = "embedded".to_string();
+                    existing.updated_at = Utc::now().to_rfc3339();
+                }
+                // browser_close releases the worker connection, not the
+                // Electron-owned WebContentsView. If the agent explicitly
+                // uses the browser again later in the same WorkRun, reconnect
+                // that surface instead of leaving the run permanently closed.
+                if existing.status == BrowserSessionStatus::Closed {
+                    existing.status = BrowserSessionStatus::Idle;
+                    existing.current_action = None;
+                    existing.last_error = None;
+                    existing.updated_at = Utc::now().to_rfc3339();
+                    reopened = true;
+                }
             }
-            return current;
+            let session_id = existing.session_id.clone();
+            let mode = existing.mode.clone();
+            if reopened {
+                drop(map);
+                self.emit_event(
+                    BrowserEventType::SessionResumed,
+                    &session_id,
+                    run_id,
+                    &mode,
+                    json!({ "status": BrowserSessionStatus::Idle, "reopened": true }),
+                );
+            }
+            return;
         }
 
         let now = Utc::now().to_rfc3339();
@@ -100,15 +137,15 @@ impl BrowserSessionManager {
             updated_at: now,
         };
 
-        map.insert(run_id.to_string(), session.clone());
+        map.insert(run_id.to_string(), session);
+        drop(map);
         self.emit_event(
             BrowserEventType::SessionStarted,
-            &session.session_id,
+            &format!("bsess-{run_id}"),
             run_id,
             mode,
-            json!({ "status": session.status }),
+            json!({ "status": BrowserSessionStatus::Idle }),
         );
-        session
     }
 
     /// Get existing session if available.
@@ -117,13 +154,18 @@ impl BrowserSessionManager {
         map.get(run_id).cloned()
     }
 
+    async fn session_status(&self, run_id: &str) -> Option<BrowserSessionStatus> {
+        let map = self.sessions.read().await;
+        map.get(run_id).map(|session| session.status)
+    }
+
     /// Wait until a browser action is allowed to run for this session.
     /// Pausing or taking over deliberately holds the agent's next browser
     /// tool call instead of merely changing a UI label.
     pub async fn wait_until_actionable(&self, run_id: &str) -> Result<(), String> {
         loop {
             let notified = self.control_notify.notified();
-            let status = self.get_session(run_id).await.map(|session| session.status);
+            let status = self.session_status(run_id).await;
             match status {
                 Some(BrowserSessionStatus::Paused) | Some(BrowserSessionStatus::TakingOver) => {
                     notified.await
@@ -227,6 +269,7 @@ impl BrowserSessionManager {
         step_index: u32,
         completion: BrowserActionCompletion,
     ) {
+        let received_screenshot = completion.screenshot.is_some();
         let mut map = self.sessions.write().await;
         if let Some(session) = map.get_mut(run_id) {
             let now = Utc::now().to_rfc3339();
@@ -252,6 +295,9 @@ impl BrowserSessionManager {
                 if let Some(sc) = completion.screenshot.clone() {
                     trace.screenshot_data = Some(sc);
                 }
+            }
+            if received_screenshot {
+                prune_session_trace_screenshots(session);
             }
 
             // A browser session can try multiple sources in one Work run.
@@ -306,6 +352,9 @@ impl BrowserSessionManager {
                 );
             }
         }
+        if received_screenshot {
+            prune_global_screenshot_history(&mut map);
+        }
     }
 
     /// Directly update live session snapshot (title, url, screenshot) from user interactions.
@@ -316,6 +365,7 @@ impl BrowserSessionManager {
         current_url: Option<String>,
         screenshot: Option<String>,
     ) -> Result<BrowserSession, String> {
+        let received_screenshot = screenshot.is_some();
         let mut map = self.sessions.write().await;
         let session = map.entry(run_id.to_string()).or_insert_with(|| {
             let now = Utc::now().to_rfc3339();
@@ -348,6 +398,7 @@ impl BrowserSessionManager {
         if let Some(sc) = screenshot {
             session.last_screenshot = Some(sc);
         }
+        prune_session_trace_screenshots(session);
         let updated = session.clone();
         drop(map);
 
@@ -363,6 +414,11 @@ impl BrowserSessionManager {
                 "lastScreenshot": updated.last_screenshot,
             }),
         );
+
+        if received_screenshot {
+            let mut map = self.sessions.write().await;
+            prune_global_screenshot_history(&mut map);
+        }
 
         Ok(updated)
     }
@@ -534,6 +590,77 @@ impl BrowserSessionManager {
             event.run_id,
             event.session_id
         );
+    }
+}
+
+fn prune_session_trace_screenshots(session: &mut BrowserSession) {
+    let mut retained_count = 0usize;
+    let mut retained_bytes = 0usize;
+    for trace in session.traces.iter_mut().rev() {
+        let Some(screenshot) = trace.screenshot_data.as_ref() else {
+            continue;
+        };
+        let size = screenshot.len();
+        if retained_count >= MAX_TRACE_SCREENSHOTS_PER_SESSION
+            || retained_bytes.saturating_add(size) > MAX_TRACE_SCREENSHOT_BYTES_PER_SESSION
+        {
+            trace.screenshot_data = None;
+            continue;
+        }
+        retained_count += 1;
+        retained_bytes += size;
+    }
+}
+
+fn prune_global_screenshot_history(sessions: &mut HashMap<String, BrowserSession>) {
+    let mut retained_bytes = 0usize;
+    let mut oldest_first: Vec<(String, String, Option<usize>, usize)> = Vec::new();
+
+    for (run_id, session) in sessions.iter() {
+        if let Some(screenshot) = session.last_screenshot.as_ref() {
+            retained_bytes = retained_bytes.saturating_add(screenshot.len());
+            oldest_first.push((
+                session.updated_at.clone(),
+                run_id.clone(),
+                None,
+                screenshot.len(),
+            ));
+        }
+        for (index, trace) in session.traces.iter().enumerate() {
+            if let Some(screenshot) = trace.screenshot_data.as_ref() {
+                retained_bytes = retained_bytes.saturating_add(screenshot.len());
+                oldest_first.push((
+                    trace.timestamp.clone(),
+                    run_id.clone(),
+                    Some(index),
+                    screenshot.len(),
+                ));
+            }
+        }
+    }
+
+    if retained_bytes <= MAX_BROWSER_SCREENSHOT_BYTES_TOTAL {
+        return;
+    }
+    oldest_first.sort_by(|left, right| left.0.cmp(&right.0));
+    for (_, run_id, trace_index, size) in oldest_first {
+        if retained_bytes <= MAX_BROWSER_SCREENSHOT_BYTES_TOTAL {
+            break;
+        }
+        let Some(session) = sessions.get_mut(&run_id) else {
+            continue;
+        };
+        let removed = if let Some(index) = trace_index {
+            session
+                .traces
+                .get_mut(index)
+                .and_then(|trace| trace.screenshot_data.take())
+        } else {
+            session.last_screenshot.take()
+        };
+        if removed.is_some() {
+            retained_bytes = retained_bytes.saturating_sub(size);
+        }
     }
 }
 

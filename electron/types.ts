@@ -74,6 +74,7 @@ export const EVENT_CHANNELS = [
   "window:focus",
   "core:event",
   "browser:state-changed",
+  "browser:tabs-changed",
 ] as const;
 
 export type EventChannel = (typeof EVENT_CHANNELS)[number];
@@ -83,6 +84,22 @@ export interface CoreEventEnvelope {
   event: string;
   payload?: unknown;
   seq?: number;
+}
+
+export interface BrowserTabInfo {
+  id: string;
+  targetId: string;
+  index: number;
+  url: string;
+  title: string;
+  active: boolean;
+}
+
+export interface BrowserTabsChanged {
+  viewId: string;
+  runId: string;
+  activeTargetId: string;
+  tabs: BrowserTabInfo[];
 }
 
 export interface AgentCabinDesktopBridge {
@@ -142,6 +159,9 @@ export interface AgentCabinDesktopBridge {
       viewId: string;
       targetId: string;
       endpoint: { host: string; port: number; token: string };
+      state: unknown;
+      tabs: BrowserTabInfo[];
+      activeTargetId: string;
     }>;
     setBounds(payload: {
       viewId: string;

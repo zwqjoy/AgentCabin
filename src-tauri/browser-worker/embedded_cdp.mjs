@@ -130,14 +130,14 @@ export function createEmbeddedCdpClient(options) {
       return this;
     },
 
-    send(method, params = {}) {
+    send(method, params = {}, timeoutMs = COMMAND_TIMEOUT_MS) {
       if (!ready || closed) return Promise.reject(new Error("Embedded relay is not ready"));
       const id = nextId++;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
-          reject(new Error(`Embedded CDP command '${method}' timed out after ${COMMAND_TIMEOUT_MS}ms`));
-        }, COMMAND_TIMEOUT_MS);
+          reject(new Error(`Embedded CDP command '${method}' timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
         timer.unref?.();
         pending.set(id, { resolve, reject, timer });
         try {

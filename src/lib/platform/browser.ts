@@ -6,6 +6,22 @@ export interface EmbeddedBrowserEndpoint {
   targetId: string;
 }
 
+export interface EmbeddedBrowserTab {
+  id: string;
+  targetId: string;
+  index: number;
+  url: string;
+  title: string;
+  active: boolean;
+}
+
+export interface EmbeddedBrowserTabsChanged {
+  viewId: string;
+  runId: string;
+  activeTargetId: string;
+  tabs: EmbeddedBrowserTab[];
+}
+
 function bridge() {
   return typeof window === "undefined" ? undefined : window.agentcabinDesktop?.browser;
 }

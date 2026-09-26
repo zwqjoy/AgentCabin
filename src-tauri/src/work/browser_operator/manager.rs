@@ -298,7 +298,7 @@ impl BrowserOperatorManager {
         params: Value,
     ) -> Result<Value, String> {
         let session_mgr = super::session::browser_session_manager();
-        session_mgr.get_or_create_session(run_id, "work").await;
+        session_mgr.ensure_session(run_id, "work").await;
         session_mgr.wait_until_actionable(run_id).await?;
         let (action_type, desc, target_url, selector) = parse_action_meta(method, &params);
         let step_index = session_mgr
@@ -669,6 +669,35 @@ impl BrowserOperatorManager {
         action: &str,
         params: Value,
     ) -> Result<crate::work::models::BrowserSession, String> {
+        if action == "tabs" {
+            let action = param_string(&params, &["action"]).unwrap_or_else(|| "list".to_string());
+            let result = self
+                .tabs_with_target(
+                    run_id,
+                    &action,
+                    param_u64(&params, &["index"]).map(|value| value as usize),
+                    param_string(&params, &["url"]),
+                    param_string(&params, &["target_id", "targetId", "id"]),
+                )
+                .await?;
+            let session_mgr = super::session::browser_session_manager();
+            session_mgr.ensure_session(run_id, "code").await;
+            return session_mgr
+                .update_session_snapshot(
+                    run_id,
+                    result
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string),
+                    result
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string),
+                    None,
+                )
+                .await;
+        }
+
         let mut interact_params = params;
         if let Some(obj) = interact_params.as_object_mut() {
             obj.insert("action".to_string(), json!(action));
@@ -681,7 +710,7 @@ impl BrowserOperatorManager {
             .await?;
 
         let session_mgr = super::session::browser_session_manager();
-        session_mgr.get_or_create_session(run_id, "code").await;
+        session_mgr.ensure_session(run_id, "code").await;
 
         let current_url = result
             .get("url")
@@ -787,11 +816,22 @@ fn param_bool(params: &Value, names: &[&str]) -> Option<bool> {
     param_value(params, names).and_then(Value::as_bool)
 }
 
-const MAX_INLINE_SCREENSHOT_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_INLINE_SCREENSHOT_BYTES: u64 = 1024 * 1024;
 
 fn screenshot_data_from_result(value: &Value) -> Option<String> {
     if let Some(screenshot) = value.get("screenshot").and_then(Value::as_str) {
         if screenshot.starts_with("data:") {
+            let encoded_len = screenshot
+                .split_once(',')
+                .map(|(_, data)| data.len())
+                .unwrap_or(usize::MAX);
+            if encoded_len as u64 > (MAX_INLINE_SCREENSHOT_BYTES * 4 / 3) {
+                log::warn!(
+                    "[browser] inline screenshot is too large to keep in the inspector: {} bytes",
+                    encoded_len
+                );
+                return None;
+            }
             return Some(screenshot.to_string());
         }
     }
@@ -990,6 +1030,9 @@ mod tests {
                     target_id: "T9".to_string(),
                     run_id: Some("run-embedded".to_string()),
                     url: "https://example.com".to_string(),
+                    endpoint: None,
+                    token: None,
+                    active: true,
                 }],
             },
         );

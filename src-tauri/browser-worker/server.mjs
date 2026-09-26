@@ -54,7 +54,19 @@ function imageBlock(dataUrl) {
   return [{ type: "image", data: dataUrl.slice(comma + 1), mimeType: mimeType || "image/jpeg" }];
 }
 
+async function optionalScreenshot(page) {
+  try {
+    const screenshot = await page.screenshot();
+    return screenshot ? { screenshot } : {};
+  } catch (error) {
+    return {
+      screenshotError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function relayObservation(page, root = {}) {
+  const screenshot = await optionalScreenshot(page);
   const snapshot = await generatePageSnapshot(page);
   const elements = Object.entries(snapshot.refs || {}).map(([ref, item]) => {
     const role = String(item.role || item.tag || "element").toLowerCase();
@@ -83,7 +95,8 @@ async function relayObservation(page, root = {}) {
     title: snapshot.title || root.title || "",
     url: snapshot.url || root.url || "",
     elements,
-    images: imageBlock(await page.screenshot()),
+    images: imageBlock(screenshot.screenshot),
+    ...(screenshot.screenshotError ? { screenshotError: screenshot.screenshotError } : {}),
     platformState: { browserTargetId: root.browserTargetId || root.cdpTargetId, url: snapshot.url },
   };
 }
@@ -191,7 +204,12 @@ async function handleEmbedded(method, runId, params = {}) {
     case "browser_navigate": {
       await page.navigate(params.url);
       const snapshot = await generatePageSnapshot(page);
-      return { ok: true, url: snapshot.url, title: snapshot.title, screenshot: await page.screenshot() };
+      return {
+        ok: true,
+        url: snapshot.url,
+        title: snapshot.title,
+        ...(await optionalScreenshot(page)),
+      };
     }
     case "browser_snapshot": {
       const snapshot = await generatePageSnapshot(page);
@@ -201,7 +219,7 @@ async function handleEmbedded(method, runId, params = {}) {
         url: snapshot.url,
         tree: snapshot.tree,
         refsCount: Object.keys(snapshot.refs).length,
-        screenshot: await page.screenshot(),
+        ...(params.include_screenshot === false ? {} : await optionalScreenshot(page)),
       };
     }
     case "browser_take_screenshot":
@@ -218,7 +236,6 @@ async function handleEmbedded(method, runId, params = {}) {
       return {
         ok: true,
         ...(await generatePageSnapshot(page)),
-        screenshot: await page.screenshot(),
       };
     case "browser_type":
       if (params.ref) await page.clickRef(params.ref);
@@ -228,7 +245,6 @@ async function handleEmbedded(method, runId, params = {}) {
       return {
         ok: true,
         ...(await generatePageSnapshot(page)),
-        screenshot: await page.screenshot(),
       };
     case "browser_scroll": {
       const delta = params.deltaY ?? (
@@ -238,7 +254,6 @@ async function handleEmbedded(method, runId, params = {}) {
       return {
         ok: true,
         ...(await generatePageSnapshot(page)),
-        screenshot: await page.screenshot(),
       };
     }
     case "browser_select_option": {
@@ -247,7 +262,6 @@ async function handleEmbedded(method, runId, params = {}) {
         ok: true,
         ...selection,
         ...(await generatePageSnapshot(page)),
-        screenshot: await page.screenshot(),
       };
     }
     case "browser_interact": {
@@ -264,25 +278,22 @@ async function handleEmbedded(method, runId, params = {}) {
         action: params.action,
         url: snapshot.url,
         title: snapshot.title,
-        screenshot: await page.screenshot(),
+        ...(await optionalScreenshot(page)),
       };
     }
-    case "browser_tabs":
-      if (params.action && params.action !== "list") {
-        throw new Error("unsupported_action: the embedded browser currently exposes one tab and cannot open, switch, or close tabs");
+    case "browser_tabs": {
+      const action = params.action || "list";
+      const result = await session.client.send("AgentCabin.browserTabs", {
+        action,
+        index: params.index,
+        targetId: params.targetId ?? params.target_id ?? params.id,
+        url: params.url,
+      });
+      if (!result?.ok || !Array.isArray(result.tabs)) {
+        throw new Error(result?.error || "The embedded browser could not update its tab list.");
       }
-      return {
-        ok: true,
-        action: "list",
-        tabs: [{
-          id: session.targetId || "embedded",
-          targetId: session.targetId || "embedded",
-          index: 0,
-          url: await page.refreshLocation(),
-          title: await page.title(),
-          active: true,
-        }],
-      };
+      return result;
+    }
     case "browser_focus":
       return { ok: true, url: await page.refreshLocation(), title: await page.title() };
     case "browser_wait_for": {
@@ -298,7 +309,6 @@ async function handleEmbedded(method, runId, params = {}) {
         ok: true,
         ...expectation,
         ...(await generatePageSnapshot(page)),
-        screenshot: await page.screenshot(),
       };
     }
     case "browser_close":

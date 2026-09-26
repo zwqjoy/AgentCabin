@@ -10,6 +10,8 @@ import net from "node:net";
 import type { WebContents } from "electron";
 import { CdpRelayCore, type RelayConnection, type RelayTransport } from "./browser-relay";
 
+const MAX_RELAY_FRAME_BYTES = 16 * 1024 * 1024;
+
 export interface RelayEndpoint {
   host: "127.0.0.1";
   port: number;
@@ -72,15 +74,37 @@ export class BrowserRelayServer {
         },
         end: () => socket.end(),
         onLine: (handler) => {
-          let buffer = "";
-          socket.on("data", (chunk: Buffer | string) => {
-            buffer += chunk.toString();
-            let index = buffer.indexOf("\n");
-            while (index >= 0) {
-              const line = buffer.slice(0, index).trim();
-              buffer = buffer.slice(index + 1);
+          let chunks: Buffer[] = [];
+          let bufferedBytes = 0;
+          socket.on("data", (chunk: Buffer) => {
+            let start = 0;
+            while (start < chunk.length) {
+              const newline = chunk.indexOf(0x0a, start);
+              const end = newline < 0 ? chunk.length : newline;
+              const part = chunk.subarray(start, end);
+              if (part.length > 0) {
+                chunks.push(part);
+                bufferedBytes += part.length;
+              }
+
+              if (bufferedBytes > MAX_RELAY_FRAME_BYTES) {
+                this.log("relay: rejected oversized protocol frame", bufferedBytes);
+                socket.destroy();
+                return;
+              }
+              if (newline < 0) return;
+
+              const frame =
+                chunks.length === 0
+                  ? ""
+                  : chunks.length === 1
+                    ? chunks[0].toString("utf8")
+                    : Buffer.concat(chunks, bufferedBytes).toString("utf8");
+              chunks = [];
+              bufferedBytes = 0;
+              const line = frame.trim();
               if (line) handler(line);
-              index = buffer.indexOf("\n");
+              start = newline + 1;
             }
           });
         },

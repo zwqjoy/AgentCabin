@@ -13,6 +13,14 @@ pub struct EmbeddedTarget {
     pub run_id: Option<String>,
     #[serde(default)]
     pub url: String,
+    /// A tab may use its own authenticated relay while sharing a run with the
+    /// other tabs in the same Electron-owned browser surface.
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub active: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,16 +63,28 @@ impl EmbeddedRegistry {
     pub fn resolve(&self, run_id: &str) -> Option<ResolvedEmbeddedTarget> {
         let guard = self.inner.read().expect("embedded registry poisoned");
         guard.values().find_map(|registration| {
-            registration
+            let targets: Vec<_> = registration
                 .targets
                 .iter()
-                .find(|target| target.run_id.as_deref() == Some(run_id))
-                .map(|target| ResolvedEmbeddedTarget {
-                    endpoint: registration.endpoint.clone(),
-                    token: registration.token.clone(),
-                    target_id: target.target_id.clone(),
-                    url: target.url.clone(),
-                })
+                .filter(|target| target.run_id.as_deref() == Some(run_id))
+                .collect();
+            let target = targets
+                .iter()
+                .copied()
+                .find(|target| target.active)
+                .or_else(|| targets.first().copied())?;
+            Some(ResolvedEmbeddedTarget {
+                endpoint: target
+                    .endpoint
+                    .clone()
+                    .unwrap_or_else(|| registration.endpoint.clone()),
+                token: target
+                    .token
+                    .clone()
+                    .unwrap_or_else(|| registration.token.clone()),
+                target_id: target.target_id.clone(),
+                url: target.url.clone(),
+            })
         })
     }
 
@@ -92,6 +112,9 @@ mod tests {
                 target_id: "T1".to_string(),
                 run_id: run_id.map(str::to_string),
                 url: "https://example.com".to_string(),
+                endpoint: None,
+                token: None,
+                active: true,
             }],
         }
     }

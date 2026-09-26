@@ -6,6 +6,8 @@
     detachEmbeddedBrowser,
     setEmbeddedBrowserBounds,
     setEmbeddedBrowserVisible,
+    type EmbeddedBrowserTab,
+    type EmbeddedBrowserTabsChanged,
   } from "$lib/platform/browser";
 
   interface Props {
@@ -20,6 +22,7 @@
       targetId: string;
     }) => void;
     onLoadingChange?: (loading: boolean) => void;
+    onTabsChange?: (tabs: EmbeddedBrowserTab[], activeTargetId: string) => void;
     onError?: (message: string) => void;
   }
 
@@ -30,6 +33,7 @@
     visible = true,
     onEndpoint,
     onLoadingChange,
+    onTabsChange,
     onError,
   }: Props = $props();
 
@@ -39,7 +43,13 @@
 
   function report(): void {
     if (!host) return;
-    void setEmbeddedBrowserBounds(viewId, getSurfaceRect());
+    const rect = getSurfaceRect();
+    // A Work inspector can stay mounted while its aside is collapsed. Sending
+    // a zero-sized native bound during that transition can leave Chromium with
+    // a blank surface when the panel is shown again. Keep the last usable
+    // bounds and let visibility control whether the native page is displayed.
+    if (rect.width <= 1 || rect.height <= 1) return;
+    void setEmbeddedBrowserBounds(viewId, rect);
   }
 
   function getSurfaceRect() {
@@ -63,41 +73,71 @@
     const currentUrl = untrack(() => initialUrl);
     let observer: ResizeObserver | null = null;
     let cancelled = false;
+    let attachStarted = false;
+    let unlistenTabs: (() => void) | null = null;
     attached = false;
     error = "";
     onLoadingChange?.(true);
 
-    void attachEmbeddedBrowser({
-      viewId: currentViewId,
-      runId: currentRunId,
-      url: currentUrl || undefined,
-      rect: getSurfaceRect(),
-    })
-      .then((result) => {
-        if (cancelled) {
-          void detachEmbeddedBrowser(currentViewId);
-          return;
+    const tabsListener = window.agentcabinDesktop?.listen<EmbeddedBrowserTabsChanged>(
+      "browser:tabs-changed",
+      (event) => {
+        if (event.viewId === currentViewId && event.runId === currentRunId) {
+          onTabsChange?.(event.tabs, event.activeTargetId);
         }
-        attached = true;
-        onLoadingChange?.(false);
-        onEndpoint?.({ ...result.endpoint, targetId: result.targetId });
-        report();
+      },
+    );
+    void tabsListener?.then((unlisten) => {
+      if (cancelled) unlisten();
+      else unlistenTabs = unlisten;
+    });
+
+    const attachWhenSized = () => {
+      if (cancelled || attachStarted) return;
+      const rect = getSurfaceRect();
+      // Work's inspector starts collapsed. Do not create a WebContentsView at
+      // 0×0; wait for the ResizeObserver after the user or browser activity
+      // opens the panel, matching Code's first visible browser attachment.
+      if (rect.width <= 1 || rect.height <= 1) return;
+      attachStarted = true;
+      void attachEmbeddedBrowser({
+        viewId: currentViewId,
+        runId: currentRunId,
+        url: currentUrl || undefined,
+        rect,
       })
-      .catch((e: unknown) => {
-        error = e instanceof Error ? e.message : String(e);
-        onLoadingChange?.(false);
-        onError?.(error);
-      });
+        .then((result) => {
+          if (cancelled) {
+            void detachEmbeddedBrowser(currentViewId);
+            return;
+          }
+          attached = true;
+          onLoadingChange?.(false);
+          onTabsChange?.(result.tabs, result.activeTargetId);
+          onEndpoint?.({ ...result.endpoint, targetId: result.targetId });
+          report();
+        })
+        .catch((e: unknown) => {
+          error = e instanceof Error ? e.message : String(e);
+          onLoadingChange?.(false);
+          onError?.(error);
+        });
+    };
 
     if (host) {
-      observer = new ResizeObserver(() => report());
+      observer = new ResizeObserver(() => {
+        attachWhenSized();
+        report();
+      });
       observer.observe(host);
     }
+    attachWhenSized();
     window.addEventListener("resize", report);
     window.addEventListener("scroll", report, true);
 
     return () => {
       cancelled = true;
+      unlistenTabs?.();
       observer?.disconnect();
       window.removeEventListener("resize", report);
       window.removeEventListener("scroll", report, true);

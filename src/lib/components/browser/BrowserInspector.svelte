@@ -5,6 +5,7 @@
   import { withTimeout } from "$lib/utils/async-utils";
   import EmbeddedBrowserSurface from "$lib/components/browser/EmbeddedBrowserSurface.svelte";
   import { isEmbeddedBrowserAvailable } from "$lib/platform/browser";
+  import type { EmbeddedBrowserTab } from "$lib/platform/browser";
   import { t } from "$lib/i18n/index.svelte";
   import {
     formatBrowserAction,
@@ -37,12 +38,17 @@
   let loading = $state(true);
   let interacting = $state(false);
   let addressInput = $state("");
+  let browserTabs = $state<EmbeddedBrowserTab[]>([]);
+  let activeTargetId = $state("");
   let searchQuery = $state("");
   let previewImageModal = $state<string | null>(null);
   let embeddedAttachFailed = $state(false);
   let pollInterval: ReturnType<typeof setInterval> | null = null;
   let unlistenBrowserEvent: (() => void) | null = null;
   let stateRequestInFlight = false;
+  let pendingStateRefresh = false;
+  let stateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastLoadedUpdatedAt = "";
   const BROWSER_STATE_TIMEOUT_MS = 5_000;
 
   let interactError = $state("");
@@ -119,13 +125,24 @@
     }
   }
 
+  function scheduleStateRefresh() {
+    if (stateRefreshTimer) clearTimeout(stateRefreshTimer);
+    stateRefreshTimer = setTimeout(() => {
+      stateRefreshTimer = null;
+      void loadState();
+    }, 80);
+  }
+
   async function loadState() {
     const id = effectiveRunId;
     if (!id) {
       loading = false;
       return;
     }
-    if (stateRequestInFlight) return;
+    if (stateRequestInFlight) {
+      pendingStateRefresh = true;
+      return;
+    }
     stateRequestInFlight = true;
     try {
       const sess = await withTimeout(
@@ -134,8 +151,11 @@
         "受控浏览器状态读取超时",
       );
       if (sess) {
-        session = sess;
-        traces = sess.traces || [];
+        if (sess.updatedAt !== lastLoadedUpdatedAt) {
+          lastLoadedUpdatedAt = sess.updatedAt;
+          session = sess;
+          traces = sess.traces || [];
+        }
         if (isTerminalStatus(sess.status)) stopPolling();
       } else {
         const traceList = await withTimeout(
@@ -150,6 +170,10 @@
     } finally {
       stateRequestInFlight = false;
       loading = false;
+      if (pendingStateRefresh) {
+        pendingStateRefresh = false;
+        scheduleStateRefresh();
+      }
     }
   }
 
@@ -160,7 +184,7 @@
     transport.subscribeRun(id);
     void transport
       .listen<BrowserEvent>("browser-event", (event) => {
-        if (event.runId === effectiveRunId) void loadState();
+        if (event.runId === effectiveRunId) scheduleStateRefresh();
       })
       .then((unlisten) => {
         if (destroyed) {
@@ -171,7 +195,7 @@
       });
     pollInterval = setInterval(() => {
       void loadState();
-    }, 2000);
+    }, 15000);
     void loadState();
 
     return () => {
@@ -182,6 +206,8 @@
 
   onDestroy(() => {
     stopPolling();
+    if (stateRefreshTimer) clearTimeout(stateRefreshTimer);
+    stateRefreshTimer = null;
     unlistenBrowserEvent?.();
     unlistenBrowserEvent = null;
   });
@@ -202,12 +228,14 @@
 
   async function performInteract(action: string, params: Record<string, unknown> = {}) {
     const id = effectiveRunId;
-    if (!id || interacting || isTerminal) return;
+    const readOnlyTabSwitch = action === "tabs" && params.action === "switch";
+    if (!id || interacting || (isTerminal && !readOnlyTabSwitch)) return;
     interacting = true;
     interactError = "";
     try {
       const updated = await browserUserInteract(id, action, params);
       if (updated) {
+        lastLoadedUpdatedAt = updated.updatedAt;
         session = updated;
         if (updated.currentUrl) addressInput = updated.currentUrl;
       }
@@ -216,6 +244,20 @@
       interactError = e instanceof Error ? e.message : String(e);
     } finally {
       interacting = false;
+    }
+  }
+
+  function handleTabsChange(tabs: EmbeddedBrowserTab[], activeId: string): void {
+    browserTabs = tabs;
+    activeTargetId = activeId;
+  }
+
+  function tabLabel(tab: EmbeddedBrowserTab): string {
+    if (tab.title?.trim()) return tab.title.trim();
+    try {
+      return new URL(tab.url).hostname || "新标签页";
+    } catch {
+      return "新标签页";
     }
   }
 
@@ -239,6 +281,65 @@
 </script>
 
 <div class="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+  {#if embedded}
+    <div
+      class="flex h-9 shrink-0 items-end gap-1 overflow-hidden border-b border-border/70 bg-muted/25 px-2 pt-1"
+      role="tablist"
+      aria-label="浏览器标签页"
+      data-testid="browser-tab-strip"
+    >
+      <div class="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto scrollbar-none">
+        {#each browserTabs as tab (tab.targetId)}
+          <div
+            class="group flex h-7 max-w-52 min-w-0 shrink-0 items-center rounded-t-md border border-b-0 px-2 {tab.targetId ===
+            activeTargetId
+              ? 'border-border/70 bg-background text-foreground'
+              : 'border-transparent text-muted-foreground'}"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab.targetId === activeTargetId}
+              title={tab.url ? `${tab.title || tabLabel(tab)}\n${tab.url}` : tabLabel(tab)}
+              class="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[11px]"
+              disabled={interacting || tab.targetId === activeTargetId}
+              onclick={() =>
+                void performInteract("tabs", { action: "switch", target_id: tab.targetId })}
+              data-testid="browser-tab"
+            >
+              <span class="shrink-0 text-[10px]">🌐</span>
+              <span class="truncate">{tabLabel(tab)}</span>
+            </button>
+            {#if browserTabs.length > 1}
+              <button
+                type="button"
+                class="ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                aria-label={`关闭标签页 ${tabLabel(tab)}`}
+                title="关闭标签页"
+                disabled={isTerminal || interacting}
+                onclick={() =>
+                  void performInteract("tabs", { action: "close", target_id: tab.targetId })}
+              >
+                ×
+              </button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+      <button
+        type="button"
+        class="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+        aria-label="新建浏览器标签页"
+        title="新建标签页"
+        disabled={isTerminal || interacting || !useEmbeddedSurface}
+        onclick={() => void performInteract("tabs", { action: "new" })}
+        data-testid="browser-new-tab"
+      >
+        +
+      </button>
+    </div>
+  {/if}
+
   <!-- Codex-style Browser Navigation Bar -->
   <div
     class="flex min-h-11 shrink-0 items-center gap-1.5 border-b border-border/70 bg-muted/20 px-3 py-1.5 text-xs"
@@ -351,6 +452,7 @@
         runId={effectiveRunId}
         initialUrl={session?.currentUrl ?? ""}
         visible={surfaceVisible && !overlayOpen && !pageHidden}
+        onTabsChange={handleTabsChange}
         onError={() => (embeddedAttachFailed = true)}
       />
       {#if pageHidden}

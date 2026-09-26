@@ -43,10 +43,24 @@ export interface AgentCabinDesktopBridge {
     join(...segments: string[]): Promise<string>;
   };
   browser: {
-    attach(payload: { viewId: string; runId: string; url?: string }): Promise<{
+    attach(payload: {
+      viewId: string;
+      runId: string;
+      url?: string;
+      rect?: { x: number; y: number; width: number; height: number };
+    }): Promise<{
       viewId: string;
       targetId: string;
       endpoint: { host: string; port: number; token: string };
+      tabs: Array<{
+        id: string;
+        targetId: string;
+        index: number;
+        url: string;
+        title: string;
+        active: boolean;
+      }>;
+      activeTargetId: string;
     }>;
     setBounds(payload: {
       viewId: string;

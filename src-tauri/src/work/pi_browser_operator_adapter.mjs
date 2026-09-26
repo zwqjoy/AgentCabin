@@ -39,7 +39,15 @@ const WaitSchema = Type.Object({
 });
 
 const TabsSchema = Type.Object({
-  action: Type.Optional(Type.Literal("list", { description: "The embedded Browser surface currently owns one tab, so only listing is supported." })),
+  action: Type.Optional(Type.Union([
+    Type.Literal("list"),
+    Type.Literal("new"),
+    Type.Literal("switch"),
+    Type.Literal("close"),
+  ], { description: "List, open, switch, or close a tab in the current run's embedded browser." })),
+  index: Type.Optional(Type.Number({ description: "Zero-based tab index for switch or close." })),
+  target_id: Type.Optional(Type.String({ description: "Stable targetId returned by browser_tabs list." })),
+  url: Type.Optional(Type.String({ description: "Optional URL to open in a new tab." })),
 });
 
 const CloseSchema = Type.Object({});
@@ -96,9 +104,17 @@ function supportsImages(ctx) {
 }
 
 function result(text, details = {}, includeImage = false) {
+  const safeDetails = details && typeof details === "object" ? { ...details } : details;
+  if (safeDetails && typeof safeDetails === "object") {
+    // Images are returned to vision models as image blocks. Keeping a second
+    // Base64 copy in tool details/stdout needlessly bloats Pi history.
+    delete safeDetails.screenshot;
+    delete safeDetails.base64;
+    delete safeDetails.stdout;
+  }
   return {
     content: [{ type: "text", text }, ...(includeImage ? imageContent(details) : [])],
-    details,
+    details: safeDetails,
   };
 }
 
@@ -193,13 +209,13 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_navigate",
     label: "browser_navigate",
-    description: "Navigate the current embedded browser page. It is a single-tab surface; if the task requires opening a separate tab while preserving this page, report that limitation instead of navigating away as a substitute. Do not open a URL merely to display or load an image in the conversation; embed user-provided HTTPS image URLs directly in an HTML renderer instead. For generated HTML browser inspection, use a file:// URL under the current WorkRun output/ directory; other local files, localhost, and private LAN networks remain blocked for SSRF protection.",
+    description: "Navigate the active embedded browser tab. Use browser_tabs with action=new when a task requires opening a separate tab while preserving the current page. Do not open a URL merely to display or load an image in the conversation; embed user-provided HTTPS image URLs directly in an HTML renderer instead. For generated HTML browser inspection, use a file:// URL under the current WorkRun output/ directory; other local files, localhost, and private LAN networks remain blocked for SSRF protection.",
     parameters: NavigateSchema,
-    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_navigate", "navigate", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Navigation failed", res);
       const parsed = parseResultPayload(res);
-      return result(`Navigated to ${parsed.url || params?.url}\nTitle: ${parsed.title || "(no title)"}`, { ok: true, ...parsed }, supportsImages(ctx));
+      return result(`Navigated to ${parsed.url || params?.url}\nTitle: ${parsed.title || "(no title)"}`, { ok: true, ...parsed });
     },
   });
 
@@ -207,10 +223,16 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_snapshot",
     label: "browser_snapshot",
-    description: "Capture the current page's semantic tree and screenshot. Refs remain attached to the same DOM elements while they exist in this page; refresh the snapshot after navigation or major page changes, and reacquire a ref if an element was replaced.",
+    description: "Capture the current page's semantic tree. Vision-capable models also receive a screenshot; text-only models receive the semantic tree alone. Refs remain attached to the same DOM elements while they exist in this page; refresh the snapshot after navigation or major page changes, and reacquire a ref if an element was replaced.",
     parameters: SnapshotSchema,
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
-      const res = await callOperationWithApproval(toolCallId, "browser_snapshot", "snapshot", params, signal);
+      const res = await callOperationWithApproval(
+        toolCallId,
+        "browser_snapshot",
+        "snapshot",
+        { ...params, include_screenshot: supportsImages(ctx) },
+        signal,
+      );
       if (!res.success) return fail(res.stderr || res.error || "Snapshot failed", res);
       const parsed = parseResultPayload(res);
       return result(`Page: ${parsed.title || "(untitled)"} (${parsed.url})\n\n${parsed.tree || "(empty)"}`, { ok: true, ...parsed }, supportsImages(ctx));
@@ -254,14 +276,13 @@ export function registerBrowserOperatorTools(pi, options = {}) {
           ...parsed,
           ok: false,
           resultVerified: false,
-        }, supportsImages(ctx));
+        });
       }
       const verified = parsed.verified === true;
       if (parsed.timedOut) {
         return fail(
           `Expected page condition was not met on ${parsed.url || "page"}: ${(parsed.failures || []).join("; ")}`,
           { ...parsed, ok: false, resultVerified: false },
-          supportsImages(ctx),
         );
       }
       return result(
@@ -269,7 +290,6 @@ export function registerBrowserOperatorTools(pi, options = {}) {
           ? `Expected page condition verified on ${parsed.url || "page"}.`
           : `Wait completed on ${parsed.url || "page"}; no expected page condition was checked.`,
         { ok: true, ...parsed, resultVerified: verified },
-        supportsImages(ctx),
       );
     },
   });
@@ -278,7 +298,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_tabs",
     label: "browser_tabs",
-    description: "List the current embedded Browser tab. The embedded surface owns one tab; opening, switching, or closing tabs is not supported.",
+    description: "Manage real tabs in the current run's embedded browser. Use list to inspect targetId/index, new to open a tab, switch to make a tab active for both the agent and user, and close to close a tab.",
     parameters: TabsSchema,
     async execute(toolCallId, params, signal) {
       const action = params?.action || "list";
@@ -309,13 +329,13 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_click",
     label: "browser_click",
-    description: "Click an interactive element on the page. Pass 'ref' and its accessible name as target_label from browser_snapshot. The operation returns a fresh, size-limited semantic observation and optional screenshot; inspect it before claiming success, and call browser_snapshot when you need the complete tree.",
+    description: "Click an interactive element on the page. Pass 'ref' and its accessible name as target_label from browser_snapshot. The operation returns a fresh, size-limited semantic observation; inspect it before claiming success, and call browser_snapshot or browser_take_screenshot when visual inspection is needed.",
     parameters: ClickSchema,
-    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_click", "click", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Click failed", res);
       const parsed = parseResultPayload(res);
-      return result(`Click action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...res, ...parsed, actionExecuted: true, resultVerified: false }, supportsImages(ctx));
+      return result(`Click action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
     },
   });
 
@@ -323,13 +343,13 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   registerTool({
     name: "browser_type",
     label: "browser_type",
-    description: "Type text into an input field or textarea. Pass 'ref' and its accessible name from browser_snapshot. The operation returns a fresh, size-limited semantic observation and optional screenshot; inspect it before claiming success, and call browser_snapshot when you need the complete tree.",
+    description: "Type text into an input field or textarea. Pass 'ref' and its accessible name from browser_snapshot. The operation returns a fresh, size-limited semantic observation; inspect it before claiming success, and call browser_snapshot or browser_take_screenshot when visual inspection is needed.",
     parameters: TypeSchema,
-    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_type", "type", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Type failed", res);
       const parsed = parseResultPayload(res);
-      return result(`Text input action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...res, ...parsed, actionExecuted: true, resultVerified: false }, supportsImages(ctx));
+      return result(`Text input action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
     },
   });
 
@@ -339,7 +359,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     label: "browser_select_option",
     description: "Select a native single-select option by exact value or visible text. This action verifies the selected value and returns a fresh page observation; do not use Enter as a fallback if selection fails.",
     parameters: SelectSchema,
-    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_select_option", "select", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Select failed", res);
       const parsed = parseResultPayload(res);
@@ -350,13 +370,12 @@ export function registerBrowserOperatorTools(pi, options = {}) {
           ok: false,
           actionExecuted: false,
           resultVerified: false,
-        }, supportsImages(ctx));
+        });
       }
       const target = params?.ref ? "[ref=" + params.ref + "]" : params?.selector;
       return result(
         "Selected dropdown option “" + (parsed.selectedLabel || params?.value) + "” (value=" + parsed.selectedValue + ") in " + target + "." + formatPageObservation(parsed),
         { ok: true, ...parsed, actionExecuted: true, selectionVerified: true, resultVerified: false },
-        supportsImages(ctx),
       );
     },
   });
@@ -367,11 +386,11 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     label: "browser_scroll",
     description: "Scroll the page or a scrollable element container in a given direction.",
     parameters: ScrollSchema,
-    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_scroll", "scroll", params, signal);
       if (!res.success) return fail(res.stderr || res.error || "Scroll failed", res);
       const parsed = parseResultPayload(res);
-      return result(`Scrolled ${params?.direction || "down"}.${formatPageObservation(parsed)}`, { ok: true, ...res, ...parsed }, supportsImages(ctx));
+      return result(`Scrolled ${params?.direction || "down"}.${formatPageObservation(parsed)}`, { ok: true, ...parsed });
     },
   });
 }
