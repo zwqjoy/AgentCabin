@@ -135,17 +135,15 @@
     </section>
   {/if}
 
-  <section class="mt-10" aria-labelledby="workspace-title">
-    <div class="flex items-center justify-between">
-      <h2 id="workspace-title" class="text-sm font-semibold text-foreground">工作区</h2>
-      <button
-        type="button"
-        class="text-[11px] text-muted-foreground hover:text-foreground"
-        onclick={onCreateWorkspace}>新建</button
-      >
-    </div>
+  <details class="mt-10 border-t border-border/60 pt-3">
+    <summary
+      class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <span>固定工作区</span>
+      <span class="text-[11px]">长期项目和固定资料</span>
+    </summary>
     {#if workspaces.length > 0}
-      <div class="mt-2 divide-y divide-border/60 border-y border-border/60">
+      <div class="mt-3 divide-y divide-border/60 border-y border-border/60">
         {#each workspaces as workspace (workspace.id)}
           <button
             type="button"
@@ -160,9 +158,19 @@
     {:else}
       <button
         type="button"
-        class="mt-2 w-full rounded-xl border border-dashed border-border px-3 py-4 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        class="mt-3 w-full rounded-xl border border-dashed border-border px-3 py-4 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
         onclick={onCreateWorkspace}>还没有工作区，创建一个来关联本地文件夹。</button
       >
     {/if}
-  </section>
+    <div class="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground">
+      <button
+        type="button"
+        class="hover:text-foreground"
+        onclick={onOpenFolderWorkspace || onCreateWorkspace}>选择文件夹</button
+      >
+      <button type="button" class="hover:text-foreground" onclick={onCreateWorkspace}
+        >新建工作区</button
+      >
+    </div>
+  </details>
 </div>

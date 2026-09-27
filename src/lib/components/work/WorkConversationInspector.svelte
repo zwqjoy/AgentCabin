@@ -65,9 +65,9 @@
     getReceipt,
   }: Props = $props();
 
-  // Auto-expand progress panel when there are tasks/operational work, while
-  // other operational details remain available on demand.
-  let progressOpen = $state(true);
+  // Inspector details are opt-in. Keep the conversation as the primary surface
+  // even when a run exposes internal progress metadata.
+  let progressOpen = $state(false);
   let artifactsOpen = $state(false);
   let receiptOpen = $state(false);
   let infoOpen = $state(false);
@@ -174,25 +174,6 @@
   );
   let tasks = $derived(progressView?.steps ?? progress?.tasks ?? []);
   let hasTasks = $derived(tasks.length > 0 || Boolean(effectiveTaskId) || hasOperationalWork);
-  let lastAutoExpandedKey = $state("");
-
-  const taskRunKey = $derived(
-    hasTasks
-      ? `${progressView?.workRunId ?? sessionInfo?.runId ?? sessionInfo?.sessionId ?? effectiveTaskId ?? "task"}:${tasks.length > 0 ? "steps" : "nosteps"}`
-      : "",
-  );
-
-  // Automatically expand the progress panel whenever a task or operational run is present/starts
-  $effect(() => {
-    if (!taskRunKey) {
-      lastAutoExpandedKey = "";
-      return;
-    }
-    if (taskRunKey !== lastAutoExpandedKey) {
-      lastAutoExpandedKey = taskRunKey;
-      progressOpen = true;
-    }
-  });
   let hasCompletionEvidence = $derived(
     hasWorkCompletionEvidence({
       progressView,
@@ -332,10 +313,10 @@
                         ? 'animate-pulse bg-orange-500'
                         : 'bg-primary'}"
                 ></span>
-                <span class="text-sm font-semibold text-foreground">进度</span>
+                <span class="text-sm font-semibold text-foreground">任务进度</span>
               </span>
               <span class="mt-1 block text-left text-[11px] leading-4 text-muted-foreground">
-                长任务的计划、工具执行、确认和成果交付状态会持续显示在这里。
+                查看当前步骤、运行状态和成果。
               </span>
             </span>
           </span>

@@ -276,7 +276,6 @@
           : 'text-muted-foreground hover:text-foreground'}"
         onclick={() => (activeTab = "tasks")}
       >
-        <span class="text-xs">📋</span>
         <span>任务与成果</span>
       </button>
       <button
@@ -288,7 +287,17 @@
         onclick={() => (activeTab = "browser")}
         title="受控浏览器与交互画布"
       >
-        <span class="text-xs">🌐</span>
+        <svg
+          class="h-3.5 w-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20" />
+        </svg>
         <span>浏览器</span>
         {#if hasBrowserActivity}
           <span class="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse"></span>

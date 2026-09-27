@@ -4,6 +4,7 @@
   interface Props {
     presentation: WorkResultPresentation;
     primaryArtifact?: WorkArtifactSummary;
+    artifacts?: WorkArtifactSummary[];
     artifactCount?: number;
     onPreview?: (artifact: WorkArtifactSummary) => void;
     onToggleExpand: () => void;
@@ -13,6 +14,7 @@
   let {
     presentation,
     primaryArtifact,
+    artifacts = [],
     artifactCount = 0,
     onPreview,
     onToggleExpand,
@@ -114,27 +116,44 @@
           已交付 {effectiveArtifactCount} 个成果文件
         </span>
       {/if}
-
-      {#if effectivePrimary}
-        <span class="hidden text-muted-foreground/60 sm:inline">·</span>
-        <span
-          class="hidden max-w-[200px] truncate font-medium text-foreground/90 sm:inline lg:max-w-[320px]"
-          title={effectivePrimary.title}
-        >
-          {effectivePrimary.title}
-        </span>
-      {/if}
     </div>
   </div>
 
-  <!-- Right: Quick Actions -->
-  <div class="flex shrink-0 items-center gap-1.5" onclick={(e) => e.stopPropagation()}>
-    {#if effectivePrimary && onPreview}
+  <!-- Result files stay visible; opening a file is a deliberate action. -->
+  <div
+    class="flex min-w-0 flex-wrap items-center justify-end gap-1.5"
+    onclick={(e) => e.stopPropagation()}
+  >
+    {#each artifacts as artifact (artifact.id)}
+      {#if onPreview}
+        <button
+          type="button"
+          class="inline-flex max-w-[240px] items-center gap-1.5 rounded-lg border border-border/70 bg-background/80 px-2.5 py-1.5 text-[11px] font-medium text-foreground/90 transition-colors hover:bg-accent"
+          onclick={() => onPreview(artifact)}
+          title={`打开 ${artifact.title}`}
+        >
+          <svg
+            class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+          </svg>
+          <span class="truncate">{artifact.title}</span>
+          <span class="shrink-0 text-muted-foreground">打开</span>
+        </button>
+      {/if}
+    {/each}
+    {#if artifacts.length === 0 && effectivePrimary && onPreview}
       <button
         type="button"
         class="inline-flex items-center gap-1 rounded-md border border-border/80 bg-background/80 px-2 py-1 text-[11px] font-medium text-foreground shadow-2xs transition-colors hover:bg-accent hover:text-accent-foreground"
         onclick={() => onPreview(effectivePrimary)}
-        title="快速预览主要成果文件"
+        title={`打开 ${effectivePrimary.title}`}
       >
         <svg
           class="h-3 w-3 text-muted-foreground"
@@ -146,7 +165,7 @@
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
           <circle cx="12" cy="12" r="3" />
         </svg>
-        预览
+        打开
       </button>
     {/if}
 

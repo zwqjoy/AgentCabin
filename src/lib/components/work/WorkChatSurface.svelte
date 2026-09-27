@@ -217,7 +217,6 @@
   let assignDialog = $state<HTMLDivElement>();
   let historySearchOpen = $state(false);
   let searchToolbarRef = $state<ReturnType<typeof ChatSearchToolbar>>();
-  let inspectorOpenedForRun = $state("");
   let selectedExpert = $state<SelectedExpert | null>(null);
   let userDismissedExpert = $state(false);
   let lastRestoredRunId = $state<string | null | undefined>(undefined);
@@ -1587,18 +1586,6 @@
     }
   });
 
-  // Open the inspector once a run shows real task activity. A workspace-backed
-  // session may have WorkTask/WorkRun ids for an ordinary conversational answer,
-  // so the run id itself must not trigger the task-oriented panel.
-  $effect(() => {
-    const runKey = session.run?.id ?? "";
-    if (!hasOperationalWork || !runKey || runKey === inspectorOpenedForRun) return;
-    inspectorOpenedForRun = runKey;
-    untrack(() => {
-      if (!inspectorOpen) onToggleInspector?.();
-    });
-  });
-
   let lastRefreshedTerminalRunId = "";
   $effect(() => {
     const isTerminal = resultPresentation.isTerminal;
@@ -2539,42 +2526,43 @@
   />
 
   {#if isStandalone && session.run?.id && hasOperationalWork}
-    <div
-      class="flex items-center justify-between border-b border-primary/20 bg-primary/[0.04] px-4 py-2 text-xs sm:px-5"
-    >
-      <div class="flex items-center gap-2 text-foreground/80">
-        <span class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary"
-          >快速任务</span
-        >
-        <span class="text-muted-foreground"
-          >{standaloneAssignmentBlocked
-            ? "当前回合仍在执行，完成后即可收编。"
-            : "独立会话的产物会复制到 Workspace，原始记录会保留。"}</span
-        >
+    <details class="border-b border-border/50 px-4 py-1.5 text-xs sm:px-5">
+      <summary
+        class="flex cursor-pointer list-none items-center justify-between text-muted-foreground hover:text-foreground"
+      >
+        <span>保存到固定工作区</span>
+        <span class="text-[11px]">可选</span>
+      </summary>
+      <div class="flex items-center justify-between gap-3 py-2">
+        <span class="text-[11px] text-muted-foreground">
+          {standaloneAssignmentBlocked
+            ? "任务完成后可以保存到一个长期工作区。"
+            : "将本次成果归入长期项目。"}
+        </span>
+        {#if workspaces.length > 0}
+          <button
+            type="button"
+            disabled={standaloneAssignmentBlocked}
+            class="rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+            onclick={() => {
+              assignTargetWsId = workspaces[0]?.id ?? "";
+              assignError = "";
+              assignModalOpen = true;
+            }}
+          >
+            {standaloneAssignmentBlocked ? "任务完成后可保存" : "选择工作区"}
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+            onclick={() => onCreateWorkspace?.()}
+          >
+            创建工作区
+          </button>
+        {/if}
       </div>
-      {#if workspaces.length > 0}
-        <button
-          type="button"
-          disabled={standaloneAssignmentBlocked}
-          class="rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
-          onclick={() => {
-            assignTargetWsId = workspaces[0]?.id ?? "";
-            assignError = "";
-            assignModalOpen = true;
-          }}
-        >
-          {standaloneAssignmentBlocked ? "等待本轮完成" : "收编至 Workspace"}
-        </button>
-      {:else}
-        <button
-          type="button"
-          class="rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
-          onclick={() => onCreateWorkspace?.()}
-        >
-          创建 Workspace
-        </button>
-      {/if}
-    </div>
+    </details>
   {/if}
 
   {#if assignModalOpen}
@@ -2753,83 +2741,18 @@
           <h1
             class="work-home-title text-center text-2xl font-bold tracking-tight text-foreground select-none sm:text-3xl"
           >
-            AgentCabin, 我帮你
+            今天要让 Agent 做什么？
           </h1>
 
           <p
             class="work-home-subtitle mt-2 max-w-md text-center text-sm leading-6 text-muted-foreground"
           >
-            描述你想完成的事，我帮你拆解、执行并整理结果。
+            直接说出目标，我会处理过程并把结果交给你。
           </p>
-
-          <!-- Scene mode pills (WorkBuddy style) -->
-          <div
-            class="work-home-secondary-actions mt-3 flex flex-wrap items-center justify-center gap-2 animate-fade-in"
-            aria-hidden="true"
-          >
-            <button
-              type="button"
-              aria-pressed="true"
-              class="inline-flex items-center gap-1.5 rounded-full bg-foreground px-3.5 py-1 text-xs font-medium text-background shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <svg
-                class="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
-                <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
-                <line x1="6" y1="1" x2="6" y2="4" />
-                <line x1="10" y1="1" x2="10" y2="4" />
-                <line x1="14" y1="1" x2="14" y2="4" />
-              </svg>
-              日常办公
-            </button>
-            <button
-              type="button"
-              aria-pressed="false"
-              class="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-3.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onclick={() => goto("/chat/pi")}
-            >
-              <svg
-                class="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <polyline points="16 18 22 12 16 6" />
-                <polyline points="8 6 2 12 8 18" />
-              </svg>
-              代码开发
-            </button>
-            <button
-              type="button"
-              aria-pressed="false"
-              class="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-3.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onclick={() => applyTemplateToPrompt("请帮我进行一项创意思维发散与设计方案构想：")}
-            >
-              <svg
-                class="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-                <path d="M2 12h20" />
-              </svg>
-              设计创意
-            </button>
-          </div>
 
           <!-- Quick Starter Pills Bar (Above the composer, exactly like WorkBuddy) -->
           <div
             class="work-home-secondary-actions mt-6 flex w-full flex-wrap items-center justify-center gap-2 px-1"
-            aria-hidden="true"
           >
             <button
               type="button"
@@ -3229,7 +3152,9 @@
         {#if turnDeliveryMap.has(turn.id)}
           {@const delivery = turnDeliveryMap.get(turn.id)!}
           {@const isHistoricalTurn = turnIdx < presentationTurns.length - 1}
-          {@const isExpanded = expandedDeliveryTurns[turn.id] ?? !isHistoricalTurn}
+          {@const isExpanded =
+            expandedDeliveryTurns[turn.id] ??
+            (!isHistoricalTurn && delivery.presentation.outcome !== "completed")}
           <div class="chat-content-width pt-3 pb-1">
             {#if isExpanded}
               <div class="space-y-2">
@@ -3254,6 +3179,7 @@
               <WorkDeliverySummaryBar
                 presentation={delivery.presentation}
                 primaryArtifact={delivery.primaryArtifact}
+                artifacts={delivery.artifacts}
                 artifactCount={delivery.artifacts.length}
                 onPreview={handlePreviewArtifact}
                 isExpanded={false}
