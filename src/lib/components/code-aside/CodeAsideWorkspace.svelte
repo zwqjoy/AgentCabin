@@ -17,6 +17,7 @@
     turnDiff?: string;
     requestedTab?: CodeAsideTabType | null;
     requestedFilePath?: string | null;
+    requestedReviewFilePath?: string | null;
   }
 
   let {
@@ -27,6 +28,7 @@
     turnDiff = "",
     requestedTab = null,
     requestedFilePath = null,
+    requestedReviewFilePath = null,
   }: Props = $props();
 
   // ── Tab Management ──
@@ -45,7 +47,10 @@
   $effect(() => {
     const tab = requestedTab;
     const path = requestedFilePath;
-    if (!tab) return;
+    if (!tab) {
+      lastHandledRequest = "";
+      return;
+    }
     const reqKey = `${tab}:${path || ""}`;
     if (reqKey !== lastHandledRequest) {
       lastHandledRequest = reqKey;
@@ -308,6 +313,7 @@
     {:else if activeTab.type === "review"}
       <CodeAsideReviewView
         diffText={activeTab.turnDiff || turnDiff}
+        requestedFilePath={requestedReviewFilePath}
         bind:showFileTree
         onToggleFileTree={() => (showFileTree = !showFileTree)}
       />

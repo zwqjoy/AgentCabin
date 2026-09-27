@@ -51,8 +51,12 @@ marked.use({
         }
       },
       renderer(token: any) {
-        const p = escapeHtml(token.path || "");
-        return `<code class="file-path-link" data-file-path="${p}" role="button" tabindex="0" title="点击打开文件: ${p}"><span class="file-icon" aria-hidden="true">📄</span>${p}</code>`;
+        const rawPath = token.path || "";
+        const p = escapeHtml(rawPath);
+        const name = escapeHtml(
+          rawPath.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) || rawPath,
+        );
+        return `<code class="file-path-link" data-file-path="${p}" role="button" tabindex="0" title="点击打开文件: ${name}"><span class="file-icon" aria-hidden="true">📄</span>${name}</code>`;
       },
     },
   ],
@@ -108,8 +112,12 @@ marked.use({
     },
     codespan(token: { text: string }) {
       if (isFilePath(token.text)) {
-        const p = escapeHtml(token.text.trim());
-        return `<code class="file-path-link" data-file-path="${p}" role="button" tabindex="0" title="点击打开文件: ${p}"><span class="file-icon" aria-hidden="true">📄</span>${p}</code>`;
+        const rawPath = token.text.trim();
+        const p = escapeHtml(rawPath);
+        const name = escapeHtml(
+          rawPath.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) || rawPath,
+        );
+        return `<code class="file-path-link" data-file-path="${p}" role="button" tabindex="0" title="点击打开文件: ${name}"><span class="file-icon" aria-hidden="true">📄</span>${name}</code>`;
       }
       return `<code>${escapeHtml(token.text)}</code>`;
     },
@@ -118,8 +126,13 @@ marked.use({
       const href = token.href || "";
       const titleAttr = token.title ? ` title="${escapeHtml(token.title)}"` : "";
       if (isFilePath(href) || isFilePath(token.text)) {
-        const p = escapeHtml((isFilePath(href) ? href : token.text).trim());
-        return `<a href="${escapeHtml(href)}" class="file-path-link" data-file-path="${p}" role="button" tabindex="0"${titleAttr || ` title="点击打开文件: ${p}"`}><span class="file-icon" aria-hidden="true">📄</span>${content}</a>`;
+        const rawPath = (isFilePath(href) ? href : token.text).trim();
+        const p = escapeHtml(rawPath);
+        const name = escapeHtml(
+          rawPath.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) || rawPath,
+        );
+        const display = isFilePath(token.text) ? name : content;
+        return `<a href="${escapeHtml(href)}" class="file-path-link" data-file-path="${p}" role="button" tabindex="0" title="点击打开文件: ${name}"><span class="file-icon" aria-hidden="true">📄</span>${display}</a>`;
       }
       const target =
         href.startsWith("http://") || href.startsWith("https://")

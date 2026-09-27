@@ -64,7 +64,8 @@
   // The default surface is the goal, approval, and result. Progress, run, and
   // artifact details stay in the adjacent task panel while a run is active.
   let showConversationInspector = $state(false);
-  let conversationInspectorTab = $state<"tasks" | "browser">("tasks");
+  let conversationInspectorTab = $state<"tasks" | "browser" | "files">("tasks");
+  let conversationInspectorFile = $state("");
   let browserActivityRunId = $state("");
   let browserAutoOpenedRunId = $state("");
 
@@ -387,11 +388,20 @@
         adoptedRunScope = `${detail.workspaceId ?? ""}:${detail.run.id}`;
       }
     };
+    const onOpenWorkFile = (event: Event) => {
+      const path = (event as CustomEvent<{ path?: string }>).detail?.path;
+      if (!path) return;
+      conversationInspectorFile = path;
+      conversationInspectorTab = "files";
+      showConversationInspector = true;
+    };
     window.addEventListener("agentcabin:workspaces-changed", onChanged);
     window.addEventListener("agentcabin:work-sessions-changed", onSessionStarted);
+    window.addEventListener("agentcabin:work-open-file", onOpenWorkFile);
     return () => {
       window.removeEventListener("agentcabin:workspaces-changed", onChanged);
       window.removeEventListener("agentcabin:work-sessions-changed", onSessionStarted);
+      window.removeEventListener("agentcabin:work-open-file", onOpenWorkFile);
     };
   });
 
@@ -566,6 +576,8 @@
               onClose={() => (showConversationInspector = false)}
               onRequestOpenBrowser={() => (showConversationInspector = true)}
               bind:activeTab={conversationInspectorTab}
+              selectedFilePath={conversationInspectorFile}
+              onClearFile={() => (conversationInspectorFile = "")}
               {browserActivitySeen}
               {sessionInfo}
               {progress}
@@ -727,6 +739,8 @@
                 onClose={() => (showConversationInspector = false)}
                 onRequestOpenBrowser={() => (showConversationInspector = true)}
                 bind:activeTab={conversationInspectorTab}
+                selectedFilePath={conversationInspectorFile}
+                onClearFile={() => (conversationInspectorFile = "")}
                 {browserActivitySeen}
                 {sessionInfo}
                 {progress}

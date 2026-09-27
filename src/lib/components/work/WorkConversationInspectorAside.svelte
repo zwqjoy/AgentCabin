@@ -11,10 +11,11 @@
     WorkRunRecovery,
   } from "$lib/types/work";
   import WorkConversationInspector from "./WorkConversationInspector.svelte";
+  import FilePreviewPane from "$lib/components/FilePreviewPane.svelte";
   import BrowserInspector from "$lib/components/browser/BrowserInspector.svelte";
   import { isBrowserToolName } from "$lib/utils/work-browser";
 
-  type WorkAsideTab = "tasks" | "browser";
+  type WorkAsideTab = "tasks" | "browser" | "files";
 
   interface Props {
     open: boolean;
@@ -30,6 +31,8 @@
     artifacts: WorkArtifactSummary[];
     pendingInteractions?: InboxItem[];
     workspaceRoot?: string;
+    selectedFilePath?: string;
+    onClearFile?: () => void;
     primaryWorkRoot?: string;
     artifactStorageMode?: WorkArtifactStorageMode;
     onExportArtifact: (id: string) => Promise<void>;
@@ -58,6 +61,8 @@
     artifacts,
     pendingInteractions = [],
     workspaceRoot = "",
+    selectedFilePath = "",
+    onClearFile,
     primaryWorkRoot = "",
     artifactStorageMode = "managed",
     onExportArtifact,
@@ -280,6 +285,16 @@
       </button>
       <button
         type="button"
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors {activeTab ===
+        'files'
+          ? 'bg-background text-foreground shadow-xs'
+          : 'text-muted-foreground hover:text-foreground'}"
+        onclick={() => (activeTab = "files")}
+      >
+        <span>文件</span>
+      </button>
+      <button
+        type="button"
         class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors relative {activeTab ===
         'browser'
           ? 'bg-background text-foreground shadow-xs'
@@ -381,6 +396,53 @@
           {getReceipt}
         />
       </div>
+    {/if}
+    {#if activeTab === "files"}
+      {#if selectedFilePath}
+        <div class="flex h-full min-h-0 flex-col">
+          <div
+            class="flex h-9 shrink-0 items-center justify-between border-b border-border/60 px-3"
+          >
+            <span class="truncate text-xs font-medium">
+              {selectedFilePath.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ||
+                selectedFilePath}
+            </span>
+            <button
+              type="button"
+              class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="关闭文件预览"
+              title="关闭文件预览"
+              onclick={() => onClearFile?.()}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                class="h-3.5 w-3.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="min-h-0 flex-1">
+            <FilePreviewPane
+              cwd={workspaceRoot}
+              path={selectedFilePath}
+              editable={false}
+              showFullPath={false}
+              active={open && activeTab === "files"}
+              scopeKey={workspaceRoot}
+            />
+          </div>
+        </div>
+      {:else}
+        <div
+          class="flex h-full items-center justify-center px-6 text-center text-xs text-muted-foreground"
+        >
+          点击变更文件即可在这里预览。
+        </div>
+      {/if}
     {/if}
     <div
       class="absolute inset-0 overflow-hidden {open && activeTab === 'browser'

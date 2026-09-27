@@ -5,11 +5,17 @@
 
   interface Props {
     diffText: string;
+    requestedFilePath?: string | null;
     showFileTree?: boolean;
     onToggleFileTree?: () => void;
   }
 
-  let { diffText, showFileTree = $bindable(true), onToggleFileTree }: Props = $props();
+  let {
+    diffText,
+    requestedFilePath = null,
+    showFileTree = $bindable(true),
+    onToggleFileTree,
+  }: Props = $props();
 
   let selectedPath = $state("");
   let filter = $state("");
@@ -27,6 +33,18 @@
     if (!files.some((file) => file.path === selectedPath)) {
       selectedPath = files[0]?.path ?? "";
     }
+  });
+
+  $effect(() => {
+    const requested = requestedFilePath?.replaceAll("\\", "/");
+    if (!requested) return;
+    const requestedName = requested.split("/").filter(Boolean).at(-1);
+    const match = files.find(
+      (file) =>
+        file.path.replaceAll("\\", "/") === requested ||
+        file.path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) === requestedName,
+    );
+    if (match) selectedPath = match.path;
   });
 
   function cellTone(row: TurnReviewRow, side: "old" | "new"): string {

@@ -13,9 +13,10 @@
     /** Current-turn file changes shown from the trailing hotspot. */
     changeSummary?: UnifiedDiffSummary | null;
     onViewDiff?: () => void;
+    onOpenFile?: (path: string) => void;
   };
 
-  let { tasks, piTodoState = null, changeSummary = null, onViewDiff }: Props = $props();
+  let { tasks, piTodoState = null, changeSummary = null, onViewDiff, onOpenFile }: Props = $props();
 
   let todoPinned = $state(false);
   let changesPinned = $state(false);
@@ -77,6 +78,10 @@
   function viewDiff() {
     changesPinned = false;
     onViewDiff?.();
+  }
+
+  function fileName(path: string): string {
+    return path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || path;
   }
 
   $effect(() => {
@@ -224,9 +229,17 @@
 
               <div class="max-h-[min(22rem,60vh)] overflow-y-auto py-1">
                 {#each changeFiles as file (file.path)}
-                  <div
-                    class="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-accent/50"
-                    title={file.path}
+                  <button
+                    type="button"
+                    class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-accent/50"
+                    title={fileName(file.path)}
+                    aria-label="打开 {fileName(file.path)} 的 diff"
+                    onclick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      changesPinned = false;
+                      onOpenFile?.(file.path);
+                    }}
                   >
                     <svg
                       class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
@@ -241,7 +254,9 @@
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                       <path d="M14 2v6h6M8 13h8M8 17h6" />
                     </svg>
-                    <span class="min-w-0 flex-1 truncate font-mono text-[11px]">{file.path}</span>
+                    <span class="min-w-0 flex-1 truncate font-mono text-[11px]"
+                      >{fileName(file.path)}</span
+                    >
                     <span
                       class="shrink-0 font-mono text-[11px] tabular-nums text-emerald-600 dark:text-emerald-400"
                       >+{file.insertions}</span
@@ -250,7 +265,7 @@
                       class="shrink-0 font-mono text-[11px] tabular-nums text-red-500 dark:text-red-400"
                       >-{file.deletions}</span
                     >
-                  </div>
+                  </button>
                 {/each}
               </div>
 

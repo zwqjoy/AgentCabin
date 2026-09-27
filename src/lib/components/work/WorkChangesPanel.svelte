@@ -24,6 +24,14 @@
   const kindOrder: WorkFileChangeKind[] = ["created", "modified", "deleted"];
 
   let showInput = $state(false);
+
+  function openFile(path: string) {
+    window.dispatchEvent(new CustomEvent("agentcabin:work-open-file", { detail: { path } }));
+  }
+
+  function displayName(path: string) {
+    return path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || path;
+  }
 </script>
 
 <div class="space-y-2">
@@ -51,12 +59,15 @@
             {#if change.changeKind === "created"}+{:else if change.changeKind === "deleted"}−{:else}~{/if}
             <span class="sr-only">{kindMeta[change.changeKind].label}</span>
           </span>
-          <span
-            class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground"
-            title={change.path}
+          <button
+            type="button"
+            class="min-w-0 flex-1 truncate text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+            title={displayName(change.path)}
+            aria-label="预览文件 {displayName(change.path)}"
+            onclick={() => openFile(change.path)}
           >
-            {change.path}
-          </span>
+            {displayName(change.path)}
+          </button>
         </li>
       {/each}
     </ul>
@@ -80,9 +91,9 @@
             <li>
               <span
                 class="block truncate rounded px-2 py-1 font-mono text-[10px] text-muted-foreground"
-                title={file}
+                title={displayName(file)}
               >
-                {file}
+                {displayName(file)}
               </span>
             </li>
           {/each}

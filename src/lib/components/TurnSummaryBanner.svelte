@@ -4,13 +4,14 @@
 
   type Props = {
     summary: UnifiedDiffSummary;
+    onOpenFile?: (path: string) => void;
     onUndo?: () => void;
     onReview?: () => void;
     onDismiss?: () => void;
     undoBusy?: boolean;
   };
 
-  let { summary, onUndo, onReview, onDismiss, undoBusy = false }: Props = $props();
+  let { summary, onOpenFile, onUndo, onReview, onDismiss, undoBusy = false }: Props = $props();
 
   let expanded = $state(false);
 
@@ -23,6 +24,10 @@
       ? t("turnSummary_editedFile", { count: "1" })
       : t("turnSummary_editedFiles", { count: String(summary.files.length) }),
   );
+
+  function displayName(path: string): string {
+    return path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || path;
+  }
 </script>
 
 <div
@@ -131,11 +136,20 @@
       {#each visibleFiles as file (file.path)}
         <div
           class="flex min-h-11 items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted/25 sm:px-5"
-          title={file.path}
         >
-          <span class="min-w-0 flex-1 truncate text-foreground/80">
-            {file.path}
-          </span>
+          <button
+            type="button"
+            class="min-w-0 flex-1 cursor-pointer truncate text-left text-foreground/80 hover:text-foreground hover:underline"
+            title={displayName(file.path)}
+            aria-label="预览文件 {displayName(file.path)}"
+            onclick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenFile?.(file.path);
+            }}
+          >
+            {displayName(file.path)}
+          </button>
           <span
             class="shrink-0 font-mono text-sm tabular-nums text-emerald-600 dark:text-emerald-400"
           >

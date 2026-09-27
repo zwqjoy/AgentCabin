@@ -573,6 +573,7 @@
   let codeAsideOpen = $state(false);
   let codeAsideRequestedTab = $state<CodeAsideTabType | null>(null);
   let codeAsideRequestedPath = $state<string | null>(null);
+  let codeAsideRequestedReviewFilePath = $state<string | null>(null);
   let browserAutoOpenedRunId = $state("");
   let turnSummaryRunId = "";
 
@@ -580,6 +581,7 @@
     if (!filePath) return;
     codeAsideRequestedTab = null;
     codeAsideRequestedPath = null;
+    codeAsideRequestedReviewFilePath = null;
     requestAnimationFrame(() => {
       codeAsideRequestedTab = "file";
       codeAsideRequestedPath = filePath;
@@ -1203,9 +1205,51 @@
   function reviewTurnChanges(entry: TurnSummaryEntry) {
     if (!entry.diff.trim()) return;
     turnReviewDiff = entry.diff;
+    codeAsideRequestedReviewFilePath = null;
     codeAsideRequestedTab = "review";
     setCodeAsideOpen(true);
     turnReviewOpen = false;
+  }
+
+  function openDiffFileReview(diff: string, cwd: string, filePath: string) {
+    if (!diff.trim() || !filePath) return;
+    const normalize = (path: string) => path.replaceAll("\\", "/").replace(/\/$/, "");
+    const path = normalize(filePath);
+    const root = normalize(cwd);
+    const relativePath = root && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
+    const baseName = relativePath.split("/").filter(Boolean).at(-1);
+    const changedFile = parseUnifiedDiffStats(diff).files.find(
+      (file) =>
+        normalize(file.path) === relativePath ||
+        normalize(file.path).split("/").filter(Boolean).at(-1) === baseName,
+    );
+
+    turnReviewDiff = diff;
+    codeAsideRequestedTab = null;
+    codeAsideRequestedPath = null;
+    codeAsideRequestedReviewFilePath = null;
+    requestAnimationFrame(() => {
+      codeAsideRequestedReviewFilePath = changedFile?.path ?? relativePath;
+      codeAsideRequestedTab = "review";
+      setCodeAsideOpen(true);
+    });
+    turnReviewOpen = false;
+  }
+
+  function openTurnFileReview(entry: TurnSummaryEntry, filePath: string) {
+    openDiffFileReview(entry.diff, entry.cwd, filePath);
+  }
+
+  function openCurrentTurnFile(filePath: string) {
+    if (effectiveTurnDiff.trim()) {
+      openDiffFileReview(
+        effectiveTurnDiff,
+        store.effectiveCwd || getProjectCwdForEditor(),
+        filePath,
+      );
+    } else {
+      openFileInCodeAside(filePath);
+    }
   }
 
   function dismissTurnSummary(id: string) {
@@ -7797,6 +7841,11 @@
                       <div class="w-full py-3">
                         <TurnSummaryBanner
                           {summary}
+                          onOpenFile={(path) =>
+                            openTurnFileReview(
+                              { ...turn.turnSummary!, kind: "turn_summary" },
+                              path,
+                            )}
                           onUndo={undoneTurnSummaryIds.has(turn.turnSummary.id)
                             ? undefined
                             : () =>
@@ -8218,6 +8267,7 @@
         tasks={store.todoPanelVisible ? store.panelTasks : []}
         piTodoState={store.todoPanelVisible && effectiveAgent === "pi" ? store.piTodoState : null}
         changeSummary={turnChanges}
+        onOpenFile={openCurrentTurnFile}
         onViewDiff={effectiveTurnDiff.trim()
           ? () => {
               dbg("chat", "turn diff open", { len: effectiveTurnDiff.length });
@@ -8522,6 +8572,7 @@
     turnDiff={turnReviewDiff || effectiveTurnDiff}
     requestedTab={codeAsideRequestedTab}
     requestedFilePath={codeAsideRequestedPath}
+    requestedReviewFilePath={codeAsideRequestedReviewFilePath}
   />
 
   <!-- Tool Activity sidebar -->

@@ -14,6 +14,7 @@
     path,
     mode = "preview",
     editable = false,
+    showFullPath = true,
     isRemote = false,
     scopeKey = "",
     active = true,
@@ -29,6 +30,7 @@
     path: string;
     mode?: "preview" | "diff";
     editable?: boolean;
+    showFullPath?: boolean;
     isRemote?: boolean;
     scopeKey?: string;
     /** When false (parent tab inactive), do NOT initiate new loads; existing content is preserved. */
@@ -325,7 +327,9 @@
         <span class="h-2 w-2 rounded-full bg-amber-400 shrink-0" title={t("explorer_modified")}
         ></span>
       {/if}
-      <span class="text-[11px] text-muted-foreground truncate flex-1 min-w-0">{path}</span>
+      {#if showFullPath}
+        <span class="text-[11px] text-muted-foreground truncate flex-1 min-w-0">{path}</span>
+      {/if}
       {#if kind === "markdown"}
         <div class="flex rounded-md border bg-background p-0.5 shrink-0">
           <button
@@ -444,7 +448,9 @@
           >
         </button>
       {/if}
-      <span class="text-sm font-medium text-foreground flex-1 min-w-0 truncate">{path}</span>
+      <span class="text-sm font-medium text-foreground flex-1 min-w-0 truncate"
+        >{showFullPath ? path : displayName}</span
+      >
       <div class="ml-auto flex items-center gap-0.5 shrink-0">
         {#if onToggleMaximize}
           <button

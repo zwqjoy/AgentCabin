@@ -28,6 +28,10 @@
     onViewDiff?.();
   }
 
+  function fileName(path: string): string {
+    return path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || path;
+  }
+
   onMount(() => {
     function onDocumentPointerDown(event: MouseEvent) {
       if (open && wrapperEl && !wrapperEl.contains(event.target as Node)) open = false;
@@ -121,7 +125,7 @@
         {#each summary.files as file (file.path)}
           <div
             class="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-accent/50"
-            title={file.path}
+            title={fileName(file.path)}
           >
             <svg
               class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
@@ -136,7 +140,7 @@
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <path d="M14 2v6h6M8 13h8M8 17h6" />
             </svg>
-            <span class="min-w-0 flex-1 truncate font-mono text-[11px]">{file.path}</span>
+            <span class="min-w-0 flex-1 truncate font-mono text-[11px]">{fileName(file.path)}</span>
             <span
               class="shrink-0 font-mono text-[11px] tabular-nums text-emerald-600 dark:text-emerald-400"
               >+{file.insertions}</span
