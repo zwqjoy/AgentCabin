@@ -426,7 +426,7 @@
       label: () => t("prompt_permAutoAllLabel"),
       shortLabel: () => t("prompt_permAutoAllShort"),
       description: () => t("prompt_permAutoAllDesc"),
-      cls: "text-muted-foreground hover:text-foreground",
+      cls: "text-orange-500 hover:text-orange-600",
       dotCls: "bg-muted-foreground/40",
       borderCls: "",
     },
@@ -552,6 +552,16 @@
     disabled?: boolean;
   }
 
+  type PermissionIconKind = "ask" | "auto" | "full-access" | "custom";
+
+  function permissionIconKind(value: string, label = ""): PermissionIconKind {
+    const normalized = `${value} ${label}`.toLowerCase();
+    if (/custom|config|自定义/.test(normalized)) return "custom";
+    if (/bypass|full.?access|完全访问|免审/.test(normalized)) return "full-access";
+    if (/accept|auto|编辑|自动/.test(normalized)) return "auto";
+    return "ask";
+  }
+
   let permissionSelectorAvailable = $derived(
     !!permissionPicker || (agent === "pi" && !!piPermission) || !!onPermissionModeChange,
   );
@@ -591,6 +601,13 @@
   );
   let permissionSelectorActiveOption = $derived(
     permissionSelectorOptions.find((option) => option.value === permissionSelectorValue),
+  );
+  let permissionSelectorIcon = $derived(
+    permissionIconKind(permissionSelectorValue, permissionSelectorActiveOption?.label),
+  );
+  let permissionSelectorIconClass = $derived(
+    permissionSelectorActiveOption?.cls ||
+      (permissionSelectorIcon === "full-access" ? "text-orange-500" : "text-current"),
   );
   let permissionSelectorBusy = $derived(
     permissionPicker
@@ -3573,17 +3590,31 @@
             aria-label={permissionSelectorTitle}
           >
             <svg
-              class="h-3 w-3"
+              class="h-4 w-4 shrink-0 {permissionSelectorIconClass}"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
+              aria-hidden="true"
             >
-              <path
-                d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
-              />
+              {#if permissionSelectorIcon === "ask"}
+                <path
+                  d="M8 12V6a2 2 0 0 1 4 0v5-2a2 2 0 0 1 4 0v2-1a2 2 0 0 1 4 0v5c0 4-2.5 7-6 7h-1c-2 0-3.5-.8-5-2.5l-3-3.5a2 2 0 0 1 3-2Z"
+                />
+              {:else if permissionSelectorIcon === "auto"}
+                <rect x="3" y="4" width="18" height="16" rx="4" />
+                <path d="m8 9 3 3-3 3m6 0h3" />
+              {:else if permissionSelectorIcon === "full-access"}
+                <path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" />
+                <path d="M12 8v4m0 4h.01" />
+              {:else}
+                <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
+                <path
+                  d="m19.4 15 .1.1a1.7 1.7 0 1 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 1 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 1 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 1 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 1 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"
+                />
+              {/if}
             </svg>
             <span class="composer-permission-trigger-label">{permissionSelectorLabel}</span>
             <svg
@@ -3883,6 +3914,7 @@
         {#each permissionSelectorOptions as option (option.value)}
           {@const selected = permissionSelectorValue === option.value}
           {@const optionDisabled = !!option.disabled || permissionSelectorDisabled}
+          {@const optionIcon = permissionIconKind(option.value, option.label)}
           <button
             role="menuitemradio"
             aria-checked={selected}
@@ -3893,21 +3925,50 @@
               {selected ? 'bg-accent font-medium' : ''}"
             onclick={() => selectPermissionOption(option.value)}
           >
+            <svg
+              class="h-4 w-4 shrink-0 {option.cls ||
+                (optionIcon === 'full-access' ? 'text-orange-500' : 'text-current')}"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              {#if optionIcon === "ask"}
+                <path
+                  d="M8 12V6a2 2 0 0 1 4 0v5-2a2 2 0 0 1 4 0v2-1a2 2 0 0 1 4 0v5c0 4-2.5 7-6 7h-1c-2 0-3.5-.8-5-2.5l-3-3.5a2 2 0 0 1 3-2Z"
+                />
+              {:else if optionIcon === "auto"}
+                <rect x="3" y="4" width="18" height="16" rx="4" />
+                <path d="m8 9 3 3-3 3m6 0h3" />
+              {:else if optionIcon === "full-access"}
+                <path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" />
+                <path d="M12 8v4m0 4h.01" />
+              {:else}
+                <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
+                <path
+                  d="m19.4 15 .1.1a1.7 1.7 0 1 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 1 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 1 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 1 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 1 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"
+                />
+              {/if}
+            </svg>
+            <span class="flex-1 min-w-0 text-left">
+              <span class="block shrink-0 {option.cls}">{option.label}</span>
+              <span class="block text-[10px] text-foreground/50 truncate">{option.description}</span
+              >
+            </span>
             {#if selected}
               <svg
-                class="h-3 w-3 text-primary shrink-0"
+                class="h-3.5 w-3.5 text-primary shrink-0"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="2"><path d="M20 6 9 17l-5-5" /></svg
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="m5 12 4 4L19 6" /></svg
               >
-            {:else}
-              <span class="w-3 shrink-0"></span>
             {/if}
-            <span class="shrink-0 {option.cls}">{option.label}</span>
-            <span class="flex-1 min-w-0 text-[10px] text-foreground/50 truncate"
-              >{option.description}</span
-            >
           </button>
         {/each}
       </div>
