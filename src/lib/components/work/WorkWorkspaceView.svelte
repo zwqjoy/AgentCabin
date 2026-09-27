@@ -7,7 +7,6 @@
   import type {
     WorkAccessRoot,
     WorkArtifactSummary,
-    WorkArtifactStorageMode,
     WorkFileSummary,
     WorkWorkspaceSummary,
   } from "$lib/types/work";
@@ -33,7 +32,6 @@
     onOpenArtifactDirectory?: () => Promise<void>;
     onOpenPrimaryFolder?: (path: string) => void;
     onRelinkPrimaryFolder?: () => void;
-    onSetArtifactStorageMode?: (mode: WorkArtifactStorageMode) => Promise<void>;
     onSaveOfficeArtifact?: (id: string, contentBase64: string) => Promise<void>;
     onNewConversation: () => void;
     onRenameWorkspace: (name: string) => Promise<void>;
@@ -60,7 +58,6 @@
     onOpenArtifactDirectory,
     onOpenPrimaryFolder,
     onRelinkPrimaryFolder,
-    onSetArtifactStorageMode,
     onSaveOfficeArtifact,
     onNewConversation,
     onRenameWorkspace,
@@ -331,11 +328,11 @@
             onRemove={onRemoveAccessRoot}
             onOpenFolder={onOpenPrimaryFolder}
             onRelinkFolder={onRelinkPrimaryFolder}
-            {onSetArtifactStorageMode}
           />
           <div class="border-t border-border/40 pt-6">
             <WorkInputPanel
               files={inputFiles}
+              localFolderInput={workspace.artifactStorageMode === "primary_work_root"}
               onImport={onImportInputFile}
               onOpen={onOpenWorkspaceFile}
               onRemove={onRemoveInputFile}

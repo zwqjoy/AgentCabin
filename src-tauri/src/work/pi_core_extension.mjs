@@ -992,7 +992,7 @@ function workProfileSkillRoots() {
 }
 
 function displayPath(target) {
-  return target.scope === "workspace" || target.scope === "managed_state" || target.scope === "primary_output"
+  return target.scope === "workspace" || target.scope === "managed_state" || target.scope === "primary_input" || target.scope === "primary_output"
     ? target.relative
     : target.absolute;
 }
@@ -2803,8 +2803,8 @@ export default function agentCabinWorkExtension(pi) {
     const artifactStorageMode = readArtifactStorageMode(managedStateRoot());
     const pathGuidance = isLocalFolderProject()
       ? artifactStorageMode === "primary_work_root"
-        ? " 当前是本地文件夹 Workspace 的直写成果模式：普通项目相对路径对应所选本地目录，output/ 也会直接写入所选本地目录的 output/；input/、scratch/、context/ 仍由 AgentCabin 托管。工具结果会返回 storage_scope 和 resolved_path。"
-        : " 当前是本地文件夹 Workspace 的托管成果模式：普通项目相对路径对应所选本地目录，但 input/、scratch/、output/、context/ 这些保留区对应 AgentCabin 托管状态，因此 output/foo 不等于本地目录/output/foo。验证 output/ 文件必须优先使用 work_read_file、work_list_files、work_validate_artifact 或 work_workspace_info，不要用相对 Shell 命令推断物理位置；工具结果会返回 storage_scope 和 resolved_path。"
+      ? " 当前是本地文件夹 Workspace：input/ 和 output/ 分别对应所选本地目录中的 input/、output/；input/ 只读。scratch/ 和 context/ 用于 Work 内部过程。工具结果会返回 storage_scope 和 resolved_path。"
+        : " 当前是本地文件夹 Workspace：input/ 对应所选本地目录的 input/，且只读；普通项目相对路径对应所选本地目录。成果保存在 Workspace 配置的 output/ 位置。验证 output/ 文件必须优先使用 work_read_file、work_list_files、work_validate_artifact 或 work_workspace_info，不要用相对 Shell 命令推断物理位置；工具结果会返回 storage_scope 和 resolved_path。"
       : " Work 的 input/、scratch/、output/、context/ 是当前任务的受控 Workspace 区域；验证文件优先使用 Work 文件/Artifact 工具，不要用 Shell 相对 cwd 推断受控 output/ 的物理位置。工具结果会返回 storage_scope 和 resolved_path。";
     const codingGuidance = fullAccessMode
       ? " For coding tasks, use work_read_file for context, work_edit_file for targeted changes, and work_write_file for complete file replacement. Pi-compatible names read, write, edit, and bash are also available as Work wrappers for skill and system-prompt compatibility. In the current FullAccess mode, file reads, edits, writes, and command working directories are not limited to the Workspace or its access-root flags; the bash wrapper defaults to the Workspace root (`.`), accepts an executable plus argv, or one heredoc for an approved script interpreter that Work materializes into scratch/, and never invokes a shell. A simple `&&` chain is split into separate argv executions and stops at the first failure; other shell operators, expansion, redirection, and escaping remain rejected. The isolated Work Profile skill tree remains a trusted read-only root for loaded skills and references."

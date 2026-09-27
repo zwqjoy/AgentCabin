@@ -97,9 +97,15 @@ impl WorkspaceManager {
             id,
             name,
             root: root.to_string_lossy().into_owned(),
-            input_dir: root.join("input").to_string_lossy().into_owned(),
+            input_dir: canonical_folder
+                .join("input")
+                .to_string_lossy()
+                .into_owned(),
             scratch_dir: root.join("scratch").to_string_lossy().into_owned(),
-            output_dir: root.join("output").to_string_lossy().into_owned(),
+            output_dir: canonical_folder
+                .join("output")
+                .to_string_lossy()
+                .into_owned(),
             context_dir: root.join("context").to_string_lossy().into_owned(),
             created_at: now.clone(),
             updated_at: now,
@@ -112,8 +118,15 @@ impl WorkspaceManager {
             root_kind: WorkRootKind::LocalFolder,
             primary_work_root: Some(folder_str),
             working_root_valid: Some(true),
-            artifact_storage_mode: WorkArtifactStorageMode::Managed,
+            // Folder-backed workspaces put generated deliverables beside the
+            // user's project by default. Work's internal state remains under
+            // the AgentCabin data root.
+            artifact_storage_mode: WorkArtifactStorageMode::PrimaryWorkRoot,
         };
+        fs::create_dir_all(canonical_folder.join("output"))
+            .map_err(|error| format!("无法创建本地 output 目录: {error}"))?;
+        fs::create_dir_all(canonical_folder.join("input"))
+            .map_err(|error| format!("无法创建本地 input 目录: {error}"))?;
         self.write_manifest(&workspace)?;
         Ok(workspace)
     }

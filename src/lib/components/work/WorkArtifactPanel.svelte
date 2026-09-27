@@ -179,16 +179,9 @@
         <p class="mt-1 text-xs leading-5 text-muted-foreground">
           Agent 生成的文件会集中显示在这里。可直接预览、导出或打开输出目录。
         </p>
-        {#if primaryWorkRoot}
+        {#if primaryWorkRoot && artifactStorageMode === "primary_work_root"}
           <p class="mt-1 text-[11px] leading-5 text-muted-foreground/80">
-            {#if artifactStorageMode === "primary_work_root"}
-              当前为直写模式，成果会直接保存到本地目录的 <code class="rounded bg-muted px-1"
-                >output/</code
-              >。
-            {:else}
-              当前成果先保存在 AgentCabin 托管的 <code class="rounded bg-muted px-1">output/</code
-              >；需要放回本地目录时，可对已交付成果执行“复制到本地目录”。
-            {/if}
+            成果保存在本地文件夹的 <code class="rounded bg-muted px-1">output/</code>。
           </p>
         {/if}
       </div>
@@ -216,16 +209,11 @@
     </div>
   {/if}
 
-  {#if !showHeader && primaryWorkRoot}
+  {#if !showHeader && primaryWorkRoot && artifactStorageMode === "primary_work_root"}
     <div
       class="mb-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-[11px] leading-5 text-muted-foreground"
     >
-      {#if artifactStorageMode === "primary_work_root"}
-        成果会直接写入本地工作目录的 <code class="rounded bg-muted px-1">output/</code>。
-      {:else}
-        成果当前保存在 AgentCabin 托管的 <code class="rounded bg-muted px-1">output/</code
-        >；已交付后可复制到本地目录。
-      {/if}
+      成果保存在本地文件夹的 <code class="rounded bg-muted px-1">output/</code>。
     </div>
   {/if}
 

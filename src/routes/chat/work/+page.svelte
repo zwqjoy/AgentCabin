@@ -27,7 +27,6 @@
   import type { SessionInfoData } from "$lib/types";
   import type {
     InboxItem,
-    WorkArtifactStorageMode,
     WorkAccessRoot,
     WorkProgressSnapshot,
     WorkRunProgressView,
@@ -170,9 +169,6 @@
   }
   async function copyArtifactToPrimary(artifactId: string): Promise<string> {
     return await controller.copyArtifactToPrimary(artifactId, selectedWorkspace?.rootKind ?? null);
-  }
-  async function updateArtifactStorageMode(mode: WorkArtifactStorageMode): Promise<void> {
-    await controller.updateArtifactStorageMode(mode);
   }
   async function openArtifact(artifactId: string) {
     await controller.openArtifact(artifactId);
@@ -612,7 +608,6 @@
               onRelinkPrimaryFolder={() => void relinkPrimaryFolder()}
               onExportArtifact={exportArtifact}
               onCopyArtifactToPrimary={copyArtifactToPrimary}
-              onSetArtifactStorageMode={updateArtifactStorageMode}
               onOpenArtifact={openArtifact}
               onDeleteArtifact={deleteArtifact}
               onValidateArtifact={validateArtifact}

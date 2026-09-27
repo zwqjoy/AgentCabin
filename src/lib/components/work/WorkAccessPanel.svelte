@@ -1,9 +1,5 @@
 <script lang="ts">
-  import type {
-    WorkAccessRoot,
-    WorkArtifactStorageMode,
-    WorkWorkspaceSummary,
-  } from "$lib/types/work";
+  import type { WorkAccessRoot, WorkWorkspaceSummary } from "$lib/types/work";
 
   interface Props {
     workspace: WorkWorkspaceSummary;
@@ -14,7 +10,6 @@
     onRemove: (root: WorkAccessRoot) => void;
     onOpenFolder?: (path: string) => void;
     onRelinkFolder?: () => void;
-    onSetArtifactStorageMode?: (mode: WorkArtifactStorageMode) => Promise<void>;
   }
 
   let {
@@ -26,7 +21,6 @@
     onRemove,
     onOpenFolder,
     onRelinkFolder,
-    onSetArtifactStorageMode,
   }: Props = $props();
 
   function folderName(path: string): string {
@@ -45,30 +39,6 @@
   );
   let workingFolderPath = $derived(isLocalFolder ? workspace.primaryWorkRoot! : workspace.root);
   let isWorkingFolderInvalid = $derived(workspace.workingRootValid === false);
-  let artifactStorageMode = $derived(workspace.artifactStorageMode ?? "managed");
-  let storageBusy = $state(false);
-  let storageError = $state("");
-
-  async function setArtifactStorageMode(mode: WorkArtifactStorageMode): Promise<void> {
-    if (
-      !onSetArtifactStorageMode ||
-      storageBusy ||
-      artifactStorageMode === mode ||
-      !isLocalFolder ||
-      isWorkingFolderInvalid
-    ) {
-      return;
-    }
-    storageBusy = true;
-    storageError = "";
-    try {
-      await onSetArtifactStorageMode(mode);
-    } catch (cause) {
-      storageError = cause instanceof Error ? cause.message : String(cause);
-    } finally {
-      storageBusy = false;
-    }
-  }
 </script>
 
 <div class="space-y-6">
@@ -246,81 +216,29 @@
           </svg>
         </span>
         <div class="min-w-0 flex-1">
-          <h3 class="text-sm font-semibold text-foreground">成果保存位置</h3>
+          <h3 class="text-sm font-semibold text-foreground">本地文件夹</h3>
           <p class="mt-0.5 text-[11px] leading-5 text-muted-foreground">
-            选择 AgentCabin 托管成果，或直接写入所选本地文件夹的 <code class="rounded bg-muted px-1"
-              >output/</code
-            >。
+            任务以此文件夹作为工作目录。
           </p>
         </div>
       </div>
 
-      <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="成果保存位置">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={artifactStorageMode === "managed"}
-          disabled={storageBusy || !onSetArtifactStorageMode}
-          class="rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 {artifactStorageMode ===
-          'managed'
-            ? 'border-blue-500/50 bg-blue-500/10'
-            : 'border-border/60 bg-card/60 hover:border-blue-500/30 hover:bg-accent/30'}"
-          onclick={() => void setArtifactStorageMode("managed")}
-        >
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-semibold text-foreground">AgentCabin 托管</span>
-            {#if artifactStorageMode === "managed"}
-              <span class="text-[10px] font-semibold text-blue-600 dark:text-blue-300">当前</span>
-            {/if}
+      <div class="grid gap-2 sm:grid-cols-2">
+        {#if workspace.artifactStorageMode === "primary_work_root"}
+          <div class="rounded-xl border border-border/60 bg-card/60 p-3">
+            <span class="text-xs font-semibold text-foreground">输入材料</span>
+            <p class="mt-1 text-[10px] leading-4 text-muted-foreground">
+              {shortPath(workingFolderPath)}/input/
+            </p>
           </div>
-          <p class="mt-1 text-[10px] leading-4 text-muted-foreground">
-            运行更隔离；需要时在成果面板复制到本地目录。
-          </p>
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={artifactStorageMode === "primary_work_root"}
-          disabled={storageBusy || !onSetArtifactStorageMode}
-          class="rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 {artifactStorageMode ===
-          'primary_work_root'
-            ? 'border-amber-500/50 bg-amber-500/10'
-            : 'border-border/60 bg-card/60 hover:border-amber-500/30 hover:bg-accent/30'}"
-          onclick={() => void setArtifactStorageMode("primary_work_root")}
-        >
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-semibold text-foreground">直接保存到本地目录</span>
-            {#if artifactStorageMode === "primary_work_root"}
-              <span class="text-[10px] font-semibold text-amber-600 dark:text-amber-300">当前</span>
-            {/if}
+          <div class="rounded-xl border border-border/60 bg-card/60 p-3">
+            <span class="text-xs font-semibold text-foreground">成果</span>
+            <p class="mt-1 text-[10px] leading-4 text-muted-foreground">
+              {shortPath(workingFolderPath)}/output/
+            </p>
           </div>
-          <p class="mt-1 text-[10px] leading-4 text-muted-foreground">
-            新成果直接出现在 <code class="rounded bg-muted px-1"
-              >{shortPath(workingFolderPath)}/output/</code
-            >。
-          </p>
-        </button>
+        {/if}
       </div>
-
-      {#if artifactStorageMode === "primary_work_root"}
-        <p
-          class="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:text-amber-300"
-        >
-          仅 <code class="rounded bg-background/60 px-1">output/</code> 改为直写；<code
-            class="rounded bg-background/60 px-1">input/</code
-          >、<code class="rounded bg-background/60 px-1">scratch/</code>、<code
-            class="rounded bg-background/60 px-1">context/</code
-          > 仍由 AgentCabin 托管。
-        </p>
-      {/if}
-      {#if storageError}
-        <p
-          class="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-[11px] text-red-600 dark:text-red-400"
-          role="alert"
-        >
-          {storageError}
-        </p>
-      {/if}
     </section>
   {/if}
 

@@ -381,20 +381,35 @@ impl WorkPaths {
         if storage_mode != "primary_work_root" {
             return Ok(None);
         }
+        self.primary_folder_root(workspace_id)?
+            .map(Some)
+            .ok_or_else(|| "直接保存成果要求 Workspace 关联本地文件夹".to_string())
+    }
+
+    /// Return the canonical local folder for a folder-backed Workspace.
+    fn primary_folder_root(&self, workspace_id: &str) -> Result<Option<PathBuf>, String> {
+        let manifest_path = self.manifest_path(workspace_id)?;
+        if !manifest_path.is_file() {
+            return Err("Workspace manifest is missing".into());
+        }
+        let content = fs::read_to_string(&manifest_path)
+            .map_err(|error| format!("Cannot read Workspace manifest: {error}"))?;
+        let manifest: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|error| format!("Invalid Workspace manifest: {error}"))?;
         if manifest
             .get("rootKind")
             .or_else(|| manifest.get("root_kind"))
             .and_then(|value| value.as_str())
             != Some("local_folder")
         {
-            return Err("直接保存成果要求 Workspace 关联本地文件夹".into());
+            return Ok(None);
         }
         let raw_root = manifest
             .get("primaryWorkRoot")
             .or_else(|| manifest.get("primary_work_root"))
             .and_then(|value| value.as_str())
             .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| "直接保存成果缺少本地工作目录".to_string())?;
+            .ok_or_else(|| "本地工作目录未配置".to_string())?;
         let root = PathBuf::from(raw_root);
         let metadata = fs::metadata(&root)
             .map_err(|error| format!("本地工作目录不可用 ({}): {error}", root.display()))?;
@@ -431,6 +446,14 @@ impl WorkPaths {
         }
         if writable && area == "input" {
             return Err("Workspace input is read-only".into());
+        }
+
+        if area == "input" {
+            if let Some(primary_root) = self.primary_output_root(workspace_id)? {
+                let candidate = primary_root.join(relative);
+                ensure_within(&primary_root, &candidate)?;
+                return Ok(candidate);
+            }
         }
 
         if area == "output" {

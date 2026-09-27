@@ -6,9 +6,10 @@
     onImport: (sourcePath: string) => Promise<void>;
     onOpen: (path: string) => Promise<void>;
     onRemove: (path: string) => Promise<void>;
+    localFolderInput?: boolean;
   }
 
-  let { files, onImport, onOpen, onRemove }: Props = $props();
+  let { files, onImport, onOpen, onRemove, localFolderInput = false }: Props = $props();
   let importing = $state(false);
   let openingPath = $state("");
   let removingPath = $state("");
@@ -96,9 +97,12 @@
         >
       </div>
       <p class="mt-1 text-xs leading-5 text-muted-foreground">
-        文件会在本机复制到当前工作空间的
-        input/（不是上传到云端），任务只能读取，原始文件不会被改写。PDF、Office
-        和其他文件可用系统默认应用预览。
+        {#if localFolderInput}
+          文件会在本机复制到本地文件夹的 input/，任务只能读取，原始文件不会被改写。
+        {:else}
+          文件会在本机复制到当前工作区的 input/，任务只能读取，原始文件不会被改写。
+        {/if}
+        PDF、Office 和其他文件可用系统默认应用预览。
       </p>
     </div>
     <button

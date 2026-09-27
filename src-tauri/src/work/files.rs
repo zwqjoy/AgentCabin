@@ -365,9 +365,8 @@ fn remove_input_file_with_paths(
 ) -> Result<(), String> {
     open_workspace(paths, workspace_id)?;
     let candidate = paths.resolve_workspace_path(workspace_id, Path::new(relative_path), false)?;
-    let workspace_root = fs::canonicalize(paths.workspace_dir(workspace_id)?)
-        .map_err(|error| format!("Cannot read Workspace root: {error}"))?;
-    let input_root = fs::canonicalize(workspace_root.join("input"))
+    let input_root = paths.resolve_workspace_path(workspace_id, Path::new("input"), false)?;
+    let input_root = fs::canonicalize(input_root)
         .map_err(|error| format!("Cannot read Workspace input directory: {error}"))?;
     let path = fs::canonicalize(&candidate)
         .map_err(|error| format!("Cannot read Workspace input file: {error}"))?;
@@ -525,8 +524,10 @@ pub fn import_with_paths(
     fs::copy(&source, &destination)
         .map_err(|error| format!("Failed to import input file: {error}"))?;
 
-    let workspace_root = paths.workspace_dir(workspace_id)?;
-    summary_for_path(&workspace_root, &destination)
+    let workspace = WorkspaceManager::new(paths.clone()).get(workspace_id)?;
+    let summary_root =
+        WorkspaceManager::new(paths.clone()).resolve_primary_work_root(&workspace)?;
+    summary_for_path(&summary_root, &destination)
 }
 
 fn open_workspace(paths: &WorkPaths, workspace_id: &str) -> Result<(), String> {

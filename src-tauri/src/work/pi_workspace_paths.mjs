@@ -176,6 +176,7 @@ export function normalizeWorkPath(
     artifactStorageMode || readArtifactStorageMode(managedCanonical),
   ).trim();
   const directOutput = isLocalFolderProject && storageMode === "primary_work_root";
+  const directInput = directOutput;
 
   let absolute;
   if (path.isAbsolute(raw) || /^[A-Za-z]:\//.test(raw)) {
@@ -189,9 +190,9 @@ export function normalizeWorkPath(
     if (isLocalFolderProject) {
       const firstSegment = normalized.split("/")[0];
       if (WORKSPACE_AREAS.has(firstSegment)) {
-        // input/, scratch/, and context/ stay managed. An explicit direct-save
-        // Workspace maps only output/ to the selected local project root.
-        absolute = directOutput && firstSegment === "output"
+        // Inputs are kept beside the user's project. Scratch and context stay
+        // private to Work; output follows the Workspace's selected mode.
+        absolute = (directInput && firstSegment === "input") || (directOutput && firstSegment === "output")
           ? path.resolve(root, normalized)
           : path.resolve(managedCanonical, normalized);
       } else {
@@ -227,6 +228,22 @@ export function normalizeWorkPath(
   }
 
   const resolved = realTarget(absolute);
+
+  if (directInput && isInside(root, resolved)) {
+    const relative = path.relative(root, resolved).split(path.sep).join("/");
+    if (relative === "input" || relative.startsWith("input/")) {
+      if (writable && !allowUnrestricted) {
+        throw new Error("Workspace input is read-only");
+      }
+      return {
+        scope: "primary_input",
+        root,
+        absolute: resolved,
+        relative,
+        area: "input",
+      };
+    }
+  }
 
   if (directOutput && isInside(root, resolved)) {
     const relative = path.relative(root, resolved).split(path.sep).join("/");

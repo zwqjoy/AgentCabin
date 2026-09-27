@@ -4,7 +4,6 @@ import {
   createWorkspaceFromFolder,
   relinkWorkspaceFolder,
   renameWorkspace,
-  setWorkArtifactStorageMode,
 } from "$lib/api/work";
 import { getTransport } from "$lib/transport";
 import { workWorkspaceStore } from "$lib/stores/work-workspace-store.svelte";
@@ -15,7 +14,6 @@ import { standaloneScope, workspaceScope, type WorkScope } from "$lib/work/work-
 import type {
   WorkAccessRoot,
   WorkArtifactSummary,
-  WorkArtifactStorageMode,
   WorkFileSummary,
   WorkProfile,
   WorkRecoveryAction,
@@ -373,26 +371,6 @@ export class WorkPageController {
   async openArtifactDirectory(): Promise<void> {
     if (this.isStandalone() && !this.input.conversationRunId) return;
     await workResources.openDirectory(this.scope(), this.input.conversationRunId, "output");
-  }
-
-  async updateArtifactStorageMode(mode: WorkArtifactStorageMode): Promise<void> {
-    if (!this.input.workspaceId) return;
-    if (mode === "primary_work_root") {
-      const { confirm } = await import("$lib/platform/dialog");
-      const ok = await confirm(
-        "启用后，新成果会直接写入所选本地文件夹的 output/。已有成果不会迁移。继续吗？",
-        { title: "直接保存成果", kind: "warning" },
-      );
-      if (!ok) return;
-    }
-    try {
-      const updated = await setWorkArtifactStorageMode(this.input.workspaceId, mode);
-      workWorkspaceStore.updateWorkspace(updated);
-      window.dispatchEvent(new CustomEvent("agentcabin:workspaces-changed"));
-    } catch (cause) {
-      this.error = cause instanceof Error ? cause.message : String(cause);
-      throw cause;
-    }
   }
 
   // ── Workspace files ────────────────────────────────────────────────────────
