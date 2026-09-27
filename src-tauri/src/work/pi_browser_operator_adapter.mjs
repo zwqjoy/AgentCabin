@@ -14,7 +14,17 @@ const NavigateSchema = Type.Object({
   wait_ms: Type.Optional(Type.Number({ description: "Optional extra wait time after DOM load (ms)." })),
 });
 
-const SnapshotSchema = Type.Object({});
+const SnapshotSchema = Type.Object({
+  sinceRevision: Type.Optional(Type.Number({ description: "Return only semantic changes since this page revision when available." })),
+});
+
+const LocatorSchema = Type.Object({
+  role: Type.Optional(Type.String()),
+  name: Type.Optional(Type.String()),
+  label: Type.Optional(Type.String()),
+  placeholder: Type.Optional(Type.String()),
+  text: Type.Optional(Type.String()),
+});
 
 const ScreenshotSchema = Type.Object({
   filename: Type.Optional(Type.String({ description: "Optional filename or relative path inside output/ (e.g. 'page.png'). If omitted, image base64 data is returned directly." })),
@@ -55,6 +65,7 @@ const CloseSchema = Type.Object({});
 const ClickSchema = Type.Object({
   ref: Type.Optional(Type.String({ description: "Semantic ref from browser_snapshot (e.g. 'e4'). Strongly recommended over CSS selector." })),
   target_label: Type.Optional(Type.String({ description: "Short accessible name copied from the latest browser_snapshot, used to show the human which element is being targeted." })),
+  locator: Type.Optional(LocatorSchema),
   selector: Type.Optional(Type.String({ description: "Optional CSS selector or visible text as fallback." })),
   button: Type.Optional(Type.Union([
     Type.Literal("left"),
@@ -69,6 +80,7 @@ const TypeSchema = Type.Object({
   target_label: Type.Optional(Type.String({ description: "Short accessible name copied from the latest browser_snapshot, used to show the human which field is being targeted." })),
   text: Type.String({ description: "Text content to type into the input field." }),
   selector: Type.Optional(Type.String({ description: "Optional CSS selector as fallback." })),
+  locator: Type.Optional(LocatorSchema),
   clear: Type.Optional(Type.Boolean({ description: "Whether to clear existing text before typing (default true)." })),
   press_enter: Type.Optional(Type.Boolean({ description: "Whether to press Enter key after typing (default false)." })),
 });
@@ -77,6 +89,7 @@ const SelectSchema = Type.Object({
   ref: Type.Optional(Type.String({ description: "Semantic ref of the <select> element from browser_snapshot." })),
   value: Type.String({ description: "Value or visible label of the option to select." }),
   selector: Type.Optional(Type.String({ description: "Optional CSS selector as fallback." })),
+  locator: Type.Optional(LocatorSchema),
 });
 
 const ScrollSchema = Type.Object({
@@ -88,6 +101,13 @@ const ScrollSchema = Type.Object({
   ], { description: "Direction to scroll (default 'down')." })),
   amount: Type.Optional(Type.Number({ description: "Pixels to scroll when scrolling up/down (default 500)." })),
   ref: Type.Optional(Type.String({ description: "Optional semantic ref of a specific scrollable container." })),
+});
+
+const PressKeySchema = Type.Object({
+  key: Type.String({ description: "Keyboard key to press, such as Enter, Escape, or Tab." }),
+  ref: Type.Optional(Type.String()),
+  locator: Type.Optional(LocatorSchema),
+  selector: Type.Optional(Type.String()),
 });
 
 function imageContent(details) {
@@ -131,11 +151,19 @@ function parseResultPayload(res) {
 }
 
 function formatPageObservation(payload) {
+  const observation = payload?.observation || payload;
   const lines = [];
-  if (payload?.url) lines.push(`URL: ${payload.url}`);
-  if (payload?.title) lines.push(`Title: ${payload.title}`);
-  if (payload?.tree) {
-    const tree = String(payload.tree);
+  const url = payload?.after?.url || observation?.url;
+  const title = observation?.title;
+  if (url) lines.push(`URL: ${url}`);
+  if (title) lines.push(`Title: ${title}`);
+  if (observation?.snapshotType === "delta") {
+    lines.push(`Changes: ${observation.added?.length || 0} added, ${observation.changed?.length || 0} changed, ${observation.removed?.length || 0} removed.`);
+    lines.push(JSON.stringify({ added: observation.added, changed: observation.changed, removed: observation.removed }));
+  } else if (observation?.snapshotType === "unchanged") {
+    lines.push(`Page unchanged at revision ${observation.revision}.`);
+  } else if (observation?.tree) {
+    const tree = String(observation.tree);
     const limit = 6000;
     const excerpt = tree.length > limit
       ? tree.slice(0, limit) + "\n[Snapshot excerpt truncated; call browser_snapshot for the full tree.]"
@@ -235,7 +263,12 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       );
       if (!res.success) return fail(res.stderr || res.error || "Snapshot failed", res);
       const parsed = parseResultPayload(res);
-      return result(`Page: ${parsed.title || "(untitled)"} (${parsed.url})\n\n${parsed.tree || "(empty)"}`, { ok: true, ...parsed }, supportsImages(ctx));
+      const text = parsed.snapshotType === "unchanged"
+        ? `Page unchanged at revision ${parsed.revision} (${parsed.url}).`
+        : parsed.snapshotType === "delta"
+          ? `Page changes at revision ${parsed.revision}: ${parsed.added?.length || 0} added, ${parsed.changed?.length || 0} changed, ${parsed.removed?.length || 0} removed.\n${JSON.stringify({ added: parsed.added, changed: parsed.changed, removed: parsed.removed })}`
+          : `Page: ${parsed.title || "(untitled)"} (${parsed.url})\n\n${parsed.tree || "(empty)"}`;
+      return result(text, { ok: true, ...parsed }, supportsImages(ctx));
     },
   });
 
@@ -271,7 +304,8 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       const res = await callOperationWithApproval(toolCallId, "browser_wait_for", "wait", params, signal);
       const parsed = parseResultPayload(res);
       if (!res.success) {
-        return fail(res.stderr || res.error || "Expected browser page condition was not met.", {
+        const currentUrl = parsed.after?.url || parsed.observation?.url || parsed.url || "page";
+        return fail(res.stderr || res.error || `Expected browser page condition was not met on ${currentUrl}.`, {
           ...res,
           ...parsed,
           ok: false,
@@ -281,14 +315,14 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       const verified = parsed.verified === true;
       if (parsed.timedOut) {
         return fail(
-          `Expected page condition was not met on ${parsed.url || "page"}: ${(parsed.failures || []).join("; ")}`,
+          `Expected page condition was not met on ${parsed.after?.url || parsed.observation?.url || parsed.url || "page"}: ${(parsed.failures || []).join("; ")}`,
           { ...parsed, ok: false, resultVerified: false },
         );
       }
       return result(
         verified
-          ? `Expected page condition verified on ${parsed.url || "page"}.`
-          : `Wait completed on ${parsed.url || "page"}; no expected page condition was checked.`,
+          ? `Expected page condition verified on ${parsed.after?.url || parsed.observation?.url || parsed.url || "page"}.`
+          : `Wait completed on ${parsed.after?.url || parsed.observation?.url || parsed.url || "page"}; no expected page condition was checked.`,
         { ok: true, ...parsed, resultVerified: verified },
       );
     },
@@ -333,8 +367,8 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     parameters: ClickSchema,
     async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_click", "click", params, signal);
-      if (!res.success) return fail(res.stderr || res.error || "Click failed", res);
       const parsed = parseResultPayload(res);
+      if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Click failed.", { ...res, ...parsed, ok: false });
       return result(`Click action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
     },
   });
@@ -347,8 +381,8 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     parameters: TypeSchema,
     async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_type", "type", params, signal);
-      if (!res.success) return fail(res.stderr || res.error || "Type failed", res);
       const parsed = parseResultPayload(res);
+      if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Type failed.", { ...res, ...parsed, ok: false });
       return result(`Text input action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
     },
   });
@@ -361,9 +395,8 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     parameters: SelectSchema,
     async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_select_option", "select", params, signal);
-      if (!res.success) return fail(res.stderr || res.error || "Select failed", res);
       const parsed = parseResultPayload(res);
-      if (parsed.selected !== true) {
+      if (!res.success || parsed.ok === false || parsed.execution?.selected !== true) {
         return fail("The browser did not confirm the requested dropdown option.", {
           ...res,
           ...parsed,
@@ -373,8 +406,10 @@ export function registerBrowserOperatorTools(pi, options = {}) {
         });
       }
       const target = params?.ref ? "[ref=" + params.ref + "]" : params?.selector;
+      const selectedLabel = parsed.execution?.selectedLabel || params?.value;
+      const selectedValue = parsed.execution?.selectedValue || params?.value;
       return result(
-        "Selected dropdown option “" + (parsed.selectedLabel || params?.value) + "” (value=" + parsed.selectedValue + ") in " + target + "." + formatPageObservation(parsed),
+        "Selected dropdown option “" + selectedLabel + "” (value=" + selectedValue + ") in " + (target || "the semantic target") + "." + formatPageObservation(parsed),
         { ok: true, ...parsed, actionExecuted: true, selectionVerified: true, resultVerified: false },
       );
     },
@@ -388,9 +423,22 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     parameters: ScrollSchema,
     async execute(toolCallId, params, signal) {
       const res = await callOperationWithApproval(toolCallId, "browser_scroll", "scroll", params, signal);
-      if (!res.success) return fail(res.stderr || res.error || "Scroll failed", res);
       const parsed = parseResultPayload(res);
+      if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Scroll failed.", { ...res, ...parsed, ok: false });
       return result(`Scrolled ${params?.direction || "down"}.${formatPageObservation(parsed)}`, { ok: true, ...parsed });
+    },
+  });
+
+  registerTool({
+    name: "browser_press_key",
+    label: "browser_press_key",
+    description: "Press a keyboard key, optionally focusing a page element by ref or semantic locator first.",
+    parameters: PressKeySchema,
+    async execute(toolCallId, params, signal) {
+      const res = await callOperationWithApproval(toolCallId, "browser_press_key", "press_key", params, signal);
+      const parsed = parseResultPayload(res);
+      if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Key press failed.", { ...res, ...parsed, ok: false });
+      return result(`Pressed ${params.key}.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
     },
   });
 }

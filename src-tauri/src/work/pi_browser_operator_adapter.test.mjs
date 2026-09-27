@@ -36,7 +36,7 @@ async function loadAdapter(tempRoot) {
   return import(`${pathToFileURL(path.join(extensionDir, "adapter.mjs"))}?test=${Date.now()}`);
 }
 
-test("pi_browser_operator_adapter registers all 10 tools and executes through ToolPipeline", async (t) => {
+test("pi_browser_operator_adapter registers Browser Operator tools and executes through ToolPipeline", async (t) => {
   const tempDir = fs.mkdtempSync(
     path.join(fs.realpathSync(path.resolve(".")), ".tmp_test_browser_"),
   );
@@ -79,31 +79,34 @@ test("pi_browser_operator_adapter registers all 10 tools and executes through To
         return {
           success: true,
           stdout: JSON.stringify({
-            ref: args.ref,
-            button: "left",
-            url: "https://example.com/after-click",
-            title: "Submitted",
-            tree: '[ref=e1] heading "Submitted"',
-            screenshot: "data:image/png;base64,aGVsbG8=",
+            ok: true,
+            action: "click",
+            target: { ref: args.ref, role: "button", name: "Submit" },
+            before: { revision: 1, url: "https://example.com" },
+            execution: { performed: true },
+            after: { revision: 2, url: "https://example.com/after-click" },
+            observation: {
+              snapshotType: "delta",
+              revision: 2,
+              title: "Submitted",
+              url: "https://example.com/after-click",
+              added: [{ ref: "e4", role: "status", name: "Submitted" }],
+              changed: [],
+              removed: [],
+            },
           }),
         };
       }
       if (toolName === "browser_type") {
         return {
           success: true,
-          stdout: JSON.stringify({
-            ref: args.ref,
-            textLength: args.text.length,
-          }),
+          stdout: JSON.stringify({ ok: true, action: "type", execution: { performed: true }, observation: { snapshotType: "unchanged", revision: 3, url: "https://example.com" } }),
         };
       }
       if (toolName === "browser_select_option") {
         return {
           success: true,
-          stdout: JSON.stringify({
-            ref: args.ref,
-            selected: [args.value],
-          }),
+          stdout: JSON.stringify({ ok: true, action: "select_option", execution: { performed: true, selected: true, selectedValue: args.value, selectedLabel: "Option" }, observation: { snapshotType: "unchanged", revision: 3, url: "https://example.com" } }),
         };
       }
       if (toolName === "browser_scroll") {
@@ -140,7 +143,7 @@ test("pi_browser_operator_adapter registers all 10 tools and executes through To
       callToolPipeline: mockCallToolPipeline,
     });
 
-    // 1. Check all 10 tools are registered
+    // 1. Check the Browser Operator tools are registered
     assert.equal(registeredTools.has("browser_navigate"), true);
     assert.equal(registeredTools.has("browser_snapshot"), true);
     assert.equal(registeredTools.has("browser_take_screenshot"), true);
@@ -151,6 +154,7 @@ test("pi_browser_operator_adapter registers all 10 tools and executes through To
     assert.equal(registeredTools.has("browser_type"), true);
     assert.equal(registeredTools.has("browser_select_option"), true);
     assert.equal(registeredTools.has("browser_scroll"), true);
+    assert.equal(registeredTools.has("browser_press_key"), true);
 
     // 2. Test navigate execution
     const nav = registeredTools.get("browser_navigate");
@@ -171,21 +175,17 @@ test("pi_browser_operator_adapter registers all 10 tools and executes through To
     assert.equal(executedToolName, "browser_click");
     assert.equal(executedArgs.ref, "e3");
     assert.match(clickRes.content[0].text, /Click action executed on \[ref=e3\]/);
-    assert.equal(clickRes.content[1].type, "image");
-    assert.equal(clickRes.content[1].mimeType, "image/png");
-    assert.equal(clickRes.content[1].data, "aGVsbG8=");
     assert.match(clickRes.content[0].text, /URL: https:\/\/example\.com\/after-click/);
     assert.match(clickRes.content[0].text, /Title: Submitted/);
-    assert.equal(clickRes.details.tree, '[ref=e1] heading "Submitted"');
-    assert.equal(clickRes.details.screenshot, "data:image/png;base64,aGVsbG8=");
+    assert.match(clickRes.content[0].text, /1 added, 0 changed, 0 removed/);
+    assert.equal(clickRes.details.observation.snapshotType, "delta");
 
     const textOnlyClickRes = await click.execute("call-2-text-only", { ref: "e3" }, undefined, undefined, {
       model: { input: ["text"] },
     });
     assert.equal(textOnlyClickRes.content.length, 1);
     assert.equal(textOnlyClickRes.content[0].type, "text");
-    assert.match(textOnlyClickRes.content[0].text, /Page snapshot:\n\[ref=e1\] heading "Submitted"/);
-    assert.equal(textOnlyClickRes.details.screenshot, "data:image/png;base64,aGVsbG8=");
+    assert.match(textOnlyClickRes.content[0].text, /1 added, 0 changed, 0 removed/);
 
     // 4. Test type execution
     const typeTool = registeredTools.get("browser_type");
@@ -205,7 +205,7 @@ test("pi_browser_operator_adapter registers all 10 tools and executes through To
       value: "opt1",
     });
     assert.equal(executedToolName, "browser_select_option");
-    assert.match(selectRes.content[0].text, /Selected 'opt1'/);
+    assert.match(selectRes.content[0].text, /Selected dropdown option/);
 
     // 6. Test scroll execution
     const scroll = registeredTools.get("browser_scroll");
@@ -231,7 +231,7 @@ test("pi_browser_operator_adapter registers all 10 tools and executes through To
       url: "https://example.com",
     });
     assert.equal(executedToolName, "browser_tabs");
-    assert.match(tabsRes.content[0].text, /Tab action 'new' completed/);
+    assert.match(tabsRes.content[0].text, /1 open tab\(s\)/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

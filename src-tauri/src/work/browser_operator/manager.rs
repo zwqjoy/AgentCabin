@@ -331,7 +331,15 @@ impl BrowserOperatorManager {
                     .get("timedOut")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
-                let verification_error = verification_failed.then(|| {
+                let action_failed = val.get("ok").and_then(Value::as_bool) == Some(false);
+                let verification_error = (verification_failed || action_failed).then(|| {
+                    if action_failed {
+                        return val
+                            .pointer("/error/message")
+                            .and_then(Value::as_str)
+                            .unwrap_or("Browser action failed")
+                            .to_string();
+                    }
                     val.get("failures")
                         .and_then(Value::as_array)
                         .map(|failures| {
@@ -350,7 +358,7 @@ impl BrowserOperatorManager {
                         run_id,
                         step_index,
                         BrowserActionCompletion {
-                            status: if verification_failed {
+                            status: if verification_failed || action_failed {
                                 "failed".to_string()
                             } else {
                                 "success".to_string()
@@ -422,7 +430,7 @@ impl BrowserOperatorManager {
                     .await
             }
             "browser_cdp_observe" | "browser_cdp_act" => self.call(run_id, method, params).await,
-            "browser_snapshot" => self.snapshot(run_id).await,
+            "browser_snapshot" => self.call(run_id, "browser_snapshot", params).await,
             "browser_take_screenshot" => {
                 self.screenshot(
                     run_id,
@@ -444,36 +452,10 @@ impl BrowserOperatorManager {
                 .await
             }
             "browser_close" => self.close_context(run_id).await,
-            "browser_click" => {
-                self.click(
-                    run_id,
-                    param_string(&params, &["ref"]),
-                    param_string(&params, &["selector"]),
-                    param_string(&params, &["button"]),
-                    param_bool(&params, &["double_click", "doubleClick"]),
-                )
-                .await
+            "browser_click" | "browser_type" | "browser_select_option" => {
+                self.call(run_id, method, params).await
             }
-            "browser_type" => {
-                self.type_text(
-                    run_id,
-                    param_string(&params, &["ref"]),
-                    param_string(&params, &["text"]).unwrap_or_default(),
-                    param_string(&params, &["selector"]),
-                    param_bool(&params, &["clear"]),
-                    param_bool(&params, &["press_enter", "pressEnter"]),
-                )
-                .await
-            }
-            "browser_select_option" => {
-                self.select_option(
-                    run_id,
-                    param_string(&params, &["ref"]),
-                    param_string(&params, &["value"]).unwrap_or_default(),
-                    param_string(&params, &["selector"]),
-                )
-                .await
-            }
+            "browser_press_key" => self.call(run_id, method, params).await,
             "browser_scroll" => {
                 self.scroll(
                     run_id,
