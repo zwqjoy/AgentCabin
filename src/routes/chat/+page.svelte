@@ -109,7 +109,6 @@
   import ChatAssistantMessage from "$lib/components/chat/ChatAssistantMessage.svelte";
   import ChatSessionStatsLine from "$lib/components/chat/ChatSessionStatsLine.svelte";
   import { buildChatPresentationTurns } from "$lib/utils/chat-presentation";
-  import { isBrowserToolName } from "$lib/utils/work-browser";
   import SessionStatusBar from "$lib/components/SessionStatusBar.svelte";
   import CapabilityRunInspector from "$lib/components/capabilities/CapabilityRunInspector.svelte";
   import { getRunEffectiveCapabilities } from "$lib/api/work";
@@ -575,6 +574,7 @@
   let codeAsideRequestedPath = $state<string | null>(null);
   let codeAsideRequestedReviewFilePath = $state<string | null>(null);
   let browserAutoOpenedRunId = $state("");
+  let observedLiveBrowserActivitySequence = store.liveBrowserToolActivity?.sequence ?? 0;
   let turnSummaryRunId = "";
 
   function openFileInCodeAside(filePath: string) {
@@ -2681,11 +2681,19 @@
   }
 
   $effect(() => {
-    const activeRunId = store.run?.id ?? runId;
-    const hasBrowserTool = store.timeline.some(
-      (entry) => entry.kind === "tool" && isBrowserToolName(entry.tool.tool_name),
-    );
-    if (!activeRunId || !hasBrowserTool || browserAutoOpenedRunId === activeRunId) return;
+    const activity = store.liveBrowserToolActivity;
+    if (!activity || activity.sequence === observedLiveBrowserActivitySequence) return;
+    observedLiveBrowserActivitySequence = activity.sequence;
+
+    const activeRunId = runId || store.run?.id || "";
+    if (
+      !activeRunId ||
+      activity.runId !== activeRunId ||
+      (runId && store.run?.id !== runId) ||
+      browserAutoOpenedRunId === activeRunId
+    ) {
+      return;
+    }
 
     browserAutoOpenedRunId = activeRunId;
     codeAsideRequestedPath = null;
