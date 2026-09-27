@@ -730,13 +730,16 @@
     此操作不可恢复
   </div>
   <p class="mt-3 text-sm leading-6 text-muted-foreground">
-    确定要永久删除「{wsDeleteTarget?.name ?? "工作区"}」吗？这将删除以下数据：
+    确定要从 AgentCabin 永久删除「{wsDeleteTarget?.name ?? "工作区"}」吗？删除后无法恢复。
   </p>
   <ul class="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
-    <li>· 工作区数据目录（{wsDeleteTarget?.root ?? ""}）</li>
-    <li>· input/ 中的所有输入材料</li>
-    <li>· output/ 中的所有成果</li>
-    <li>· 该工作区下的所有对话记录</li>
+    <li>· 该工作区在 AgentCabin 中的内部数据（{wsDeleteTarget?.root ?? ""}）</li>
+    <li>· 关联的定时任务配置及运行记录</li>
+    {#if wsDeleteTarget?.rootKind === "local_folder"}
+      <li>· 已关联的本地文件夹及其中的项目文件会保留（{wsDeleteTarget.primaryWorkRoot ?? ""}）</li>
+    {:else}
+      <li>· 该工作区内部目录中的输入材料和成果会一并删除</li>
+    {/if}
   </ul>
   <p class="mt-3 text-xs leading-5 text-muted-foreground">
     如果只是暂时不用，建议选择「归档」而非删除——归档可以随时恢复。
