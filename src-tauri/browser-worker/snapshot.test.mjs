@@ -64,13 +64,24 @@ test("document replacement and missing revisions fall back to full", async () =>
   assert.equal(next.revision, 1);
 });
 
-test("page objects keep independent revision histories", async () => {
-  const state = pageState("tab", { e1: { ref: "e1", role: "button", name: "Save" } });
-  const tabA = makePage([state]);
-  const tabB = makePage([state]);
-  const a = await generatePageSnapshot(tabA);
-  const b = await generatePageSnapshot(tabB);
-  assert.equal(a.revision, 1);
-  assert.equal(b.revision, 1);
-  assert.notEqual(a.documentId, b.documentId);
+test("interleaved tabs keep their own revisions and baselines", async () => {
+  const tabA = makePage([
+    pageState("doc-a", { e1: { ref: "e1", role: "button", name: "A", value: "" } }, "page A ".repeat(80)),
+    pageState("doc-a", { e1: { ref: "e1", role: "button", name: "A", value: "A2" } }, "page A ".repeat(80)),
+  ]);
+  const tabB = makePage([
+    pageState("doc-b", { e1: { ref: "e1", role: "button", name: "B", value: "" } }, "page B ".repeat(80)),
+    pageState("doc-b", { e1: { ref: "e1", role: "button", name: "B", value: "B2" } }, "page B ".repeat(80)),
+  ]);
+  const a1 = await generatePageSnapshot(tabA);
+  const b1 = await generatePageSnapshot(tabB);
+  const b2 = await generatePageSnapshot(tabB, { sinceRevision: b1.revision });
+  const a2 = await generatePageSnapshot(tabA, { sinceRevision: a1.revision });
+  assert.equal(a1.revision, 1);
+  assert.equal(a2.revision, 2);
+  assert.equal(b1.revision, 1);
+  assert.equal(b2.revision, 2);
+  assert.equal(a2.changed[0].after.value, "A2");
+  assert.equal(b2.changed[0].after.value, "B2");
+  assert.notEqual(a1.documentId, b1.documentId);
 });

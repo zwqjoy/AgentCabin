@@ -20,8 +20,17 @@ async function getEmbeddedSession(runId, spec) {
     throw new Error("Embedded browser requires cdpEndpoint and cdpToken");
   }
 
-  const existing = embeddedSessions.get(runId);
-  if (existing?.client.isReady && existing.endpoint === spec.cdpEndpoint) return existing;
+  let runSession = embeddedSessions.get(runId);
+  if (!runSession) {
+    runSession = { sessionsByTarget: new Map(), activeSession: null };
+    embeddedSessions.set(runId, runSession);
+  }
+  const targetId = spec.cdpTargetId || spec.cdpTargetID || spec.cdpEndpoint;
+  const existing = runSession.sessionsByTarget.get(targetId);
+  if (existing?.client.isReady && existing.endpoint === spec.cdpEndpoint) {
+    runSession.activeSession = existing;
+    return existing;
+  }
 
   existing?.client.close();
   const client = createEmbeddedCdpClient({
@@ -39,10 +48,12 @@ async function getEmbeddedSession(runId, spec) {
   const session = {
     client,
     page,
+    runSession,
     endpoint: spec.cdpEndpoint,
-    targetId: spec.cdpTargetId || "",
+    targetId: spec.cdpTargetId || spec.cdpTargetID || "",
   };
-  embeddedSessions.set(runId, session);
+  runSession.sessionsByTarget.set(targetId, session);
+  runSession.activeSession = session;
   return session;
 }
 
@@ -311,6 +322,14 @@ async function handleEmbedded(method, runId, params = {}) {
       if (!result?.ok || !Array.isArray(result.tabs)) {
         throw new Error(result?.error || "The embedded browser could not update its tab list.");
       }
+      const openTargetIds = new Set(result.tabs.map((tab) => String(tab.targetId || tab.id || "")));
+      const runSession = embeddedSessions.get(runId);
+      for (const [targetId, tabSession] of runSession?.sessionsByTarget || []) {
+        if (!openTargetIds.has(targetId)) {
+          tabSession.client.close();
+          runSession.sessionsByTarget.delete(targetId);
+        }
+      }
       return result;
     }
     case "browser_focus":
@@ -328,10 +347,11 @@ async function handleEmbedded(method, runId, params = {}) {
         return expectation;
       });
     }
-    case "browser_close":
-      page.close();
+    case "browser_close": {
+      for (const tabSession of session.runSession.sessionsByTarget.values()) tabSession.client.close();
       embeddedSessions.delete(runId);
       return { ok: true, runId, closed: true };
+    }
     default:
       throw new Error(`unsupported_action: ${method} is not available on the embedded browser surface`);
   }
@@ -346,7 +366,9 @@ async function dispatch(method, runId, params = {}) {
 }
 
 async function closeAll() {
-  for (const session of embeddedSessions.values()) session.client.close();
+  for (const runSession of embeddedSessions.values()) {
+    for (const session of runSession.sessionsByTarget.values()) session.client.close();
+  }
   embeddedSessions.clear();
 }
 
