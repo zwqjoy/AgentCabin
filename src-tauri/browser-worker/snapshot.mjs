@@ -49,7 +49,10 @@ function payload(snapshot) {
   return publicSnapshot;
 }
 
-export async function generatePageSnapshot(page, { sinceRevision } = {}) {
+export async function generatePageSnapshot(page, options = {}) {
+  const { sinceRevision } = options;
+  const workerInstanceId = options.workerInstanceId || page.workerInstanceId || "";
+  const targetId = options.targetId || page.targetId || "";
   const title = await page.title().catch(() => "");
   const url = page.url();
 
@@ -65,6 +68,10 @@ export async function generatePageSnapshot(page, { sinceRevision } = {}) {
       const interactiveRoles = new Set([
         "button", "link", "textbox", "searchbox", "checkbox", "radio", "combobox", "tab", "menuitem", "switch", "slider",
       ]);
+      function nextRef() {
+        while (document.querySelector(`[data-work-ref="e${idCounter}"]`)) idCounter++;
+        return `e${idCounter++}`;
+      }
 
       function isElementVisible(el) {
         if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
@@ -101,7 +108,7 @@ export async function generatePageSnapshot(page, { sinceRevision } = {}) {
           if (isInteractive && isElementVisible(el)) {
             const taggedRef = el.getAttribute("data-work-ref");
             const existingRef = /^e\d+$/.test(taggedRef || "") ? taggedRef : "";
-            const refId = existingRef || ("e" + idCounter++);
+            const refId = existingRef || nextRef();
             if (!existingRef) el.setAttribute("data-work-ref", refId);
             const label = getElementLabel(el);
             const value = el.value !== undefined ? String(el.value) : undefined;
@@ -150,6 +157,8 @@ export async function generatePageSnapshot(page, { sinceRevision } = {}) {
   const current = {
     revision,
     documentId: pageState.documentId,
+    workerInstanceId,
+    targetId,
     url,
     title,
     tree: snapshotData.tree || "(empty or inaccessible page)",
@@ -175,12 +184,14 @@ export async function generatePageSnapshot(page, { sinceRevision } = {}) {
     revision,
     baseRevision: previous.revision,
     documentId: current.documentId,
+    workerInstanceId: current.workerInstanceId,
+    targetId: current.targetId,
     url,
     title,
     ...delta,
   };
   if (delta.added.length + delta.changed.length + delta.removed.length === 0) {
-    return { snapshotType: "unchanged", revision, baseRevision: previous.revision, documentId: current.documentId, url, title };
+    return { snapshotType: "unchanged", revision, baseRevision: previous.revision, documentId: current.documentId, workerInstanceId, targetId, url, title };
   }
   const fullSnapshot = { snapshotType: "full", ...payload(current) };
   const fullSize = JSON.stringify(fullSnapshot).length;

@@ -1,4 +1,5 @@
 import readline from "node:readline";
+import { randomUUID } from "node:crypto";
 
 import { generatePageSnapshot } from "./snapshot.mjs";
 import { structuredAction } from "./action_result.mjs";
@@ -14,6 +15,7 @@ import { createEmbeddedPage } from "./embedded_page.mjs";
  */
 
 const embeddedSessions = new Map();
+const workerInstanceId = `bw-${randomUUID()}`;
 
 async function getEmbeddedSession(runId, spec) {
   if (!spec?.cdpEndpoint || !spec?.cdpToken) {
@@ -43,6 +45,8 @@ async function getEmbeddedSession(runId, spec) {
   await client.send("Runtime.enable");
   await client.send("Page.enable");
   const page = createEmbeddedPage({ client });
+  page.workerInstanceId = workerInstanceId;
+  page.targetId = spec.cdpTargetId || spec.cdpTargetID || "";
   await page.refreshLocation();
 
   const session = {
@@ -251,37 +255,37 @@ async function handleEmbedded(method, runId, params = {}) {
     case "browser_cdp_act":
       return relayAct(page, params);
     case "browser_click":
-      return structuredAction(page, "click", params, async (beforeSnapshot) => {
-        const locator = actionLocator(params, beforeSnapshot);
-        if (params.ref || locator || params.selector) return page.clickRef(params.ref, locator, params.selector);
-        if (params.x !== undefined && params.y !== undefined) {
-          await page.clickAt(params.x, params.y);
+      return structuredAction(page, "click", params, async (beforeSnapshot, actionParams) => {
+        const locator = actionLocator(actionParams, beforeSnapshot);
+        if (actionParams.ref || locator || actionParams.selector) return page.clickRef(actionParams.ref, locator, actionParams.selector);
+        if (actionParams.x !== undefined && actionParams.y !== undefined) {
+          await page.clickAt(actionParams.x, actionParams.y);
           return {};
         }
         throw Object.assign(new Error("Embedded click requires a ref, semantic locator, selector, or coordinates."), { code: "target_not_found" });
       });
     case "browser_type":
-      return structuredAction(page, "type", params, async (beforeSnapshot) => {
-        const locator = actionLocator(params, beforeSnapshot);
-        if (params.ref || locator || params.selector) {
-          const resolved = await page.resolveTarget(params.ref, locator, params.selector);
+      return structuredAction(page, "type", params, async (beforeSnapshot, actionParams) => {
+        const locator = actionLocator(actionParams, beforeSnapshot);
+        if (actionParams.ref || locator || actionParams.selector) {
+          const resolved = await page.resolveTarget(actionParams.ref, locator, actionParams.selector);
           await page.clickRef(resolved.element.ref);
-          if (params.clear !== false) await page.clearRef(resolved.element.ref);
-          await page.typeText(params.text ?? "");
-          if (params.pressEnter) await page.pressKey("Enter");
+          if (actionParams.clear !== false) await page.clearRef(resolved.element.ref);
+          await page.typeText(actionParams.text ?? "");
+          if (actionParams.pressEnter) await page.pressKey("Enter");
           return { target: resolved.element, resolvedBy: resolved.source };
         }
         throw Object.assign(new Error("Embedded type requires a ref, semantic locator, or selector."), { code: "target_not_found" });
       });
     case "browser_press_key":
-      return structuredAction(page, "press_key", params, async (beforeSnapshot) => {
-        const locator = actionLocator(params, beforeSnapshot);
+      return structuredAction(page, "press_key", params, async (beforeSnapshot, actionParams) => {
+        const locator = actionLocator(actionParams, beforeSnapshot);
         let resolved;
-        if (params.ref || locator || params.selector) {
-          resolved = await page.resolveTarget(params.ref, locator, params.selector);
+        if (actionParams.ref || locator || actionParams.selector) {
+          resolved = await page.resolveTarget(actionParams.ref, locator, actionParams.selector);
           await page.clickRef(resolved.element.ref);
         }
-        await page.pressKey(params.key || "");
+        await page.pressKey(actionParams.key || "");
         return resolved ? { target: resolved.element, resolvedBy: resolved.source } : {};
       });
     case "browser_scroll": {
@@ -291,8 +295,8 @@ async function handleEmbedded(method, runId, params = {}) {
       return structuredAction(page, "scroll", params, async () => page.scroll(delta, params.deltaX ?? 0));
     }
     case "browser_select_option": {
-      return structuredAction(page, "select_option", params, async (beforeSnapshot) =>
-        page.selectOption(params.ref, params.selector, params.value ?? "", actionLocator(params, beforeSnapshot)));
+      return structuredAction(page, "select_option", params, async (beforeSnapshot, actionParams) =>
+        page.selectOption(actionParams.ref, actionParams.selector, actionParams.value ?? "", actionLocator(actionParams, beforeSnapshot)));
     }
     case "browser_interact": {
       if (params.action === "navigate") await page.navigate(params.url);

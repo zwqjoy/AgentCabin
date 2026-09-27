@@ -237,6 +237,32 @@ test("pi_browser_operator_adapter registers Browser Operator tools and executes 
   }
 });
 
+test("adapter carries the latest snapshot identity and semantic locator with ref actions", async (t) => {
+  const tempDir = fs.mkdtempSync(path.join(fs.realpathSync(path.resolve(".")), ".tmp_test_browser_identity_"));
+  try {
+    const mod = await loadAdapter(tempDir);
+    const tools = new Map();
+    let actionArgs;
+    mod.registerBrowserOperatorTools({}, {
+      registerWorkTool: (tool) => tools.set(tool.name, tool),
+      callToolPipeline: async (_id, name, _action, args) => {
+        if (name === "browser_snapshot") return { success: true, stdout: JSON.stringify({
+          ok: true, snapshotType: "full", workerInstanceId: "bw-1", documentId: "doc-1", targetId: "tab-1", revision: 12,
+          refs: { e17: { ref: "e17", role: "button", name: "Continue" } }, tree: "[ref=e17] button Continue",
+        }) };
+        actionArgs = args;
+        return { success: true, stdout: JSON.stringify({ ok: true, action: "click", execution: { performed: true } }) };
+      },
+    });
+    await tools.get("browser_snapshot").execute("snapshot", {}, undefined, undefined, { model: { input: ["text"] } });
+    await tools.get("browser_click").execute("click", { ref: "e17" });
+    assert.deepEqual(actionArgs.targetIdentity, { workerInstanceId: "bw-1", documentId: "doc-1", revision: 12, targetId: "tab-1" });
+    assert.deepEqual(actionArgs.locator, { role: "button", name: "Continue" });
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("pi_browser_operator_adapter handles waiting_approval and resolves after grant", async () => {
   const tempDir = fs.mkdtempSync(
     path.join(fs.realpathSync(path.resolve(".")), ".tmp_test_browser_approval_"),

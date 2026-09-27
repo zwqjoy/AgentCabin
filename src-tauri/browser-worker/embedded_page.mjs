@@ -66,7 +66,10 @@ export function createEmbeddedPage({ client }) {
       const describe = (el) => {
         let ref = el.getAttribute("data-work-ref");
         if (!/^e\\d+$/.test(ref || "")) {
-          const next = Number(window.__agentCabinWorkRefCounter) || 1;
+          let next = Number.isSafeInteger(Number(window.__agentCabinWorkRefCounter)) && Number(window.__agentCabinWorkRefCounter) > 0
+            ? Number(window.__agentCabinWorkRefCounter)
+            : 1;
+          while (document.querySelector('[data-work-ref="e' + next + '"]')) next++;
           ref = 'e' + next;
           window.__agentCabinWorkRefCounter = next + 1;
           el.setAttribute("data-work-ref", ref);

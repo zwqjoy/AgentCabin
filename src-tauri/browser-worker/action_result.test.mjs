@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { structuredAction } from "./action_result.mjs";
+import { generatePageSnapshot } from "./snapshot.mjs";
 
 function page(states) {
   let index = 0;
@@ -50,4 +51,61 @@ test("normalizes common action failure codes", async () => {
     assert.equal(result.error.code, code);
     assert.equal(result.recovery.recommended, "snapshot");
   }
+});
+
+test("rejects refs from a previous Browser Worker instance without performing an action", async () => {
+  const tab = page([{ documentKey: "doc", refs: { e17: { ref: "e17", role: "button", name: "Continue" } }, tree: "page" }]);
+  tab.workerInstanceId = "bw-current";
+  tab.targetId = "tab-a";
+  let performed = false;
+  const result = await structuredAction(tab, "click", {
+    ref: "e17",
+    targetIdentity: { workerInstanceId: "bw-old", documentId: "doc", revision: 12, targetId: "tab-a" },
+  }, async () => { performed = true; });
+  assert.equal(performed, false);
+  assert.equal(result.ok, false);
+  assert.equal(result.execution.performed, false);
+  assert.equal(result.error.code, "stale_browser_instance");
+  assert.equal(result.recovery.recommended, "snapshot");
+  assert.equal(result.before.workerInstanceId, "bw-current");
+});
+
+test("document changes discard the native ref but preserve a semantic recovery locator", async () => {
+  const tab = page([{ documentKey: "new-doc", refs: {}, tree: "new page" }]);
+  tab.workerInstanceId = "bw-current";
+  tab.targetId = "tab-a";
+  let actionParams;
+  const result = await structuredAction(tab, "click", {
+    ref: "e17", locator: { role: "button", name: "Continue" },
+    targetIdentity: { workerInstanceId: "bw-current", documentId: "old-doc", revision: 10, targetId: "tab-a" },
+  }, async (_snapshot, params) => { actionParams = params; return { resolvedBy: "locator" }; });
+  assert.equal(result.ok, true);
+  assert.equal(actionParams.ref, undefined);
+  assert.deepEqual(actionParams.locator, { role: "button", name: "Continue" });
+  assert.equal(result.execution.resolvedBy, "semantic_recovery");
+});
+
+test("revision changes alone do not invalidate a ref identity", async () => {
+  const tab = page([{ documentKey: "same-doc", refs: { e17: { ref: "e17", role: "button", name: "Continue" } }, tree: "page" }]);
+  tab.workerInstanceId = "bw-current";
+  tab.targetId = "tab-a";
+  const current = await generatePageSnapshot(tab);
+  const result = await structuredAction(tab, "click", {
+    ref: "e17", targetIdentity: { workerInstanceId: "bw-current", documentId: current.documentId, revision: 10, targetId: "tab-a" },
+  }, async (_snapshot, params) => ({ resolvedBy: params.ref ? "ref" : "locator" }));
+  assert.equal(result.ok, true);
+  assert.equal(result.execution.resolvedBy, "ref");
+});
+
+test("an explicit target identity cannot cross tabs", async () => {
+  const tab = page([{ documentKey: "doc-b", refs: { e17: { ref: "e17", role: "button", name: "Continue" } }, tree: "tab B" }]);
+  tab.workerInstanceId = "bw-current";
+  tab.targetId = "tab-b";
+  let performed = false;
+  const result = await structuredAction(tab, "click", {
+    ref: "e17", locator: { role: "button", name: "Continue" },
+    targetIdentity: { workerInstanceId: "bw-current", documentId: "doc-a", revision: 7, targetId: "tab-a" },
+  }, async () => { performed = true; });
+  assert.equal(performed, false);
+  assert.equal(result.error.code, "stale_browser_instance");
 });

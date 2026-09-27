@@ -73,13 +73,21 @@ test("interleaved tabs keep their own revisions and baselines", async () => {
     pageState("doc-b", { e1: { ref: "e1", role: "button", name: "B", value: "" } }, "page B ".repeat(80)),
     pageState("doc-b", { e1: { ref: "e1", role: "button", name: "B", value: "B2" } }, "page B ".repeat(80)),
   ]);
+  tabA.workerInstanceId = "bw-test";
+  tabA.targetId = "tab-a";
+  tabB.workerInstanceId = "bw-test";
+  tabB.targetId = "tab-b";
   const a1 = await generatePageSnapshot(tabA);
   const b1 = await generatePageSnapshot(tabB);
   const b2 = await generatePageSnapshot(tabB, { sinceRevision: b1.revision });
   const a2 = await generatePageSnapshot(tabA, { sinceRevision: a1.revision });
   assert.equal(a1.revision, 1);
+  assert.equal(a1.workerInstanceId, "bw-test");
+  assert.equal(a1.targetId, "tab-a");
   assert.equal(a2.revision, 2);
   assert.equal(b1.revision, 1);
+  assert.equal(b1.workerInstanceId, "bw-test");
+  assert.equal(b1.targetId, "tab-b");
   assert.equal(b2.revision, 2);
   assert.equal(a2.changed[0].after.value, "A2");
   assert.equal(b2.changed[0].after.value, "B2");

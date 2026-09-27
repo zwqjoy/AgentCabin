@@ -26,6 +26,13 @@ const LocatorSchema = Type.Object({
   text: Type.Optional(Type.String()),
 });
 
+const TargetIdentitySchema = Type.Object({
+  workerInstanceId: Type.String(),
+  documentId: Type.String(),
+  revision: Type.Number(),
+  targetId: Type.Optional(Type.String()),
+});
+
 const ScreenshotSchema = Type.Object({
   filename: Type.Optional(Type.String({ description: "Optional filename or relative path inside output/ (e.g. 'page.png'). If omitted, image base64 data is returned directly." })),
   full_page: Type.Optional(Type.Boolean({ description: "Whether to capture the entire scrollable page (default false)." })),
@@ -64,6 +71,7 @@ const CloseSchema = Type.Object({});
 
 const ClickSchema = Type.Object({
   ref: Type.Optional(Type.String({ description: "Semantic ref from browser_snapshot (e.g. 'e4'). Strongly recommended over CSS selector." })),
+  targetIdentity: Type.Optional(TargetIdentitySchema),
   target_label: Type.Optional(Type.String({ description: "Short accessible name copied from the latest browser_snapshot, used to show the human which element is being targeted." })),
   locator: Type.Optional(LocatorSchema),
   selector: Type.Optional(Type.String({ description: "Optional CSS selector or visible text as fallback." })),
@@ -77,6 +85,7 @@ const ClickSchema = Type.Object({
 
 const TypeSchema = Type.Object({
   ref: Type.Optional(Type.String({ description: "Semantic ref from browser_snapshot (e.g. 'e2'). Strongly recommended." })),
+  targetIdentity: Type.Optional(TargetIdentitySchema),
   target_label: Type.Optional(Type.String({ description: "Short accessible name copied from the latest browser_snapshot, used to show the human which field is being targeted." })),
   text: Type.String({ description: "Text content to type into the input field." }),
   selector: Type.Optional(Type.String({ description: "Optional CSS selector as fallback." })),
@@ -87,6 +96,7 @@ const TypeSchema = Type.Object({
 
 const SelectSchema = Type.Object({
   ref: Type.Optional(Type.String({ description: "Semantic ref of the <select> element from browser_snapshot." })),
+  targetIdentity: Type.Optional(TargetIdentitySchema),
   value: Type.String({ description: "Value or visible label of the option to select." }),
   selector: Type.Optional(Type.String({ description: "Optional CSS selector as fallback." })),
   locator: Type.Optional(LocatorSchema),
@@ -106,6 +116,7 @@ const ScrollSchema = Type.Object({
 const PressKeySchema = Type.Object({
   key: Type.String({ description: "Keyboard key to press, such as Enter, Escape, or Tab." }),
   ref: Type.Optional(Type.String()),
+  targetIdentity: Type.Optional(TargetIdentitySchema),
   locator: Type.Optional(LocatorSchema),
   selector: Type.Optional(Type.String()),
 });
@@ -178,6 +189,23 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   const callPipeline = options.callToolPipeline;
   const waitForApproval = options.waitForWorkInboxResolution;
   const callRuntime = options.callBrowserRuntime || callBrowserRuntime;
+  let latestSnapshot;
+  const carrySnapshotIdentity = (params = {}) => {
+    if (!latestSnapshot?.workerInstanceId) return params;
+    const ref = String(params.ref || "").replace(/^@/, "");
+    const item = latestSnapshot.refs?.[ref];
+    const locator = params.locator || (item ? { ...(item.role ? { role: item.role } : {}), ...(item.name ? { name: item.name } : {}) } : undefined);
+    const identity = params.targetIdentity || {
+      workerInstanceId: latestSnapshot.workerInstanceId,
+      documentId: latestSnapshot.documentId,
+      revision: latestSnapshot.revision,
+      ...(latestSnapshot.targetId ? { targetId: latestSnapshot.targetId } : {}),
+    };
+    const identityMatchesSnapshot = identity.workerInstanceId === latestSnapshot.workerInstanceId
+      && identity.documentId === latestSnapshot.documentId
+      && (!identity.targetId || identity.targetId === latestSnapshot.targetId);
+    return { ...params, targetIdentity: identity, ...(locator && identityMatchesSnapshot ? { locator } : {}) };
+  };
 
   if (typeof callPipeline !== "function" && typeof callRuntime !== "function") {
     return;
@@ -263,6 +291,18 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       );
       if (!res.success) return fail(res.stderr || res.error || "Snapshot failed", res);
       const parsed = parseResultPayload(res);
+      if (parsed.workerInstanceId && parsed.documentId && parsed.revision !== undefined) {
+        const sameDocument = latestSnapshot?.workerInstanceId === parsed.workerInstanceId
+          && latestSnapshot?.documentId === parsed.documentId && latestSnapshot?.targetId === parsed.targetId;
+        const refs = sameDocument ? { ...(latestSnapshot.refs || {}) } : {};
+        if (parsed.snapshotType === "full") Object.assign(refs, parsed.refs || {});
+        else {
+          for (const item of parsed.added || []) refs[item.ref] = item;
+          for (const item of parsed.changed || []) refs[item.ref] = { ...(refs[item.ref] || {}), ...item.after };
+          for (const ref of parsed.removed || []) delete refs[ref];
+        }
+        latestSnapshot = { ...(sameDocument ? latestSnapshot : {}), ...parsed, refs };
+      }
       const text = parsed.snapshotType === "unchanged"
         ? `Page unchanged at revision ${parsed.revision} (${parsed.url}).`
         : parsed.snapshotType === "delta"
@@ -366,7 +406,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     description: "Click an interactive element on the page. Pass 'ref' and its accessible name as target_label from browser_snapshot. The operation returns a fresh, size-limited semantic observation; inspect it before claiming success, and call browser_snapshot or browser_take_screenshot when visual inspection is needed.",
     parameters: ClickSchema,
     async execute(toolCallId, params, signal) {
-      const res = await callOperationWithApproval(toolCallId, "browser_click", "click", params, signal);
+      const res = await callOperationWithApproval(toolCallId, "browser_click", "click", carrySnapshotIdentity(params), signal);
       const parsed = parseResultPayload(res);
       if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Click failed.", { ...res, ...parsed, ok: false });
       return result(`Click action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
@@ -380,7 +420,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     description: "Type text into an input field or textarea. Pass 'ref' and its accessible name from browser_snapshot. The operation returns a fresh, size-limited semantic observation; inspect it before claiming success, and call browser_snapshot or browser_take_screenshot when visual inspection is needed.",
     parameters: TypeSchema,
     async execute(toolCallId, params, signal) {
-      const res = await callOperationWithApproval(toolCallId, "browser_type", "type", params, signal);
+      const res = await callOperationWithApproval(toolCallId, "browser_type", "type", carrySnapshotIdentity(params), signal);
       const parsed = parseResultPayload(res);
       if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Type failed.", { ...res, ...parsed, ok: false });
       return result(`Text input action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
@@ -394,7 +434,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     description: "Select a native single-select option by exact value or visible text. This action verifies the selected value and returns a fresh page observation; do not use Enter as a fallback if selection fails.",
     parameters: SelectSchema,
     async execute(toolCallId, params, signal) {
-      const res = await callOperationWithApproval(toolCallId, "browser_select_option", "select", params, signal);
+      const res = await callOperationWithApproval(toolCallId, "browser_select_option", "select", carrySnapshotIdentity(params), signal);
       const parsed = parseResultPayload(res);
       if (!res.success || parsed.ok === false || parsed.execution?.selected !== true) {
         return fail("The browser did not confirm the requested dropdown option.", {
@@ -435,7 +475,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     description: "Press a keyboard key, optionally focusing a page element by ref or semantic locator first.",
     parameters: PressKeySchema,
     async execute(toolCallId, params, signal) {
-      const res = await callOperationWithApproval(toolCallId, "browser_press_key", "press_key", params, signal);
+      const res = await callOperationWithApproval(toolCallId, "browser_press_key", "press_key", carrySnapshotIdentity(params), signal);
       const parsed = parseResultPayload(res);
       if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Key press failed.", { ...res, ...parsed, ok: false });
       return result(`Pressed ${params.key}.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });

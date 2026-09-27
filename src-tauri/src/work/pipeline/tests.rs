@@ -8,6 +8,26 @@ use crate::work::tasks::TaskManager;
 use crate::work::workspace::WorkspaceManager;
 use tempfile::TempDir;
 
+#[test]
+fn structured_browser_failure_is_a_capability_failure_with_exit_code_one() {
+    let result = serde_json::json!({
+        "ok": false,
+        "execution": { "performed": false },
+        "error": { "code": "stale_browser_instance", "message": "Worker restarted" },
+        "recovery": { "recommended": "snapshot" }
+    });
+    let (status, failure_kind, exit_code) = super::browser_action_outcome(&result);
+    assert_eq!(status, WorkExecutionStatus::Failed);
+    assert_eq!(failure_kind, Some(ExecutionFailureKind::CapabilityFailure));
+    assert_eq!(exit_code, Some(1));
+    assert_eq!(result["error"]["code"], "stale_browser_instance");
+    let stdout = serde_json::to_string(&result).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&stdout).unwrap(),
+        result
+    );
+}
+
 fn intent_with_args(args: serde_json::Value) -> ToolIntent {
     ToolIntent {
         task_id: "t".to_string(),
