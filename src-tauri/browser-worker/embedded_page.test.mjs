@@ -51,7 +51,7 @@ test("clickRef resolves the element rect before clicking its centre", async () =
   const client = makeClient((method, params) => {
     if (method === "Runtime.evaluate") {
       assert.match(String(params.expression), /data-work-ref/);
-      return { result: { value: { x: 10, y: 20, width: 100, height: 40 } } };
+      return { result: { value: { element: { ref: "e2", role: "button", name: "Save", rect: { x: 10, y: 20, width: 100, height: 40 } }, source: "ref" } } };
     }
     return {};
   });
@@ -63,7 +63,28 @@ test("clickRef resolves the element rect before clicking its centre", async () =
 });
 
 test("clickRef reports an actionable error for an unknown ref", async () => {
-  const client = makeClient(() => ({ result: { value: null } }));
+  const client = makeClient(() => ({ result: { value: { error: { code: "stale_ref", message: "stale ref" } } } }));
   const page = createEmbeddedPage({ client });
-  await assert.rejects(() => page.clickRef("e9"), /stale ref/);
+  await assert.rejects(() => page.clickRef("e9"), (error) => error.code === "stale_ref");
+});
+
+test("a stale ref resolves through one matching semantic locator", async () => {
+  const client = makeClient((method, params) => {
+    if (method === "Runtime.evaluate") {
+      const expression = String(params.expression);
+      if (expression.includes("const locator")) return { result: { value: { element: { ref: "e88", role: "button", name: "Save", rect: { x: 0, y: 0, width: 20, height: 20 } }, source: "locator" } } };
+      return { result: { value: { element: { ref: "e88", role: "button", name: "Save", rect: { x: 0, y: 0, width: 20, height: 20 } }, source: "ref" } } };
+    }
+    return {};
+  });
+  const page = createEmbeddedPage({ client });
+  const result = await page.clickRef("e12", { role: "button", name: "Save" });
+  assert.equal(result.target.ref, "e88");
+  assert.equal(result.resolvedBy, "locator");
+});
+
+test("ambiguous semantic targets fail closed", async () => {
+  const client = makeClient(() => ({ result: { value: { error: { code: "ambiguous_target", message: "multiple matches" } } } }));
+  const page = createEmbeddedPage({ client });
+  await assert.rejects(() => page.clickRef("e12", { role: "button", name: "Save" }), (error) => error.code === "ambiguous_target");
 });

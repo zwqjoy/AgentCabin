@@ -1,6 +1,7 @@
 import readline from "node:readline";
 
 import { generatePageSnapshot } from "./snapshot.mjs";
+import { structuredAction } from "./action_result.mjs";
 import { createEmbeddedCdpClient } from "./embedded_cdp.mjs";
 import { createEmbeddedPage } from "./embedded_page.mjs";
 
@@ -134,6 +135,16 @@ async function relayAct(page, params = {}) {
   return { ok: true, outcome, execution: { outcome, steps, ...(stoppedAt === undefined ? {} : { stoppedAt }) }, observation: await relayObservation(page, params) };
 }
 
+function actionLocator(params, beforeSnapshot) {
+  if (params.locator) return params.locator;
+  const ref = String(params.ref || "").replace(/^@/, "");
+  if (!ref) return undefined;
+  const target = beforeSnapshot.refs?.[ref];
+  const name = String(params.target_label || target?.name || "").trim();
+  if (!name) return undefined;
+  return { ...(target?.role ? { role: target.role } : {}), name };
+}
+
 async function waitForPageCondition(page, expect = {}, timeoutMs = 10000) {
   const keys = [
     "url_contains",
@@ -212,13 +223,13 @@ async function handleEmbedded(method, runId, params = {}) {
       };
     }
     case "browser_snapshot": {
-      const snapshot = await generatePageSnapshot(page);
+      const snapshot = await generatePageSnapshot(page, { sinceRevision: params.sinceRevision });
       return {
         ok: true,
+        ...snapshot,
         title: snapshot.title,
         url: snapshot.url,
-        tree: snapshot.tree,
-        refsCount: Object.keys(snapshot.refs).length,
+        ...(snapshot.refs ? { refsCount: Object.keys(snapshot.refs).length } : {}),
         ...(params.include_screenshot === false ? {} : await optionalScreenshot(page)),
       };
     }
@@ -229,40 +240,48 @@ async function handleEmbedded(method, runId, params = {}) {
     case "browser_cdp_act":
       return relayAct(page, params);
     case "browser_click":
-      if (params.x !== undefined && params.y !== undefined) await page.clickAt(params.x, params.y);
-      else if (params.ref) await page.clickRef(params.ref);
-      else if (params.selector) await page.clickSelector(params.selector);
-      else throw new Error("Embedded click requires a ref, selector, or coordinates");
-      return {
-        ok: true,
-        ...(await generatePageSnapshot(page)),
-      };
+      return structuredAction(page, "click", params, async (beforeSnapshot) => {
+        const locator = actionLocator(params, beforeSnapshot);
+        if (params.ref || locator || params.selector) return page.clickRef(params.ref, locator, params.selector);
+        if (params.x !== undefined && params.y !== undefined) {
+          await page.clickAt(params.x, params.y);
+          return {};
+        }
+        throw Object.assign(new Error("Embedded click requires a ref, semantic locator, selector, or coordinates."), { code: "target_not_found" });
+      });
     case "browser_type":
-      if (params.ref) await page.clickRef(params.ref);
-      else if (params.selector) await page.clickSelector(params.selector);
-      await page.typeText(params.text ?? "");
-      if (params.pressEnter) await page.pressKey("Enter");
-      return {
-        ok: true,
-        ...(await generatePageSnapshot(page)),
-      };
+      return structuredAction(page, "type", params, async (beforeSnapshot) => {
+        const locator = actionLocator(params, beforeSnapshot);
+        if (params.ref || locator || params.selector) {
+          const resolved = await page.resolveTarget(params.ref, locator, params.selector);
+          await page.clickRef(resolved.element.ref);
+          if (params.clear !== false) await page.clearRef(resolved.element.ref);
+          await page.typeText(params.text ?? "");
+          if (params.pressEnter) await page.pressKey("Enter");
+          return { target: resolved.element, resolvedBy: resolved.source };
+        }
+        throw Object.assign(new Error("Embedded type requires a ref, semantic locator, or selector."), { code: "target_not_found" });
+      });
+    case "browser_press_key":
+      return structuredAction(page, "press_key", params, async (beforeSnapshot) => {
+        const locator = actionLocator(params, beforeSnapshot);
+        let resolved;
+        if (params.ref || locator || params.selector) {
+          resolved = await page.resolveTarget(params.ref, locator, params.selector);
+          await page.clickRef(resolved.element.ref);
+        }
+        await page.pressKey(params.key || "");
+        return resolved ? { target: resolved.element, resolvedBy: resolved.source } : {};
+      });
     case "browser_scroll": {
       const delta = params.deltaY ?? (
         params.direction === "up" ? -Math.abs(params.amount ?? 500) : Math.abs(params.amount ?? 500)
       );
-      await page.scroll(delta, params.deltaX ?? 0);
-      return {
-        ok: true,
-        ...(await generatePageSnapshot(page)),
-      };
+      return structuredAction(page, "scroll", params, async () => page.scroll(delta, params.deltaX ?? 0));
     }
     case "browser_select_option": {
-      const selection = await page.selectOption(params.ref, params.selector, params.value ?? "");
-      return {
-        ok: true,
-        ...selection,
-        ...(await generatePageSnapshot(page)),
-      };
+      return structuredAction(page, "select_option", params, async (beforeSnapshot) =>
+        page.selectOption(params.ref, params.selector, params.value ?? "", actionLocator(params, beforeSnapshot)));
     }
     case "browser_interact": {
       if (params.action === "navigate") await page.navigate(params.url);
@@ -297,19 +316,17 @@ async function handleEmbedded(method, runId, params = {}) {
     case "browser_focus":
       return { ok: true, url: await page.refreshLocation(), title: await page.title() };
     case "browser_wait_for": {
-      const expectation = await waitForPageCondition(
-        page,
-        params.expect || {},
-        Math.max(0, Math.min(Number(params.timeout_ms ?? params.timeoutMs ?? 10000), 30000)),
-      );
-      if (!expectation.checks.length && params.ms) {
-        await new Promise((resolve) => setTimeout(resolve, Math.min(Number(params.ms), 30000)));
-      }
-      return {
-        ok: true,
-        ...expectation,
-        ...(await generatePageSnapshot(page)),
-      };
+      return structuredAction(page, "wait_for", params, async () => {
+        const expectation = await waitForPageCondition(
+          page,
+          params.expect || {},
+          Math.max(0, Math.min(Number(params.timeout_ms ?? params.timeoutMs ?? 10000), 30000)),
+        );
+        if (!expectation.checks.length && params.ms) {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(Number(params.ms), 30000)));
+        }
+        return expectation;
+      });
     }
     case "browser_close":
       page.close();

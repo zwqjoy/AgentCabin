@@ -48,6 +48,75 @@ export function createEmbeddedPage({ client }) {
     }
   }
 
+  async function resolveTarget(ref, locator, selector) {
+    const result = await evaluateValue(`
+      const ref = ${JSON.stringify(String(ref || "").replace(/[^a-zA-Z0-9_-]/g, ""))};
+      const locator = ${JSON.stringify(locator || {})};
+      const selector = ${JSON.stringify(String(selector || ""))};
+      const visible = (el) => {
+        if (!el?.isConnected) return false;
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+      };
+      const roleOf = (el) => el.getAttribute("role") || (el.tagName === "A" ? "link" : el.tagName === "INPUT" ? (el.type === "checkbox" || el.type === "radio" ? el.type : el.type === "submit" || el.type === "button" ? "button" : el.type === "search" ? "searchbox" : "textbox") : el.tagName.toLowerCase());
+      const nameOf = (el) => el.getAttribute("aria-label") || (el.getAttribute("aria-labelledby") || "").split(/\\s+/).map((id) => document.getElementById(id)?.innerText || "").join(" ").trim() || el.labels?.[0]?.innerText?.trim() || el.getAttribute("placeholder") || el.getAttribute("title") || el.innerText?.trim() || el.textContent?.trim() || "";
+      const describe = (el) => {
+        let ref = el.getAttribute("data-work-ref");
+        if (!/^e\\d+$/.test(ref || "")) {
+          const next = Number(window.__agentCabinWorkRefCounter) || 1;
+          ref = 'e' + next;
+          window.__agentCabinWorkRefCounter = next + 1;
+          el.setAttribute("data-work-ref", ref);
+        }
+        const rect = el.getBoundingClientRect();
+        return { ref, role: roleOf(el), name: nameOf(el).slice(0, 80), disabled: Boolean(el.disabled), readOnly: Boolean(el.readOnly), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
+      };
+      if (ref) {
+        const el = document.querySelector('[data-work-ref="' + ref + '"]');
+        if (el) {
+          if (!visible(el)) return { error: { code: 'target_not_visible', message: 'The referenced element is no longer visible.' } };
+          if (el.disabled) return { error: { code: 'target_disabled', message: 'The referenced element is disabled.' } };
+          return { element: describe(el), source: 'ref' };
+        }
+      }
+      const hasLocator = locator && Object.keys(locator).length > 0;
+      if (hasLocator) {
+        const candidates = Array.from(document.querySelectorAll('body *')).filter((el) => {
+          if (!visible(el)) return false;
+          if (locator.role && roleOf(el) !== locator.role) return false;
+          if (locator.name && nameOf(el).trim() !== locator.name.trim()) return false;
+          if (locator.label && !Array.from(el.labels || []).some((label) => label.innerText.trim() === locator.label.trim())) return false;
+          if (locator.placeholder && el.getAttribute('placeholder')?.trim() !== locator.placeholder.trim()) return false;
+          if (locator.text && (el.innerText || el.textContent || '').trim() !== locator.text.trim()) return false;
+          return Boolean(locator.role || locator.name || locator.label || locator.placeholder || locator.text);
+        });
+        if (candidates.length > 1) return { error: { code: 'ambiguous_target', message: 'The semantic locator matches multiple visible elements.' } };
+        if (candidates.length === 1) {
+          if (candidates[0].disabled) return { error: { code: 'target_disabled', message: 'The semantic target is disabled.' } };
+          return { element: describe(candidates[0]), source: 'locator' };
+        }
+      }
+      if (selector) {
+        let candidates;
+        try { candidates = Array.from(document.querySelectorAll(selector)).filter(visible); }
+        catch { return { error: { code: 'invalid_selector', message: 'The CSS selector is invalid.' } }; }
+        if (candidates.length > 1) return { error: { code: 'ambiguous_target', message: 'The CSS selector matches multiple visible elements.' } };
+        if (candidates.length === 1) {
+          if (candidates[0].disabled) return { error: { code: 'target_disabled', message: 'The CSS target is disabled.' } };
+          return { element: describe(candidates[0]), source: 'selector' };
+        }
+      }
+      return { error: { code: ref ? 'stale_ref' : 'target_not_found', message: ref ? 'The ref is stale and no unique fallback target was found.' : 'No unique target matched the supplied locator or selector.' } };
+    `);
+    if (result?.error) {
+      const error = new Error(result.error.message);
+      error.code = result.error.code;
+      throw error;
+    }
+    return result;
+  }
+
   const page = {
     async title() {
       return (await evaluateValue("return document.title;")) ?? "";
@@ -96,17 +165,30 @@ export function createEmbeddedPage({ client }) {
       await client.send("Input.dispatchMouseEvent", { ...base, type: "mouseReleased" });
       return { ok: true };
     },
-    async clickRef(ref) {
+    async resolveTarget(ref, locator, selector) {
+      return resolveTarget(ref, locator, selector);
+    },
+    async clearRef(ref) {
       const safeRef = String(ref).replace(/[^a-zA-Z0-9_-]/g, "");
-      await highlightTarget(`[data-work-ref="${safeRef}"]`);
-      const rect = await evaluateValue(
-        `const el = document.querySelector('[data-work-ref="${safeRef}"]');
-         if (!el) return null;
-         const r = el.getBoundingClientRect();
-         return { x: r.x, y: r.y, width: r.width, height: r.height };`,
-      );
-      if (!rect) throw new Error(`stale ref: ${ref} is no longer in the page`);
-      return page.clickAt(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      const cleared = await evaluateValue(`
+        const el = document.querySelector('[data-work-ref="${safeRef}"]');
+        if (!el) return false;
+        if (el.readOnly || el.disabled) return false;
+        const prototype = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+        if (setter) setter.call(el, ''); else el.value = '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      `);
+      if (!cleared) throw Object.assign(new Error(`The referenced target is stale, disabled, or read-only: ${ref}`), { code: "target_disabled" });
+    },
+    async clickRef(ref, locator, selector) {
+      const target = await resolveTarget(ref, locator, selector);
+      const rect = target.element.rect;
+      await highlightTarget(target.element.ref ? `[data-work-ref="${target.element.ref}"]` : selector || `[data-work-ref="${String(ref || "").replace(/[^a-zA-Z0-9_-]/g, "")}"]`);
+      await page.clickAt(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return { target: target.element, resolvedBy: target.source };
     },
     async clickSelector(selector) {
       const safeSelector = JSON.stringify(String(selector));
@@ -120,13 +202,11 @@ export function createEmbeddedPage({ client }) {
       if (!rect) throw new Error(`stale selector: ${selector} is no longer in the page`);
       return page.clickAt(rect.x + rect.width / 2, rect.y + rect.height / 2);
     },
-    async selectOption(ref, selector, requestedValue) {
-      const safeRef = String(ref || "").replace(/[^a-zA-Z0-9_-]/g, "");
-      const targetSelector = safeRef
-        ? '[data-work-ref="' + safeRef + '"]'
-        : String(selector || "");
-      if (!targetSelector) throw new Error("Select requires a ref or CSS selector");
-
+    async selectOption(ref, selector, requestedValue, locator) {
+      const target = await resolveTarget(ref, locator, selector);
+      const targetSelector = target.element.ref
+        ? '[data-work-ref="' + target.element.ref + '"]'
+        : `*[data-work-ref="${String(ref || "").replace(/[^a-zA-Z0-9_-]/g, "")}"]`;
       await highlightTarget(targetSelector);
       const outcome = await evaluateValue(
         "const selector = " + JSON.stringify(targetSelector) + ";\n" +
@@ -147,7 +227,7 @@ export function createEmbeddedPage({ client }) {
       );
       if (outcome?.error) throw new Error(outcome.error);
       if (!outcome?.selected) throw new Error("The requested <select> option was not selected");
-      return outcome;
+      return { ...outcome, target: target.element, resolvedBy: target.source };
     },
     async typeText(text) {
       for (const char of String(text)) {
