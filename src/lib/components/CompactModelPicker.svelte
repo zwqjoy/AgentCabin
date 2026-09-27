@@ -115,6 +115,11 @@
     }
     return currentModel.trim() || models[0]?.displayName || "选择模型";
   });
+  const displayProvider = $derived(
+    currentModelInfo?.providerName
+      ? simplifyProviderName(currentModelInfo.providerName)
+      : (currentModelInfo?.providerId ?? ""),
+  );
   const displayEffort = $derived(
     effortOptions.find((option) => option.value === currentEffort)?.label ??
       (currentEffort || t("model_auto")),
@@ -236,8 +241,20 @@
     aria-label="切换模型和推理强度"
     aria-expanded={pickerOpen}
   >
-    <span class="min-w-0 max-w-[min(18rem,30vw)] truncate font-medium" title={displayModel}
-      >{displayModel}</span
+    {#if displayProvider}
+      <span
+        class="inline-flex min-w-0 max-w-28 shrink items-center gap-1 rounded bg-muted/70 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+        title="供应商：{displayProvider}"
+      >
+        <span class="truncate font-medium text-foreground/75">{displayProvider}</span>
+      </span>
+      <span class="shrink-0 text-muted-foreground/40" aria-hidden="true">/</span>
+    {/if}
+    <span
+      class="min-w-0 truncate font-medium {displayProvider
+        ? 'max-w-[min(11rem,22vw)]'
+        : 'max-w-[min(18rem,30vw)]'}"
+      title={displayModel}>{displayModel}</span
     >
     {#if isSubscriptionModel && rateLimits?.primary}
       {@const p = rateLimits.primary}
