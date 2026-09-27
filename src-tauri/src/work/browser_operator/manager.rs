@@ -317,15 +317,9 @@ impl BrowserOperatorManager {
 
         match &result {
             Ok(val) => {
-                let current_url = val
-                    .get("url")
-                    .and_then(Value::as_str)
-                    .map(ToString::to_string)
-                    .or(target_url);
-                let page_title = val
-                    .get("title")
-                    .and_then(Value::as_str)
-                    .map(ToString::to_string);
+                let current_url =
+                    trace_string(val, &["/url", "/after/url", "/observation/url"]).or(target_url);
+                let page_title = trace_string(val, &["/title", "/observation/title"]);
                 let screenshot = screenshot_data_from_result(val);
                 let verification_failed = val
                     .get("timedOut")
@@ -995,9 +989,43 @@ fn parse_action_meta(
     }
 }
 
+fn trace_string(value: &Value, paths: &[&str]) -> Option<String> {
+    paths.iter().find_map(|path| {
+        value
+            .pointer(path)
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn structured_trace_fields_prefer_top_level_then_nested_metadata() {
+        let structured = json!({
+            "after": { "url": "https://after.test" },
+            "observation": { "url": "https://observed.test", "title": "Observed" }
+        });
+        assert_eq!(
+            trace_string(&structured, &["/url", "/after/url", "/observation/url"]).as_deref(),
+            Some("https://after.test")
+        );
+        assert_eq!(
+            trace_string(&structured, &["/title", "/observation/title"]).as_deref(),
+            Some("Observed")
+        );
+        let legacy = json!({ "url": "https://legacy.test", "title": "Legacy" });
+        assert_eq!(
+            trace_string(&legacy, &["/url", "/after/url"]).as_deref(),
+            Some("https://legacy.test")
+        );
+        assert_eq!(
+            trace_string(&legacy, &["/title", "/observation/title"]).as_deref(),
+            Some("Legacy")
+        );
+    }
 
     #[test]
     fn embedded_params_are_merged_into_worker_calls() {

@@ -1,3 +1,5 @@
+import { semanticRole } from "./semantic_role.mjs";
+
 /**
  * Browser Worker semantic snapshots. Refs remain attached to their DOM node;
  * revisions and comparison history are process-local and scoped to a page and
@@ -52,8 +54,11 @@ export async function generatePageSnapshot(page, { sinceRevision } = {}) {
   const url = page.url();
 
   const snapshotData = await page
-    .evaluate(() => {
-      let idCounter = Number(window.__agentCabinWorkRefCounter) || 1;
+    .evaluate((roleSource) => {
+      const inferRole = new Function(`return (${roleSource});`)();
+      let idCounter = Number.isSafeInteger(Number(window.__agentCabinWorkRefCounter)) && Number(window.__agentCabinWorkRefCounter) > 0
+        ? Number(window.__agentCabinWorkRefCounter)
+        : 1;
       const refs = {};
       const lines = [];
       const interactiveTags = new Set(["a", "button", "input", "select", "textarea", "summary"]);
@@ -100,7 +105,7 @@ export async function generatePageSnapshot(page, { sinceRevision } = {}) {
             if (!existingRef) el.setAttribute("data-work-ref", refId);
             const label = getElementLabel(el);
             const value = el.value !== undefined ? String(el.value) : undefined;
-            const finalRole = role || (tag === "a" ? "link" : tag === "input" ? (el.type === "submit" || el.type === "button" ? "button" : el.type === "search" ? "searchbox" : "textbox") : tag);
+            const finalRole = inferRole(tag, el.type, role);
             const checked = tag === "input" && (el.type === "checkbox" || el.type === "radio") ? Boolean(el.checked) : undefined;
             const selectedLabel = tag === "select" ? String(el.selectedOptions?.[0]?.textContent || "").trim() : "";
             refs[refId] = {
@@ -134,7 +139,7 @@ export async function generatePageSnapshot(page, { sinceRevision } = {}) {
       traverse(document.body, 0);
       window.__agentCabinWorkRefCounter = idCounter;
       return { tree: lines.join("\n"), refs, documentKey: String(performance.timeOrigin) };
-    })
+    }, semanticRole.toString())
     .catch((err) => ({ tree: `(Failed to capture DOM snapshot: ${err?.message})`, refs: {}, documentKey: "unavailable" }));
 
   let pageState = snapshotsByPage.get(page);

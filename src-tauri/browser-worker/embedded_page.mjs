@@ -1,3 +1,5 @@
+import { semanticRole } from "./semantic_role.mjs";
+
 /**
  * Page adapter backed by the raw embedded CDP client.
  * Only operations that can be expressed safely through page-level CDP are
@@ -59,7 +61,7 @@ export function createEmbeddedPage({ client }) {
         const rect = el.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
       };
-      const roleOf = (el) => el.getAttribute("role") || (el.tagName === "A" ? "link" : el.tagName === "INPUT" ? (el.type === "checkbox" || el.type === "radio" ? el.type : el.type === "submit" || el.type === "button" ? "button" : el.type === "search" ? "searchbox" : "textbox") : el.tagName.toLowerCase());
+      const roleOf = (el) => (${semanticRole.toString()})(el.tagName.toLowerCase(), el.type, el.getAttribute("role") || "");
       const nameOf = (el) => el.getAttribute("aria-label") || (el.getAttribute("aria-labelledby") || "").split(/\\s+/).map((id) => document.getElementById(id)?.innerText || "").join(" ").trim() || el.labels?.[0]?.innerText?.trim() || el.getAttribute("placeholder") || el.getAttribute("title") || el.innerText?.trim() || el.textContent?.trim() || "";
       const describe = (el) => {
         let ref = el.getAttribute("data-work-ref");
