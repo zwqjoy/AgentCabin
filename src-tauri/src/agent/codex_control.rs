@@ -19,14 +19,9 @@ use tokio::time::timeout;
 const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 
-// Codex currently exposes a 272K model window and uses 95% of it as the
-// effective conversation budget in the first-party client (258.4K). The
-// app-server `model/list` schema does not include this metadata, so preserve
-// the known current GPT-5.6 subscription values when the catalog omits it.
-const CODEX_MODEL_CONTEXT_WINDOW: u64 = 272_000;
-const CODEX_EFFECTIVE_CONTEXT_PERCENT: u64 = 95;
-const CODEX_EFFECTIVE_CONTEXT_WINDOW: u64 =
-    CODEX_MODEL_CONTEXT_WINDOW * CODEX_EFFECTIVE_CONTEXT_PERCENT / 100;
+// GPT-5.6 and GPT-6 subscription model catalogs may omit context metadata.
+// Keep their effective conversation budget (258.4K) available as a fallback.
+const CODEX_EFFECTIVE_CONTEXT_WINDOW: u64 = 258_400;
 
 pub(crate) fn known_effective_context_window(model: &str) -> Option<u64> {
     let model = model
@@ -36,7 +31,12 @@ pub(crate) fn known_effective_context_window(model: &str) -> Option<u64> {
         .to_ascii_lowercase();
     matches!(
         model.as_str(),
-        "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"
+        "gpt-6-sol"
+            | "gpt-6-astra"
+            | "gpt-6-luna"
+            | "gpt-5.6-sol"
+            | "gpt-5.6-terra"
+            | "gpt-5.6-luna"
     )
     .then_some(CODEX_EFFECTIVE_CONTEXT_WINDOW)
 }

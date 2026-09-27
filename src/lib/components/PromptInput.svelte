@@ -21,6 +21,7 @@
   import AgentSelector from "./AgentSelector.svelte";
   import AuthSourceBadge from "./AuthSourceBadge.svelte";
   import FileAttachment from "./FileAttachment.svelte";
+  import ContextUsagePopover from "./ContextUsagePopover.svelte";
   import SlashMenu from "./SlashMenu.svelte";
   import CompactModelPicker from "./CompactModelPicker.svelte";
   import WorkBuddyCascadingMenu, { type SelectedExpert } from "./WorkBuddyCascadingMenu.svelte";
@@ -1226,6 +1227,9 @@
   let branchDropdownOpen = $state(false);
   let branchBtnEl: HTMLButtonElement | undefined = $state();
   let branchDropdownEl: HTMLDivElement | undefined = $state();
+  let contextUsagePopoverOpen = $state(false);
+  let contextUsageTriggerEl: HTMLButtonElement | undefined = $state();
+  let contextUsagePopoverEl: HTMLDivElement | undefined = $state();
   let branchSearchQuery = $state("");
   let branchList = $state<import("$lib/api").GitBranchInfo[]>([]);
   let branchLoading = $state(false);
@@ -2528,6 +2532,13 @@
       ) {
         branchDropdownOpen = false;
       }
+      if (
+        contextUsagePopoverOpen &&
+        !contextUsageTriggerEl?.contains(target) &&
+        !contextUsagePopoverEl?.contains(target)
+      ) {
+        contextUsagePopoverOpen = false;
+      }
     }
     function onDocKeydown(e: KeyboardEvent) {
       if (modeDropdownOpen && e.key === "Escape") {
@@ -2541,6 +2552,9 @@
       }
       if (projectDropdownOpen && e.key === "Escape") {
         projectDropdownOpen = false;
+      }
+      if (contextUsagePopoverOpen && e.key === "Escape") {
+        contextUsagePopoverOpen = false;
       }
       if (branchDropdownOpen && e.key === "Escape") {
         branchDropdownOpen = false;
@@ -3650,6 +3664,59 @@
 
       <!-- Right: actions -->
       <div class="flex items-center gap-0.5">
+        {#if sessionInfo && agent === "pi"}
+          {@const contextUtilization = Math.max(
+            0,
+            Math.min(
+              1,
+              sessionInfo.contextBreakdown?.percent != null
+                ? sessionInfo.contextBreakdown.percent / 100
+                : (sessionInfo.contextUtilization ?? 0),
+            ),
+          )}
+          {@const contextPercentage = Math.round(contextUtilization * 100)}
+          <div class="relative">
+            <button
+              type="button"
+              bind:this={contextUsageTriggerEl}
+              class="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              onclick={() => (contextUsagePopoverOpen = !contextUsagePopoverOpen)}
+              title={`${t("prompt_contextUsageTitle")} · ${contextPercentage}%`}
+              aria-label={`${t("prompt_contextUsageTitle")} · ${contextPercentage}%`}
+              aria-haspopup="dialog"
+              aria-expanded={contextUsagePopoverOpen}
+            >
+              <svg class="h-4 w-4 -rotate-90" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="7"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  opacity="0.2"
+                />
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="7"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-dasharray="43.98"
+                  stroke-dashoffset={43.98 - (43.98 * contextPercentage) / 100}
+                />
+              </svg>
+            </button>
+            {#if contextUsagePopoverOpen}
+              <div bind:this={contextUsagePopoverEl} class="absolute bottom-full right-0 z-50 mb-2">
+                <ContextUsagePopover
+                  info={sessionInfo}
+                  onClose={() => (contextUsagePopoverOpen = false)}
+                />
+              </div>
+            {/if}
+          </div>
+        {/if}
         {#if (currentModel || models.length > 0) && (onModelSwitch || onEffortChange)}
           <CompactModelPicker
             {agent}
