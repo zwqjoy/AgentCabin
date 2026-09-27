@@ -103,6 +103,8 @@ private struct CapturedWindowImage {
 
 private struct LookRecord {
 	let lookId: String
+	let pid: Int32
+	let processIdentity: ComputerUseProcessIdentity
 	let windowId: UInt32
 	let windowFrame: CGRect
 	let imageWidth: Int
@@ -1341,11 +1343,14 @@ final class Bridge {
 		} else {
 			throw BridgeFailure(message: "Root is not owned by a running app", code: "root_not_found")
 		}
+		guard let processIdentity = currentProcessIdentity(pid: pid) else {
+			throw BridgeFailure(message: "Root process identity is unavailable", code: "stale_process")
+		}
 		ensureEnhancedAccessibility(pid: pid)
 		if let windowRef, windowRef.hasPrefix("cgmenu:"), refStore.window(for: windowRef) == nil {
 			let frame = windowId.flatMap { windowInfo(windowId: $0)?.bounds } ?? CGRect(x: 0, y: 0, width: 1, height: 1)
 			let lookId = freshLookId()
-			storeLookRecord(LookRecord(lookId: lookId, windowId: windowId ?? 0, windowFrame: frame, imageWidth: max(1, Int(frame.width)), imageHeight: max(1, Int(frame.height)), hasImage: false))
+			storeLookRecord(LookRecord(lookId: lookId, pid: pid, processIdentity: processIdentity, windowId: windowId ?? 0, windowFrame: frame, imageWidth: max(1, Int(frame.width)), imageHeight: max(1, Int(frame.height)), hasImage: false))
 			let outline = LookNode(element: nil, ref: windowRef, role: "AXMenu", subrole: "", identifier: "", title: "Menu", description: "", value: "", actions: [], canPress: false, canFocus: false, canSetValue: false, canScroll: false, canIncrement: false, canDecrement: false, isTextInput: false, rect: CGRect(x: 0, y: 0, width: max(1, frame.width), height: max(1, frame.height)), pictureOnly: true)
 			return [
 				"lookId": lookId,
@@ -1408,8 +1413,13 @@ final class Bridge {
 
 		let lookId = freshLookId()
 		let baseRecord = baseLookId.flatMap { lookRecord(for: $0) }
+		if let baseRecord, baseRecord.processIdentity != processIdentity {
+			throw BridgeFailure(message: "Base look belongs to a previous app process", code: "stale_process")
+		}
 		storeLookRecord(LookRecord(
 			lookId: lookId,
+			pid: pid,
+			processIdentity: processIdentity,
 			windowId: windowId ?? baseRecord?.windowId ?? 0,
 			windowFrame: baseRecord?.windowFrame ?? capture?.frame ?? rootFrame,
 			imageWidth: baseRecord?.imageWidth ?? imageWidth,
@@ -1855,6 +1865,7 @@ final class Bridge {
 		guard let record = lookRecord(for: lookId) else {
 			throw BridgeFailure(message: "Look id '\(lookId)' is no longer available", code: "stale_look")
 		}
+		try validateLookProcess(record)
 		let point = lookPoint(record: record, x: try doubleArg(request, "x"), y: try doubleArg(request, "y"))
 		guard let element = hitTestElement(at: point) else {
 			throw BridgeFailure(message: "No element at point", code: "hit_test_failed")
@@ -1868,6 +1879,7 @@ final class Bridge {
 			throw BridgeFailure(message: "Look id '\(lookId)' is no longer available", code: "stale_look")
 		}
 		let pid = Int32(try intArg(request, "pid"))
+		try validateLookProcess(record, requestedPid: pid)
 		let action = try stringArg(request, "action")
 		let target = request["target"] as? [String: Any] ?? [:]
 		let params = request["params"] as? [String: Any] ?? [:]
@@ -1994,26 +2006,28 @@ final class Bridge {
 			case "press", "click":
 				let buttonName = params["button"] as? String ?? "left"
 				let clickCount = max(1, min(3, (params["clickCount"] as? NSNumber)?.intValue ?? 1))
-				let axResult = attemptCoordinateAXPress(
+				let axResult = attemptCoordinateAXAction(
 					button: buttonName,
 					clickCount: clickCount,
 					targetPid: pid,
+					processIdentityMatches: { currentProcessIdentity(pid: pid) == record.processIdentity },
 					hitTest: { preflightHit ?? hitTestElement(at: point) },
 					ownerPid: { pidForElement($0) },
 					role: { stringAttribute($0, attribute: kAXRoleAttribute as CFString) },
 					parent: { parentElement($0) },
-					supportsPress: { supportsAction($0, action: kAXPressAction as CFString) },
-					performPress: { AXUIElementPerformAction($0, kAXPressAction as CFString) == .success }
+					supportsAction: { supportsAction($0, action: $1 as CFString) },
+					performAction: { AXUIElementPerformAction($0, $1 as CFString) == .success }
 				)
 				if axResult.performed {
 					performed["grounding"] = "ax_hit_test"
 					performed["delivery"] = "ax"
 					performed["performed"] = true
 					performed["axAncestorDepth"] = axResult.depth
+					performed["axAction"] = axResult.actionName ?? "AXPress"
 					animateCursor(at: point)
 					return
 				}
-				if axResult.reason == "pid_mismatch" || (axResult.reason == "pid_unavailable" && delivery == "hid") {
+				if axResult.reason == "process_identity_changed" || axResult.reason == "pid_mismatch" || (axResult.reason == "pid_unavailable" && delivery == "hid") {
 					throw BridgeFailure(message: "Coordinate target could not be safely attributed to the requested app", code: "occluded_target")
 				}
 				performed["axFallbackReason"] = axResult.reason ?? "no_press_action"
@@ -2021,6 +2035,7 @@ final class Bridge {
 				focusTargetForPhysicalInput()
 				animateCursor(at: point)
 				try postMouseClick(at: point, pid: pid, button: mouseButton(buttonName), clickCount: clickCount, delivery: delivery)
+				performed["performed"] = true
 			case "moveMouse":
 				acquirePhysicalInputIfNeeded()
 				focusTargetForPhysicalInput()
@@ -2071,6 +2086,7 @@ final class Bridge {
 				}
 			} else if supportsAction(element, action: kAXPressAction as CFString) {
 				let cursorPoint = try? coordinatePoint()
+				try validateLookProcess(record, requestedPid: pid)
 				var status = AXUIElementPerformAction(element, kAXPressAction as CFString)
 				if status != .success, let refreshed = refreshElement(), supportsAction(refreshed, action: kAXPressAction as CFString) {
 					status = AXUIElementPerformAction(refreshed, kAXPressAction as CFString)
@@ -2078,6 +2094,7 @@ final class Bridge {
 				if status == .success {
 					performed["grounding"] = "description"
 					performed["delivery"] = "ax"
+					performed["performed"] = true
 					if let cursorPoint { animateCursor(at: cursorPoint) }
 				} else {
 					try executeCoordinates(coordinatePoint())
@@ -2687,6 +2704,26 @@ final class Bridge {
 		let status = AXUIElementGetPid(element, &pid)
 		guard status == .success else { return nil }
 		return Int32(pid)
+	}
+
+	private func currentProcessIdentity(pid: Int32) -> ComputerUseProcessIdentity? {
+		var info = proc_bsdinfo()
+		let expectedSize = Int32(MemoryLayout<proc_bsdinfo>.size)
+		let actualSize = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, expectedSize)
+		guard actualSize == expectedSize, info.pbi_pid == UInt32(pid) else { return nil }
+		return ComputerUseProcessIdentity(
+			pid: pid,
+			startSeconds: UInt64(info.pbi_start_tvsec),
+			startMicroseconds: UInt64(info.pbi_start_tvusec)
+		)
+	}
+
+	private func validateLookProcess(_ record: LookRecord, requestedPid: Int32? = nil) throws {
+		guard requestedPid == nil || requestedPid == record.pid,
+			currentProcessIdentity(pid: record.pid) == record.processIdentity
+		else {
+			throw BridgeFailure(message: "The target app process changed; observe the UI again", code: "stale_process")
+		}
 	}
 
 	private func parentElement(_ element: AXUIElement) -> AXUIElement? {

@@ -146,7 +146,11 @@ export class DesktopComputerUseBackend {
     const parsed = await this.invoke(callId || "roots:list", "desktop_list_apps", "list_apps", actualParams, signal);
     const windows = Array.isArray(parsed?.structuredContent?.windows)
       ? parsed.structuredContent.windows
-      : (Array.isArray(parsed?.windows) ? parsed.windows : []);
+      : Array.isArray(parsed?.structuredContent?.roots)
+        ? parsed.structuredContent.roots
+        : (Array.isArray(parsed?.windows)
+          ? parsed.windows
+          : (Array.isArray(parsed?.roots) ? parsed.roots : []));
     const roots = [];
 
     for (const win of windows) {

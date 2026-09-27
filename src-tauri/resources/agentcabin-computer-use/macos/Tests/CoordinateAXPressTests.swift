@@ -17,16 +17,17 @@ final class CoordinateAXPressTests: XCTestCase {
 	}
 
 	private func attempt(_ hit: Element?, button: String = "left", clickCount: Int = 1, targetPid: Int32 = 42, calls: inout [Element]) -> CoordinateAXPressResult {
-		attemptCoordinateAXPress(
+		attemptCoordinateAXAction(
 			button: button,
 			clickCount: clickCount,
 			targetPid: targetPid,
+			processIdentityMatches: { true },
 			hitTest: { hit },
 			ownerPid: { $0.pid },
 			role: { $0.role },
 			parent: { $0.parent },
-			supportsPress: { $0.pressable },
-			performPress: { calls.append($0); return true }
+			supportsAction: { $0.pressable && $1 == "AXPress" },
+			performAction: { element, _ in calls.append(element); return true }
 		)
 	}
 
@@ -76,16 +77,17 @@ final class CoordinateAXPressTests: XCTestCase {
 
 	func testFallsBackWhenAXPressFails() {
 		let hit = Element(pid: 42, pressable: true)
-		let result = attemptCoordinateAXPress(
+		let result = attemptCoordinateAXAction(
 			button: "left",
 			clickCount: 1,
 			targetPid: 42,
+			processIdentityMatches: { true },
 			hitTest: { hit },
 			ownerPid: { $0.pid },
 			role: { $0.role },
 			parent: { $0.parent },
-			supportsPress: { $0.pressable },
-			performPress: { _ in false }
+			supportsAction: { $0.pressable && $1 == "AXPress" },
+			performAction: { _, _ in false }
 		)
 		XCTAssertEqual(result.reason, "ax_action_failed")
 	}
@@ -111,6 +113,53 @@ final class CoordinateAXPressTests: XCTestCase {
 		XCTAssertEqual(attempt(hit, button: "middle", calls: &calls).reason, "unsupported_button")
 		XCTAssertEqual(attempt(hit, clickCount: 2, calls: &calls).reason, "unsupported_button")
 		XCTAssertTrue(calls.isEmpty)
+	}
+
+	func testRightClickUsesAXShowMenu() {
+		let hit = Element(pid: 42, pressable: false)
+		var actionCalls: [String] = []
+		let result = attemptCoordinateAXAction(
+			button: "right",
+			clickCount: 1,
+			targetPid: 42,
+			processIdentityMatches: { true },
+			hitTest: { hit },
+			ownerPid: { $0.pid },
+			role: { $0.role },
+			parent: { $0.parent },
+			supportsAction: { _, action in action == "AXShowMenu" },
+			performAction: { _, action in actionCalls.append(action); return true }
+		)
+		XCTAssertTrue(result.performed)
+		XCTAssertEqual(result.actionName, "AXShowMenu")
+		XCTAssertEqual(actionCalls, ["AXShowMenu"])
+	}
+
+	func testProcessIdentityChangeFailsClosedBeforeAXAction() {
+		let hit = Element(pid: 42, pressable: true)
+		var calls: [Element] = []
+		let result = attemptCoordinateAXAction(
+			button: "left",
+			clickCount: 1,
+			targetPid: 42,
+			processIdentityMatches: { false },
+			hitTest: { hit },
+			ownerPid: { $0.pid },
+			role: { $0.role },
+			parent: { $0.parent },
+			supportsAction: { $0.pressable && $1 == "AXPress" },
+			performAction: { element, _ in calls.append(element); return true }
+		)
+		XCTAssertEqual(result.reason, "process_identity_changed")
+		XCTAssertTrue(calls.isEmpty)
+	}
+
+	func testProcessIdentityIncludesProcessStartTime() {
+		let first = ComputerUseProcessIdentity(pid: 42, startSeconds: 10, startMicroseconds: 20)
+		let sameProcess = ComputerUseProcessIdentity(pid: 42, startSeconds: 10, startMicroseconds: 20)
+		let reusedPid = ComputerUseProcessIdentity(pid: 42, startSeconds: 11, startMicroseconds: 0)
+		XCTAssertEqual(first, sameProcess)
+		XCTAssertNotEqual(first, reusedPid)
 	}
 
 	func testStopsBeforeWindowAndApplicationActions() {

@@ -12,6 +12,7 @@ import {
   ComputerUseEvalRunner,
   RealComputerUseEvalSession,
   createRealSessionFactory,
+  computeActionDeliveryMetrics,
 } from "./eval_runner.mjs";
 import { ComputerUseV2Session } from "../computer_use_v2_runtime.mjs";
 import {
@@ -119,6 +120,37 @@ test("Milestone C: ComputerUseEvalRunner runs cases and generates comprehensive 
   assert.ok(report.avgLatencyMs >= 0);
   assert.ok(Array.isArray(report.results));
   assert.equal(report.results.length, 25);
+  assert.deepEqual(report.actionDelivery, {
+    eligibleMutations: 0,
+    axActions: 0,
+    physicalFallbacks: 0,
+    axActionRate: 0,
+    physicalFallbackRate: 0,
+  });
+});
+
+test("eval delivery metrics count successful AX and coordinate click mutations", () => {
+  const metrics = computeActionDeliveryMetrics({
+    steps: [
+      { performed: { performed: true, grounding: "ax_hit_test", delivery: "ax" } },
+      { performed: { performed: true, grounding: "coordinates", delivery: "hid", axFallbackReason: "no_press_action" } },
+      { performed: { performed: false, grounding: "description", delivery: "ax" } },
+      { performed: { performed: true, grounding: "coordinates", delivery: "hid" } },
+    ],
+  }, [
+    { action: "click", x: 10, y: 10 },
+    { action: "press", x: 20, y: 20 },
+    { action: "click", ref: "@e3" },
+    { action: "scroll", x: 30, y: 30 },
+  ]);
+
+  assert.deepEqual(metrics, {
+    eligibleMutations: 2,
+    axActions: 1,
+    physicalFallbacks: 1,
+    axActionRate: 50,
+    physicalFallbackRate: 50,
+  });
 });
 
 test("Milestone C: EvalRunner captures failure attribution and computes failure distribution", async () => {

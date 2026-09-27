@@ -7,6 +7,49 @@
 import { validateEvalCase, classifyFailure, FAILURE_CATEGORIES } from "./eval_types.mjs";
 import { MACOS_EVAL_CASES } from "./eval_cases_macos.mjs";
 
+export function computeActionDeliveryMetrics(execution, requestedActions = []) {
+  let eligibleMutations = 0;
+  let axActions = 0;
+  let physicalFallbacks = 0;
+  const steps = Array.isArray(execution?.steps) ? execution.steps : [];
+
+  for (let index = 0; index < requestedActions.length; index++) {
+    const action = requestedActions[index];
+    if (action?.action !== "click" && action?.action !== "press") continue;
+    const performed = steps[index]?.performed;
+    if (!performed || performed.performed !== true) continue;
+
+    if (performed.delivery === "ax") {
+      eligibleMutations++;
+      axActions++;
+    } else if (performed.grounding === "coordinates" && ["hid", "pid"].includes(performed.delivery)) {
+      eligibleMutations++;
+      physicalFallbacks++;
+    }
+  }
+
+  return {
+    eligibleMutations,
+    axActions,
+    physicalFallbacks,
+    axActionRate: eligibleMutations ? Number(((axActions / eligibleMutations) * 100).toFixed(2)) : 0,
+    physicalFallbackRate: eligibleMutations ? Number(((physicalFallbacks / eligibleMutations) * 100).toFixed(2)) : 0,
+  };
+}
+
+function combineActionDeliveryMetrics(metrics) {
+  const totals = metrics.reduce((sum, current) => ({
+    eligibleMutations: sum.eligibleMutations + current.eligibleMutations,
+    axActions: sum.axActions + current.axActions,
+    physicalFallbacks: sum.physicalFallbacks + current.physicalFallbacks,
+  }), { eligibleMutations: 0, axActions: 0, physicalFallbacks: 0 });
+  return {
+    ...totals,
+    axActionRate: totals.eligibleMutations ? Number(((totals.axActions / totals.eligibleMutations) * 100).toFixed(2)) : 0,
+    physicalFallbackRate: totals.eligibleMutations ? Number(((totals.physicalFallbacks / totals.eligibleMutations) * 100).toFixed(2)) : 0,
+  };
+}
+
 export class ComputerUseEvalRunner {
   constructor(options = {}) {
     this.cases = options.cases || MACOS_EVAL_CASES;
@@ -26,6 +69,7 @@ export class ComputerUseEvalRunner {
     let failureCategory = null;
     let errorDetails = null;
     let lastExecution = {};
+    const actionDeliveryMetrics = [];
 
     try {
       const session = await this.sessionFactory(caseDef);
@@ -89,6 +133,7 @@ export class ComputerUseEvalRunner {
           currentStateId = actResult.details.stateId;
         }
 
+        actionDeliveryMetrics.push(computeActionDeliveryMetrics(actResult.details.execution, actions));
         lastExecution = {
           outcome: actResult.details.execution?.outcome,
           verification: actResult.details.execution?.verification,
@@ -141,6 +186,7 @@ export class ComputerUseEvalRunner {
             throw new Error(crossResult?.content?.[0]?.text || "Cross-app action failed.");
           }
           if (crossResult.details.stateId) currentStateId = crossResult.details.stateId;
+          actionDeliveryMetrics.push(computeActionDeliveryMetrics(crossResult.details.execution, crossActions));
           lastExecution = {
             outcome: crossResult.details.execution?.outcome,
             verification: crossResult.details.execution?.verification,
@@ -182,6 +228,7 @@ export class ComputerUseEvalRunner {
       wrongClicks,
       failureCategory: passed ? null : (failureCategory || FAILURE_CATEGORIES.ACTION_REJECTED),
       error: errorDetails,
+      actionDelivery: combineActionDeliveryMetrics(actionDeliveryMetrics),
     };
   }
 
@@ -196,6 +243,7 @@ export class ComputerUseEvalRunner {
     let totalToolCalls = 0;
     let totalLatencyMs = 0;
     let totalWrongClicks = 0;
+    const actionDeliveryMetrics = [];
 
     for (const caseDef of selectedCases) {
       const result = await this.runCase(caseDef);
@@ -204,6 +252,7 @@ export class ComputerUseEvalRunner {
       totalToolCalls += result.toolCalls;
       totalLatencyMs += result.latencyMs;
       totalWrongClicks += result.wrongClicks;
+      actionDeliveryMetrics.push(result.actionDelivery);
 
       if (!result.passed && result.failureCategory) {
         failureDistribution[result.failureCategory] = (failureDistribution[result.failureCategory] || 0) + 1;
@@ -225,6 +274,7 @@ export class ComputerUseEvalRunner {
       failed,
       successRate: Number(successRate.toFixed(2)),
       wrongClickRate,
+      actionDelivery: combineActionDeliveryMetrics(actionDeliveryMetrics),
       avgToolCalls,
       avgLatencyMs,
       failureDistribution,

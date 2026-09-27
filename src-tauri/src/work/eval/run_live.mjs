@@ -266,9 +266,66 @@ export const LIVE_EVAL_CASES = Object.freeze([
  * Creates live desktop invoker connected to native macOS bridge.
  */
 export function createLiveDesktopInvoker(options = {}) {
-  const bridgeBin = resolve(REPO_ROOT, "src-tauri/resources/agentcabin-computer-use/macos/bridge");
+  const bridgeDir = resolve(REPO_ROOT, "src-tauri/resources/agentcabin-computer-use/macos");
+  const standaloneBridge = resolve(bridgeDir, "bridge");
+  const bundledBridge = resolve(bridgeDir, "agentcabin-computer-use.app/Contents/MacOS/bridge");
+  const bridgeBin = existsSync(standaloneBridge) ? standaloneBridge : bundledBridge;
+  let bridgeProcess;
+  let bridgeOutput = "";
+  let bridgeRequestId = 0;
+  const pendingBridgeRequests = new Map();
 
-  return async (toolCallId, toolName, action, params = {}, signal) => {
+  function startBridgeProcess() {
+    if (bridgeProcess && bridgeProcess.exitCode === null && !bridgeProcess.killed) return bridgeProcess;
+    bridgeProcess = spawn(bridgeBin, [], { stdio: ["pipe", "pipe", "pipe"] });
+    bridgeOutput = "";
+    bridgeProcess.stdout.on("data", (data) => {
+      bridgeOutput += data.toString();
+      while (true) {
+        const newline = bridgeOutput.indexOf("\n");
+        if (newline < 0) break;
+        const line = bridgeOutput.slice(0, newline).trim();
+        bridgeOutput = bridgeOutput.slice(newline + 1);
+        if (!line) continue;
+        let response;
+        try { response = JSON.parse(line); } catch { continue; }
+        const pending = pendingBridgeRequests.get(response.id);
+        if (!pending) continue;
+        pendingBridgeRequests.delete(response.id);
+        pending(response);
+      }
+    });
+    bridgeProcess.stderr.on("data", () => {});
+    const failPending = (error) => {
+      for (const reject of pendingBridgeRequests.values()) reject({ ok: false, error: { message: error } });
+      pendingBridgeRequests.clear();
+      bridgeProcess = undefined;
+    };
+    bridgeProcess.on("error", (error) => failPending(`Bridge execution failed: ${error.message}`));
+    bridgeProcess.on("close", (code) => failPending(`Bridge exited with code ${code}`));
+    return bridgeProcess;
+  }
+
+  function invokeBridgeRpc(cmd, payload = {}) {
+    if (!existsSync(bridgeBin)) {
+      return Promise.resolve({ success: false, stderr: `Desktop bridge binary not found at ${bridgeBin}` });
+    }
+    const child = startBridgeProcess();
+    const id = `rpc-${process.pid}-${++bridgeRequestId}`;
+    return new Promise((resolveResult) => {
+      pendingBridgeRequests.set(id, (response) => {
+        if (response.ok) resolveResult({ success: true, structuredContent: response.result });
+        else resolveResult({ success: false, stderr: response.error?.message || "Bridge returned error" });
+      });
+      child.stdin.write(`${JSON.stringify({ id, cmd, ...payload })}\n`, (error) => {
+        if (!error) return;
+        pendingBridgeRequests.delete(id);
+        resolveResult({ success: false, stderr: `Bridge request failed: ${error.message}` });
+      });
+    });
+  }
+
+  const invoke = async (toolCallId, toolName, action, params = {}, signal) => {
     // 1. If running under AgentCabin Host Desktop Bridge
     const bridgePort = Number(process.env.AGENTCABIN_DESKTOP_BRIDGE_PORT || 0);
     const bridgeToken = String(process.env.AGENTCABIN_DESKTOP_BRIDGE_TOKEN || "").trim();
@@ -293,53 +350,14 @@ export function createLiveDesktopInvoker(options = {}) {
       }
     }
 
-    // 2. Direct native bridge invocation via stdio JSON-RPC
-    if (!existsSync(bridgeBin)) {
-      return { success: false, stderr: `Desktop bridge binary not found at ${bridgeBin}` };
-    }
-
-    const invokeBridgeRpc = (cmd, payload = {}) => {
-      return new Promise((resolveResult) => {
-        const proc = spawn(bridgeBin, [], { stdio: ["pipe", "pipe", "pipe"] });
-        let stdout = "";
-        let stderr = "";
-        proc.stdout.on("data", (d) => { stdout += d.toString(); });
-        proc.stderr.on("data", (d) => { stderr += d.toString(); });
-
-        proc.on("error", (err) => {
-          resolveResult({ success: false, stderr: `Bridge execution failed: ${err.message}` });
-        });
-
-        proc.on("close", (code) => {
-          if (code !== 0 && !stdout) {
-            resolveResult({ success: false, stderr: stderr || `Bridge exited with code ${code}` });
-            return;
-          }
-          try {
-            const parsed = JSON.parse(stdout.trim());
-            if (parsed.ok) {
-              resolveResult({ success: true, structuredContent: parsed.result });
-            } else {
-              resolveResult({ success: false, stderr: parsed.error?.message || "Bridge returned error" });
-            }
-          } catch {
-            resolveResult({ success: false, stderr: `Invalid JSON from bridge: ${stdout.slice(0, 200)}` });
-          }
-        });
-
-        const req = JSON.stringify({ id: `rpc-${Date.now()}`, cmd, ...payload }) + "\n";
-        proc.stdin.write(req);
-        proc.stdin.end();
-      });
-    };
-
     try {
       if (toolName === "desktop_list_apps") {
         return await invokeBridgeRpc("listRoots", params);
       }
       if (toolName === "desktop_observe" || toolName === "desktop_screenshot") {
         return await invokeBridgeRpc("look", {
-          rootRef: params.root_ref || params.rootRef,
+          windowRef: params.root_ref || params.rootRef,
+          windowId: params.window_id || params.windowId,
           depth: 3,
           includeScreenshot: true,
           ...params,
@@ -358,7 +376,9 @@ export function createLiveDesktopInvoker(options = {}) {
         const listRes = await invokeBridgeRpc("listRoots");
         const existingRoots = Array.isArray(listRes?.structuredContent?.windows)
           ? listRes.structuredContent.windows
-          : (Array.isArray(listRes?.structuredContent) ? listRes.structuredContent : []);
+          : Array.isArray(listRes?.structuredContent?.roots)
+            ? listRes.structuredContent.roots
+            : (Array.isArray(listRes?.structuredContent) ? listRes.structuredContent : []);
         const existing = existingRoots.find((w) => {
           const name = String(w.appName || w.app_name || w.owner || "").toLowerCase();
           return name === appName.toLowerCase() || name.includes(appName.toLowerCase());
@@ -391,7 +411,9 @@ export function createLiveDesktopInvoker(options = {}) {
           const pollRes = await invokeBridgeRpc("listRoots");
           const roots = Array.isArray(pollRes?.structuredContent?.windows)
             ? pollRes.structuredContent.windows
-            : (Array.isArray(pollRes?.structuredContent) ? pollRes.structuredContent : []);
+            : Array.isArray(pollRes?.structuredContent?.roots)
+              ? pollRes.structuredContent.roots
+              : (Array.isArray(pollRes?.structuredContent) ? pollRes.structuredContent : []);
           const match = roots.find((w) => {
             const name = String(w.appName || w.app_name || w.owner || "").toLowerCase();
             return name === appName.toLowerCase() || name.includes(appName.toLowerCase());
@@ -417,6 +439,17 @@ export function createLiveDesktopInvoker(options = {}) {
       return { success: false, stderr: err instanceof Error ? err.message : String(err) };
     }
   };
+  invoke.close = async () => {
+    const child = bridgeProcess;
+    bridgeProcess = undefined;
+    if (!child || child.exitCode !== null || child.killed) return;
+    child.stdin.end();
+    await new Promise((resolveClose) => {
+      const timer = setTimeout(() => { child.kill(); resolveClose(); }, 1500);
+      child.once("close", () => { clearTimeout(timer); resolveClose(); });
+    });
+  };
+  return invoke;
 }
 
 /**
@@ -581,9 +614,11 @@ export async function cleanupEvalEnvironment() {
  */
 export async function runLiveEval(options = {}) {
   const fixtureServer = options.fixtureServer || await createEvalFixtureServer();
+  const desktopInvoker = options.desktopInvoker || createLiveDesktopInvoker({ hostOnly: Boolean(options.requireHostBridge) });
   try {
-    return await runLiveEvalWithFixtureServer(options, fixtureServer);
+    return await runLiveEvalWithFixtureServer({ ...options, desktopInvoker }, fixtureServer);
   } finally {
+    if (!options.desktopInvoker) await desktopInvoker.close?.();
     if (!options.fixtureServer) await fixtureServer.close();
   }
 }
@@ -628,6 +663,9 @@ async function runLiveEvalWithFixtureServer(options, fixtureServer) {
   let visualFallbackCount = 0;
   let visualFallbackSuccessCount = 0;
   let staleStateCount = 0;
+  let eligibleMutations = 0;
+  let axActions = 0;
+  let physicalFallbacks = 0;
 
   for (let i = 0; i < cases.length; i++) {
     const caseDef = cases[i];
@@ -642,6 +680,9 @@ async function runLiveEvalWithFixtureServer(options, fixtureServer) {
     totalToolCalls += caseRes.toolCalls;
     totalLatencyMs += caseRes.latencyMs;
     totalWrongClicks += caseRes.wrongClicks;
+    eligibleMutations += caseRes.actionDelivery.eligibleMutations;
+    axActions += caseRes.actionDelivery.axActions;
+    physicalFallbacks += caseRes.actionDelivery.physicalFallbacks;
 
     if (caseRes.passed) {
       firstAttemptSuccessCount++;
@@ -672,6 +713,8 @@ async function runLiveEvalWithFixtureServer(options, fixtureServer) {
   const avgLatencyMs = totalCases > 0 ? Math.round(totalLatencyMs / totalCases) : 0;
   const firstAttemptSuccessRate = totalCases > 0 ? Number(((firstAttemptSuccessCount / totalCases) * 100).toFixed(2)) : 0;
   const visualFallbackSuccessRate = visualFallbackCount > 0 ? Number(((visualFallbackSuccessCount / visualFallbackCount) * 100).toFixed(2)) : 0;
+  const axActionRate = eligibleMutations > 0 ? Number(((axActions / eligibleMutations) * 100).toFixed(2)) : 0;
+  const physicalFallbackRate = eligibleMutations > 0 ? Number(((physicalFallbacks / eligibleMutations) * 100).toFixed(2)) : 0;
 
   const summary = {
     timestamp: new Date().toISOString(),
@@ -687,6 +730,11 @@ async function runLiveEvalWithFixtureServer(options, fixtureServer) {
     visualFallbackCount,
     visualFallbackSuccessRate,
     staleStateCount,
+    eligibleMutations,
+    axActions,
+    physicalFallbacks,
+    axActionRate,
+    physicalFallbackRate,
     executionMode: requireHostBridge ? "host" : "runtime",
     failureDistribution,
     results,
@@ -705,6 +753,8 @@ async function runLiveEvalWithFixtureServer(options, fixtureServer) {
   console.log(`First Attempt Success Rate:    ${firstAttemptSuccessRate}%`);
   console.log(`Visual Fallback Count:         ${visualFallbackCount}`);
   console.log(`Visual Fallback Success Rate:  ${visualFallbackSuccessRate}%`);
+  console.log(`AX Action Rate:                ${axActionRate}% (${axActions}/${eligibleMutations})`);
+  console.log(`Physical Fallback Rate:        ${physicalFallbackRate}% (${physicalFallbacks}/${eligibleMutations})`);
   console.log(`Failure Distribution:          ${JSON.stringify(failureDistribution, null, 2)}`);
   console.log("===============================================================================");
 
