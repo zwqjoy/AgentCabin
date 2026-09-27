@@ -2714,6 +2714,8 @@ body {
   width: 100%;
   max-width: 56rem;
   margin-inline: auto;
+  container-name: composer;
+  container-type: inline-size;
   border: 1px solid var(--border-default) !important;
   border-radius: var(--radius-composer) !important;
   background: var(--bg-surface) !important;
@@ -3207,4 +3209,37 @@ mark.agent-search-highlight.agent-search-highlight-active {
 
 .prompt-composer > div.composer-context-row + textarea {
   padding-top: 8px !important;
+}
+
+/* Keep the permission control compact when a workspace side panel leaves the
+ * composer too narrow for its text label. Preserve the full mode name as its
+ * accessible name and hover title. */
+@container composer (max-width: 520px) {
+  .prompt-composer > div.composer-action-bar {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+
+  .prompt-composer > div.composer-action-bar > .composer-action-bar-left {
+    min-width: 0;
+    flex-wrap: wrap !important;
+  }
+
+  .prompt-composer > div.composer-action-bar > .composer-action-bar-right {
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .composer-permission-trigger {
+    width: var(--control-height-sm);
+    min-width: var(--control-height-sm);
+    justify-content: center;
+    padding-inline: 0 !important;
+  }
+
+  .composer-permission-trigger-label,
+  .composer-permission-trigger-chevron {
+    display: none;
+  }
 }
