@@ -154,9 +154,30 @@ impl WorkspaceManager {
 
         workspace.root_kind = WorkRootKind::LocalFolder;
         workspace.primary_work_root = Some(folder_str);
+        if workspace.artifact_count == 0 {
+            // Match a newly created folder Workspace when no registry entries
+            // can be remapped. Work state remains under the managed root.
+            fs::create_dir_all(canonical_folder.join("input"))
+                .map_err(|error| format!("无法创建本地 input 目录: {error}"))?;
+            fs::create_dir_all(canonical_folder.join("output"))
+                .map_err(|error| format!("无法创建本地 output 目录: {error}"))?;
+            workspace.input_dir = canonical_folder
+                .join("input")
+                .to_string_lossy()
+                .into_owned();
+            workspace.output_dir = canonical_folder
+                .join("output")
+                .to_string_lossy()
+                .into_owned();
+            workspace.artifact_storage_mode = WorkArtifactStorageMode::PrimaryWorkRoot;
+        }
         workspace.updated_at = Utc::now().to_rfc3339();
         self.write_manifest(&workspace)?;
         Ok(workspace)
+    }
+
+    pub fn resolve_preview_path(&self, id: &str, path: &str) -> Result<std::path::PathBuf, String> {
+        self.paths.resolve_preview_path(id, path)
     }
 
     /// Change the physical location of future `output/` artifacts.
@@ -488,6 +509,65 @@ mod tests {
         assert!(root.join("output").is_dir());
         assert!(root.join("context").is_dir());
         assert_eq!(manager.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn relinking_empty_managed_workspace_matches_new_folder_workspace_storage() {
+        let temp = TempDir::new().unwrap();
+        let manager = test_manager(&temp);
+        let workspace = manager.create("Relink").unwrap();
+        let folder = temp.path().join("Project");
+        fs::create_dir_all(&folder).unwrap();
+
+        let relinked = manager
+            .relink_folder(&workspace.id, folder.to_str().unwrap())
+            .unwrap();
+
+        assert_eq!(
+            relinked.artifact_storage_mode,
+            WorkArtifactStorageMode::PrimaryWorkRoot
+        );
+        let canonical_folder = folder.canonicalize().unwrap();
+        assert_eq!(
+            relinked.input_dir,
+            canonical_folder.join("input").to_string_lossy()
+        );
+        assert_eq!(
+            relinked.output_dir,
+            canonical_folder.join("output").to_string_lossy()
+        );
+        assert!(folder.join("input").is_dir());
+        assert!(folder.join("output").is_dir());
+        assert_eq!(relinked.scratch_dir, workspace.scratch_dir);
+        assert_eq!(relinked.context_dir, workspace.context_dir);
+    }
+
+    #[test]
+    fn relinking_workspace_with_artifacts_preserves_managed_storage_mapping() {
+        let temp = TempDir::new().unwrap();
+        let manager = test_manager(&temp);
+        let workspace = manager.create("Legacy").unwrap();
+        fs::write(
+            Path::new(&workspace.root).join("context/artifacts.json"),
+            r#"{"artifacts":[{}]}"#,
+        )
+        .unwrap();
+        let folder = temp.path().join("Project");
+        fs::create_dir_all(&folder).unwrap();
+
+        let relinked = manager
+            .relink_folder(&workspace.id, folder.to_str().unwrap())
+            .unwrap();
+
+        assert_eq!(relinked.artifact_count, 1);
+        assert_eq!(
+            relinked.artifact_storage_mode,
+            WorkArtifactStorageMode::Managed
+        );
+        assert_eq!(relinked.input_dir, workspace.input_dir);
+        assert_eq!(relinked.output_dir, workspace.output_dir);
+        assert!(!folder.join("input").exists());
+        assert!(!folder.join("output").exists());
     }
 
     #[test]

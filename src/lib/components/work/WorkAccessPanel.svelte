@@ -219,6 +219,9 @@
           <h3 class="text-sm font-semibold text-foreground">本地文件夹</h3>
           <p class="mt-0.5 text-[11px] leading-5 text-muted-foreground">
             任务以此文件夹作为工作目录。
+            {#if workspace.artifactStorageMode !== "primary_work_root"}
+              此旧工作区的输入材料和成果仍保存在 AgentCabin 托管目录。
+            {/if}
           </p>
         </div>
       </div>

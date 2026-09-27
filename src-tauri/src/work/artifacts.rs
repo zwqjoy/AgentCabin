@@ -3137,6 +3137,12 @@ mod tests {
         let workspace = manager
             .create_from_folder(project.to_str().unwrap(), None)
             .unwrap();
+        let workspace = manager
+            .set_artifact_storage_mode(
+                &workspace.id,
+                crate::work::models::WorkArtifactStorageMode::Managed,
+            )
+            .unwrap();
         let source = paths
             .workspace_dir(&workspace.id)
             .unwrap()
