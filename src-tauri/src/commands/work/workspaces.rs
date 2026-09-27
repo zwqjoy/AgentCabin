@@ -179,6 +179,14 @@ pub fn work_open_file(workspace_id: String, path: String) -> Result<(), String> 
 }
 
 #[tauri::command]
+pub fn work_resolve_preview_path(workspace_id: String, path: String) -> Result<String, String> {
+    ensure_work_enabled()?;
+    workspace::manager()
+        .resolve_preview_path(&workspace_id, &path)
+        .map(|resolved| resolved.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 pub fn work_read_context_file(workspace_id: String, path: String) -> Result<String, String> {
     ensure_work_enabled()?;
     files::read_context_file(&workspace_id, &path)

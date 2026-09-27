@@ -586,6 +586,7 @@
               {artifacts}
               {pendingInteractions}
               workspaceRoot={currentWorkspaceRoot}
+              workspaceId={selectedId}
               primaryWorkRoot={selectedWorkspace?.primaryWorkRoot ?? ""}
               artifactStorageMode={selectedWorkspace?.artifactStorageMode ?? "managed"}
               onExportArtifact={exportArtifact}

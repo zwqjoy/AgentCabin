@@ -12,12 +12,20 @@ export function isBrowserToolName(toolName: string | null | undefined): boolean 
   return normalized.includes("browser") || normalized.includes("web_");
 }
 
+/** Return whether a runtime tool operates the visible, interactive Browser. */
+export function isInteractiveBrowserToolName(toolName: string | null | undefined): boolean {
+  const normalized = toolName?.trim().toLowerCase() ?? "";
+  return normalized
+    .split(/[\s,]+/)
+    .some((name) => /(?:^|_)browser_[a-z0-9]+(?:_[a-z0-9]+)*$/.test(name));
+}
+
 export function getWorkBrowserInspectorAutoOpen(
   runId: string,
   activityHint: string,
   alreadyOpenedRunId: string,
 ): { runId: string; tab: "browser"; shouldOpen: boolean } | null {
-  if (!runId || !isBrowserToolName(activityHint)) return null;
+  if (!runId || !isInteractiveBrowserToolName(activityHint)) return null;
   return { runId, tab: "browser", shouldOpen: alreadyOpenedRunId !== runId };
 }
 

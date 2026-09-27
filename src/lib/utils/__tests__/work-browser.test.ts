@@ -4,6 +4,7 @@ import {
   formatBrowserAction,
   formatBrowserStatus,
   getWorkBrowserInspectorAutoOpen,
+  isInteractiveBrowserToolName,
   isBrowserToolName,
   sanitizeTraceText,
 } from "../work-browser";
@@ -32,6 +33,27 @@ describe("work-browser utility", () => {
     expect(isBrowserToolName(null)).toBe(false);
   });
 
+  it("distinguishes web access from interactive Browser tools", () => {
+    for (const tool of ["web_search", "web_open", "web_fetch", "web_cite"]) {
+      expect(isBrowserToolName(tool)).toBe(true);
+      expect(isInteractiveBrowserToolName(tool)).toBe(false);
+      expect(getWorkBrowserInspectorAutoOpen("run-1", tool, "")).toBeNull();
+    }
+    for (const tool of [
+      "browser_navigate",
+      "browser_snapshot",
+      "work_browser_click",
+      "tool browser_navigate",
+    ]) {
+      expect(isInteractiveBrowserToolName(tool)).toBe(true);
+      expect(getWorkBrowserInspectorAutoOpen("run-1", tool, "")).toEqual({
+        runId: "run-1",
+        tab: "browser",
+        shouldOpen: true,
+      });
+    }
+  });
+
   it("keeps the inspector closed for ordinary Work activity", () => {
     expect(getWorkBrowserInspectorAutoOpen("run-1", "python: generate report", "")).toBeNull();
   });
@@ -45,7 +67,7 @@ describe("work-browser utility", () => {
   });
 
   it("does not auto-open the inspector again for the same run", () => {
-    expect(getWorkBrowserInspectorAutoOpen("run-1", "web_search", "run-1")).toEqual({
+    expect(getWorkBrowserInspectorAutoOpen("run-1", "browser_snapshot", "run-1")).toEqual({
       runId: "run-1",
       tab: "browser",
       shouldOpen: false,

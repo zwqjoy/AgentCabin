@@ -114,6 +114,31 @@ describe("SessionStore reducer", () => {
     warnSpy.mockRestore();
   });
 
+  it("emits live Browser activity only for interactive Browser tools", () => {
+    store.run = makeRun("run-browser-classifier");
+    store.phase = "running";
+    store.applyEvent({
+      type: "tool_start",
+      run_id: "run-browser-classifier",
+      tool_use_id: "web-search-1",
+      tool_name: "web_search",
+      input: {},
+    } as BusEvent);
+    expect(store.liveBrowserToolActivity).toBeNull();
+
+    store.applyEvent({
+      type: "tool_start",
+      run_id: "run-browser-classifier",
+      tool_use_id: "browser-nav-1",
+      tool_name: "browser_navigate",
+      input: {},
+    } as BusEvent);
+    expect(store.liveBrowserToolActivity).toMatchObject({
+      runId: "run-browser-classifier",
+      toolUseId: "browser-nav-1",
+    });
+  });
+
   describe("effective agent capabilities", () => {
     it("uses the static baseline before runtime negotiation", () => {
       store.agent = "codex";

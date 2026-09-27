@@ -323,6 +323,7 @@ pub fn run() {
             commands::work::work_list_files,
             commands::work::work_import_file,
             commands::work::work_open_file,
+            commands::work::work_resolve_preview_path,
             commands::work::work_read_context_file,
             commands::work::work_save_context_file,
             commands::work::work_remove_context_file,

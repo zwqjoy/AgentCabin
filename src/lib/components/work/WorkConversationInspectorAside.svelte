@@ -13,7 +13,8 @@
   import WorkConversationInspector from "./WorkConversationInspector.svelte";
   import FilePreviewPane from "$lib/components/FilePreviewPane.svelte";
   import BrowserInspector from "$lib/components/browser/BrowserInspector.svelte";
-  import { isBrowserToolName } from "$lib/utils/work-browser";
+  import { resolveWorkPreviewPath } from "$lib/api/work";
+  import { isInteractiveBrowserToolName } from "$lib/utils/work-browser";
 
   type WorkAsideTab = "tasks" | "browser" | "files";
 
@@ -31,6 +32,7 @@
     artifacts: WorkArtifactSummary[];
     pendingInteractions?: InboxItem[];
     workspaceRoot?: string;
+    workspaceId?: string;
     selectedFilePath?: string;
     onClearFile?: () => void;
     primaryWorkRoot?: string;
@@ -61,6 +63,7 @@
     artifacts,
     pendingInteractions = [],
     workspaceRoot = "",
+    workspaceId = "",
     selectedFilePath = "",
     onClearFile,
     primaryWorkRoot = "",
@@ -83,6 +86,35 @@
   // attaches a blank surface for the parent session.
   const browserRunId = $derived(progressView?.workRunId ?? sessionInfo?.runId ?? "");
   let autoOpenedBrowserRunId = $state("");
+  let resolvedFilePath = $state("");
+  let filePreviewError = $state("");
+  let resolvingFilePath = $state(false);
+  let fileResolveSequence = 0;
+
+  $effect(() => {
+    const id = workspaceId;
+    const path = selectedFilePath;
+    const sequence = ++fileResolveSequence;
+    resolvedFilePath = "";
+    filePreviewError = "";
+    if (!id || !path) {
+      resolvingFilePath = false;
+      return;
+    }
+    resolvingFilePath = true;
+    void resolveWorkPreviewPath(id, path)
+      .then((resolved) => {
+        if (sequence === fileResolveSequence) resolvedFilePath = resolved;
+      })
+      .catch((error: unknown) => {
+        if (sequence === fileResolveSequence) {
+          filePreviewError = error instanceof Error ? error.message : String(error);
+        }
+      })
+      .finally(() => {
+        if (sequence === fileResolveSequence) resolvingFilePath = false;
+      });
+  });
 
   let hasBrowserActivity = $derived.by(() => {
     const hint = [
@@ -92,7 +124,7 @@
     ]
       .filter(Boolean)
       .join(" ");
-    return browserActivitySeen || isBrowserToolName(hint);
+    return browserActivitySeen || isInteractiveBrowserToolName(hint);
   });
 
   // Open the outer inspector on the first browser action for each run. This
@@ -426,14 +458,26 @@
             </button>
           </div>
           <div class="min-h-0 flex-1">
-            <FilePreviewPane
-              cwd={workspaceRoot}
-              path={selectedFilePath}
-              editable={false}
-              showFullPath={false}
-              active={open && activeTab === "files"}
-              scopeKey={workspaceRoot}
-            />
+            {#if resolvedFilePath}
+              <FilePreviewPane
+                cwd={primaryWorkRoot || workspaceRoot}
+                path={resolvedFilePath}
+                editable={false}
+                showFullPath={false}
+                active={open && activeTab === "files"}
+                scopeKey={workspaceId}
+              />
+            {:else}
+              <div
+                class="flex h-full items-center justify-center px-6 text-center text-xs text-muted-foreground"
+              >
+                {resolvingFilePath
+                  ? "正在解析文件…"
+                  : filePreviewError
+                    ? "文件已删除或无法预览。"
+                    : "无法预览此文件。"}
+              </div>
+            {/if}
           </div>
         </div>
       {:else}

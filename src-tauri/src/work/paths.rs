@@ -473,6 +473,55 @@ impl WorkPaths {
         Ok(candidate)
     }
 
+    /// Resolve an existing receipt/change path for the Work preview surface.
+    /// Ordinary project files in managed workspaces live beside the four
+    /// managed areas, while local-folder workspaces already have authoritative
+    /// path routing in `resolve_and_confine_path`.
+    pub fn resolve_preview_path(
+        &self,
+        workspace_id: &str,
+        raw_path: &str,
+    ) -> Result<PathBuf, String> {
+        let relative = Path::new(raw_path.trim());
+        validate_relative_path(relative)?;
+
+        let manifest_path = self.manifest_path(workspace_id)?;
+        let content = fs::read_to_string(&manifest_path)
+            .map_err(|error| format!("Cannot read Workspace manifest: {error}"))?;
+        let manifest: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|error| format!("Invalid Workspace manifest: {error}"))?;
+        let is_local_folder = manifest
+            .get("rootKind")
+            .or_else(|| manifest.get("root_kind"))
+            .and_then(|value| value.as_str())
+            == Some("local_folder");
+
+        let resolved = if is_local_folder {
+            self.resolve_and_confine_path(workspace_id, raw_path, false)?
+        } else {
+            let root = self.workspace_dir(workspace_id)?;
+            let candidate = root.join(relative);
+            ensure_within(&root, &candidate)?;
+            candidate
+        };
+
+        let canonical = fs::canonicalize(&resolved)
+            .map_err(|error| format!("文件不存在或无法预览: {error}"))?;
+        if !canonical.is_file() {
+            return Err("Work preview target is not a file".into());
+        }
+
+        if is_local_folder {
+            // Resolution above already confines local paths to the configured
+            // project, managed workspace areas, or an authorized Work root.
+            return Ok(canonical);
+        }
+        let root = fs::canonicalize(self.workspace_dir(workspace_id)?)
+            .map_err(|error| format!("Cannot resolve Workspace root: {error}"))?;
+        ensure_within(&root, &canonical)?;
+        Ok(canonical)
+    }
+
     /// Authoritative resolution of any requested path (relative or absolute) within
     /// the workspace boundary, standalone task boundary, or an authorized external root.
     pub fn resolve_and_confine_target(
@@ -1005,6 +1054,65 @@ mod tests {
             .resolve_workspace_path("demo", Path::new("scratch/notes.md"), true)
             .unwrap();
         assert!(resolved.ends_with("scratch/notes.md"));
+    }
+
+    #[test]
+    fn preview_path_follows_managed_and_local_folder_storage_semantics() {
+        let temp = TempDir::new().unwrap();
+        let paths = WorkPaths::new(temp.path().join("data"));
+        let manager = crate::work::workspace::WorkspaceManager::new(paths.clone());
+
+        let managed = manager.create("Managed").unwrap();
+        let managed_file = Path::new(&managed.root).join("src/a.ts");
+        fs::create_dir_all(managed_file.parent().unwrap()).unwrap();
+        fs::write(&managed_file, "managed").unwrap();
+        assert_eq!(
+            paths.resolve_preview_path(&managed.id, "src/a.ts").unwrap(),
+            fs::canonicalize(managed_file).unwrap()
+        );
+
+        let project = temp.path().join("Project");
+        fs::create_dir_all(&project).unwrap();
+        let local = manager
+            .create_from_folder(project.to_str().unwrap(), None)
+            .unwrap();
+        let managed_root = PathBuf::from(&local.root);
+        for (relative, root) in [
+            ("src/a.ts", project.clone()),
+            ("input/data.csv", project.clone()),
+            ("output/report.docx", project.clone()),
+            ("scratch/tmp.txt", managed_root.clone()),
+            ("context/context.md", managed_root.clone()),
+        ] {
+            let target = root.join(relative);
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            fs::write(&target, "preview").unwrap();
+            assert_eq!(
+                paths.resolve_preview_path(&local.id, relative).unwrap(),
+                fs::canonicalize(target).unwrap(),
+                "incorrect preview resolution for {relative}"
+            );
+        }
+        assert!(paths
+            .resolve_preview_path(&local.id, "src/deleted.ts")
+            .is_err());
+
+        manager
+            .set_artifact_storage_mode(
+                &local.id,
+                crate::work::models::WorkArtifactStorageMode::Managed,
+            )
+            .unwrap();
+        for relative in ["input/legacy.csv", "output/legacy.docx"] {
+            let target = managed_root.join(relative);
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            fs::write(&target, "legacy").unwrap();
+            assert_eq!(
+                paths.resolve_preview_path(&local.id, relative).unwrap(),
+                fs::canonicalize(target).unwrap(),
+                "legacy managed mode must keep {relative} under managed state"
+            );
+        }
     }
 
     #[test]

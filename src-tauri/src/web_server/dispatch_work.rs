@@ -137,6 +137,7 @@ async fn work_dispatch(
         "work_list_files" => crate::commands::work::workspaces::work_list_files(workspace_id: String, area: Option<String>),
         "work_import_file" => crate::commands::work::workspaces::work_import_file(workspace_id: String, source_path: String),
         "work_open_file" => crate::commands::work::workspaces::work_open_file(workspace_id: String, path: String),
+        "work_resolve_preview_path" => crate::commands::work::workspaces::work_resolve_preview_path(workspace_id: String, path: String),
         "work_read_context_file" => crate::commands::work::workspaces::work_read_context_file(workspace_id: String, path: String),
         "work_save_context_file" => crate::commands::work::workspaces::work_save_context_file(workspace_id: String, path: String, content: String, overwrite: bool),
         "work_remove_context_file" => crate::commands::work::workspaces::work_remove_context_file(workspace_id: String, path: String),

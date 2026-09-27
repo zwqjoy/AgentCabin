@@ -509,6 +509,10 @@ export function openWorkFile(workspaceId: string, path: string): Promise<void> {
   return invoke<void>("work_open_file", { workspaceId, path });
 }
 
+export function resolveWorkPreviewPath(workspaceId: string, path: string): Promise<string> {
+  return invoke<string>("work_resolve_preview_path", { workspaceId, path });
+}
+
 export function openWorkDirectory(workspaceId: string, path: string): Promise<void> {
   return invoke<void>("work_open_directory", { workspaceId, path });
 }
