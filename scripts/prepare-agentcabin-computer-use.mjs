@@ -20,6 +20,7 @@ const BUNDLE_ID = "com.agentcabin.computer-use";
 const swiftSources = [
   resolve(sourceDir, "agent_cursor.swift"),
   resolve(sourceDir, "agent_cursor_motion.swift"),
+  resolve(sourceDir, "CoordinateAXPress.swift"),
   resolve(sourceDir, "bridge.swift"),
   resolve(appBundle, "Contents/Info.plist"),
 ];
@@ -60,6 +61,7 @@ if (!isUpToDate) {
     "SwiftUI",
     resolve(sourceDir, "agent_cursor.swift"),
     resolve(sourceDir, "agent_cursor_motion.swift"),
+    resolve(sourceDir, "CoordinateAXPress.swift"),
     resolve(sourceDir, "bridge.swift"),
     "-o",
     output,

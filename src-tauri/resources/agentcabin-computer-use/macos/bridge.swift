@@ -1961,13 +1961,13 @@ final class Bridge {
 			usleep(20_000)
 		}
 
-		func preflight(_ point: CGPoint) throws {
-			guard let element else { preflightCapsUnknown = true; return }
+		func preflight(_ point: CGPoint) throws -> AXUIElement? {
+			guard let element else { preflightCapsUnknown = true; return nil }
 			for attempt in 0..<4 {
-				guard let hit = hitTestElement(at: point) else { preflightCapsUnknown = true; return }
-				if sameElement(hit, element) || isElement(hit, descendantOf: element) || isElement(element, descendantOf: hit) { return }
+				guard let hit = hitTestElement(at: point) else { preflightCapsUnknown = true; return nil }
+				if sameElement(hit, element) || isElement(hit, descendantOf: element) || isElement(element, descendantOf: hit) { return hit }
 				let role = stringAttribute(hit, attribute: kAXRoleAttribute as CFString) ?? ""
-				if role == "AXWindow" || role == "AXApplication" { preflightCapsUnknown = true; return }
+				if role == "AXWindow" || role == "AXApplication" { preflightCapsUnknown = true; return nil }
 				if delivery == "hid" && attempt < 3 {
 					focusTargetForPhysicalInput()
 					usleep(20_000)
@@ -1975,6 +1975,7 @@ final class Bridge {
 				}
 				throw BridgeFailure(message: "Target is occluded by \(payloadNode(element: hit))", code: "occluded_target")
 			}
+			return nil
 		}
 
 		func executeCoordinates(_ point: CGPoint) throws {
@@ -1983,17 +1984,51 @@ final class Bridge {
 			}
 			performed["grounding"] = "coordinates"
 			if delivery == "pid" { performed["verification"] = "caller_required" }
-			acquirePhysicalInputIfNeeded()
-			focusTargetForPhysicalInput()
-			if delivery == "hid" { try preflight(point) }
+			let preflightHit: AXUIElement?
+			if delivery == "hid" {
+				preflightHit = try preflight(point)
+			} else {
+				preflightHit = nil
+			}
 			switch action {
 			case "press", "click":
+				let buttonName = params["button"] as? String ?? "left"
+				let clickCount = max(1, min(3, (params["clickCount"] as? NSNumber)?.intValue ?? 1))
+				let axResult = attemptCoordinateAXPress(
+					button: buttonName,
+					clickCount: clickCount,
+					targetPid: pid,
+					hitTest: { preflightHit ?? hitTestElement(at: point) },
+					ownerPid: { pidForElement($0) },
+					role: { stringAttribute($0, attribute: kAXRoleAttribute as CFString) },
+					parent: { parentElement($0) },
+					supportsPress: { supportsAction($0, action: kAXPressAction as CFString) },
+					performPress: { AXUIElementPerformAction($0, kAXPressAction as CFString) == .success }
+				)
+				if axResult.performed {
+					performed["grounding"] = "ax_hit_test"
+					performed["delivery"] = "ax"
+					performed["performed"] = true
+					performed["axAncestorDepth"] = axResult.depth
+					animateCursor(at: point)
+					return
+				}
+				if axResult.reason == "pid_mismatch" || (axResult.reason == "pid_unavailable" && delivery == "hid") {
+					throw BridgeFailure(message: "Coordinate target could not be safely attributed to the requested app", code: "occluded_target")
+				}
+				performed["axFallbackReason"] = axResult.reason ?? "no_press_action"
+				acquirePhysicalInputIfNeeded()
+				focusTargetForPhysicalInput()
 				animateCursor(at: point)
-				try postMouseClick(at: point, pid: pid, button: mouseButton(params["button"] as? String ?? "left"), clickCount: max(1, min(3, (params["clickCount"] as? NSNumber)?.intValue ?? 1)), delivery: delivery)
+				try postMouseClick(at: point, pid: pid, button: mouseButton(buttonName), clickCount: clickCount, delivery: delivery)
 			case "moveMouse":
+				acquirePhysicalInputIfNeeded()
+				focusTargetForPhysicalInput()
 				animateCursor(at: point)
 				try postMouseMove(to: point, pid: pid, delivery: delivery)
 			case "scroll":
+				acquirePhysicalInputIfNeeded()
+				focusTargetForPhysicalInput()
 				animateCursor(at: point)
 				try postScrollWheel(at: point, deltaX: (params["scrollX"] as? NSNumber)?.intValue ?? 0, deltaY: (params["scrollY"] as? NSNumber)?.intValue ?? 0, pid: pid, delivery: delivery)
 			case "drag":
@@ -2006,6 +2041,8 @@ final class Bridge {
 					}
 					return lookPoint(record: record, x: x, y: y)
 				}
+				acquirePhysicalInputIfNeeded()
+				focusTargetForPhysicalInput()
 				animateCursor(at: point)
 				try postMouseDrag(points: points, pid: pid, delivery: delivery)
 			default:
