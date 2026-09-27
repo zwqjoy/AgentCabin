@@ -26,6 +26,24 @@ use crate::work::resources;
 mod types;
 pub use types::{ToolIntent, ToolResult};
 
+fn browser_action_outcome(
+    result: &serde_json::Value,
+) -> (
+    WorkExecutionStatus,
+    Option<ExecutionFailureKind>,
+    Option<i32>,
+) {
+    if result.get("ok").and_then(serde_json::Value::as_bool) == Some(false) {
+        (
+            WorkExecutionStatus::Failed,
+            Some(ExecutionFailureKind::CapabilityFailure),
+            Some(1),
+        )
+    } else {
+        (WorkExecutionStatus::Success, None, Some(0))
+    }
+}
+
 pub(crate) fn validate_and_resolve_context_target(
     paths: &WorkPaths,
     workspace_id: &str,
@@ -140,6 +158,7 @@ impl ToolPipeline {
                 | "browser_click"
                 | "browser_type"
                 | "browser_select_option"
+                | "browser_press_key"
                 | "browser_scroll"
                 | "browser_cdp_observe"
                 | "browser_cdp_act"
@@ -193,7 +212,11 @@ impl ToolPipeline {
     /// execution, they require human approval.
     fn browser_interaction_requires_confirmation(intent: &ToolIntent) -> bool {
         match intent.tool_name.as_str() {
-            "browser_click" | "browser_type" | "browser_select_option" | "browser_cdp_act" => true,
+            "browser_click"
+            | "browser_type"
+            | "browser_select_option"
+            | "browser_press_key"
+            | "browser_cdp_act" => true,
             "browser_tabs" => matches!(
                 intent
                     .arguments
@@ -329,7 +352,7 @@ impl ToolPipeline {
         }
         if matches!(
             intent.tool_name.as_str(),
-            "browser_click" | "browser_type" | "browser_select_option"
+            "browser_click" | "browser_type" | "browser_select_option" | "browser_press_key"
         ) {
             if let Some(selector) = intent
                 .arguments
@@ -2900,7 +2923,10 @@ impl ToolPipeline {
                     .execute(
                         &intent.work_run_id,
                         "browser_snapshot",
-                        serde_json::json!({}),
+                        serde_json::json!({
+                            "sinceRevision": intent.arguments.get("sinceRevision").and_then(|value| value.as_u64()),
+                            "include_screenshot": intent.arguments.get("include_screenshot").and_then(|value| value.as_bool()),
+                        }),
                     )
                     .await
                 {
@@ -3141,6 +3167,7 @@ impl ToolPipeline {
                     .arguments
                     .get("double_click")
                     .and_then(|v| v.as_bool());
+                let locator = intent.arguments.get("locator").cloned();
                 let manager = crate::work::browser_operator::browser_operator_manager();
                 match manager
                     .execute(
@@ -3150,25 +3177,29 @@ impl ToolPipeline {
                             "ref": ref_id,
                             "selector": selector,
                             "target_label": target_label,
+                            "locator": locator,
                             "button": button,
                             "double_click": double_click,
                         }),
                     )
                     .await
                 {
-                    Ok(val) => Ok(WorkExecutionResult {
-                        execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                        resource_id: intent.tool_name.clone(),
-                        action: intent.action.clone(),
-                        status: WorkExecutionStatus::Success,
-                        failure_kind: None,
-                        exit_code: Some(0),
-                        stdout: serde_json::to_string(&val).unwrap_or_default(),
-                        stderr: String::new(),
-                        outputs: Vec::new(),
-                        started_at: started_at.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    }),
+                    Ok(val) => {
+                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
+                        Ok(WorkExecutionResult {
+                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
+                            resource_id: intent.tool_name.clone(),
+                            action: intent.action.clone(),
+                            status,
+                            failure_kind,
+                            exit_code,
+                            stdout: serde_json::to_string(&val).unwrap_or_default(),
+                            stderr: String::new(),
+                            outputs: Vec::new(),
+                            started_at: started_at.clone(),
+                            finished_at: Utc::now().to_rfc3339(),
+                        })
+                    }
                     Err(err) => Err(err),
                 }
             }
@@ -3199,6 +3230,7 @@ impl ToolPipeline {
                     .arguments
                     .get("press_enter")
                     .and_then(|v| v.as_bool());
+                let locator = intent.arguments.get("locator").cloned();
                 let manager = crate::work::browser_operator::browser_operator_manager();
                 match manager
                     .execute(
@@ -3209,25 +3241,29 @@ impl ToolPipeline {
                             "text": text,
                             "selector": selector,
                             "target_label": target_label,
+                            "locator": locator,
                             "clear": clear,
                             "press_enter": press_enter,
                         }),
                     )
                     .await
                 {
-                    Ok(val) => Ok(WorkExecutionResult {
-                        execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                        resource_id: intent.tool_name.clone(),
-                        action: intent.action.clone(),
-                        status: WorkExecutionStatus::Success,
-                        failure_kind: None,
-                        exit_code: Some(0),
-                        stdout: serde_json::to_string(&val).unwrap_or_default(),
-                        stderr: String::new(),
-                        outputs: Vec::new(),
-                        started_at: started_at.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    }),
+                    Ok(val) => {
+                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
+                        Ok(WorkExecutionResult {
+                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
+                            resource_id: intent.tool_name.clone(),
+                            action: intent.action.clone(),
+                            status,
+                            failure_kind,
+                            exit_code,
+                            stdout: serde_json::to_string(&val).unwrap_or_default(),
+                            stderr: String::new(),
+                            outputs: Vec::new(),
+                            started_at: started_at.clone(),
+                            finished_at: Utc::now().to_rfc3339(),
+                        })
+                    }
                     Err(err) => Err(err),
                 }
             }
@@ -3248,6 +3284,7 @@ impl ToolPipeline {
                     .get("selector")
                     .and_then(|v| v.as_str())
                     .map(String::from);
+                let locator = intent.arguments.get("locator").cloned();
                 let manager = crate::work::browser_operator::browser_operator_manager();
                 match manager
                     .execute(
@@ -3257,23 +3294,61 @@ impl ToolPipeline {
                             "ref": ref_id,
                             "value": value,
                             "selector": selector,
+                            "locator": locator,
                         }),
                     )
                     .await
                 {
-                    Ok(val) => Ok(WorkExecutionResult {
-                        execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                        resource_id: intent.tool_name.clone(),
-                        action: intent.action.clone(),
-                        status: WorkExecutionStatus::Success,
-                        failure_kind: None,
-                        exit_code: Some(0),
-                        stdout: serde_json::to_string(&val).unwrap_or_default(),
-                        stderr: String::new(),
-                        outputs: Vec::new(),
-                        started_at: started_at.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    }),
+                    Ok(val) => {
+                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
+                        Ok(WorkExecutionResult {
+                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
+                            resource_id: intent.tool_name.clone(),
+                            action: intent.action.clone(),
+                            status,
+                            failure_kind,
+                            exit_code,
+                            stdout: serde_json::to_string(&val).unwrap_or_default(),
+                            stderr: String::new(),
+                            outputs: Vec::new(),
+                            started_at: started_at.clone(),
+                            finished_at: Utc::now().to_rfc3339(),
+                        })
+                    }
+                    Err(err) => Err(err),
+                }
+            }
+            "browser_press_key" => {
+                let manager = crate::work::browser_operator::browser_operator_manager();
+                match manager
+                    .execute(
+                        &intent.work_run_id,
+                        "browser_press_key",
+                        serde_json::json!({
+                            "key": intent.arguments.get("key").and_then(|value| value.as_str()).unwrap_or(""),
+                            "ref": intent.arguments.get("ref"),
+                            "selector": intent.arguments.get("selector"),
+                            "locator": intent.arguments.get("locator"),
+                        }),
+                    )
+                    .await
+                {
+                    Ok(val) => {
+                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
+                        Ok(WorkExecutionResult {
+                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
+                            resource_id: intent.tool_name.clone(),
+                            action: intent.action.clone(),
+                            status,
+                            failure_kind,
+                            exit_code,
+                            stdout: serde_json::to_string(&val).unwrap_or_default(),
+                            stderr: String::new(),
+                            outputs: Vec::new(),
+                            started_at: started_at.clone(),
+                            finished_at: Utc::now().to_rfc3339(),
+                        })
+                    }
                     Err(err) => Err(err),
                 }
             }
@@ -3302,19 +3377,22 @@ impl ToolPipeline {
                     )
                     .await
                 {
-                    Ok(val) => Ok(WorkExecutionResult {
-                        execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                        resource_id: intent.tool_name.clone(),
-                        action: intent.action.clone(),
-                        status: WorkExecutionStatus::Success,
-                        failure_kind: None,
-                        exit_code: Some(0),
-                        stdout: serde_json::to_string(&val).unwrap_or_default(),
-                        stderr: String::new(),
-                        outputs: Vec::new(),
-                        started_at: started_at.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    }),
+                    Ok(val) => {
+                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
+                        Ok(WorkExecutionResult {
+                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
+                            resource_id: intent.tool_name.clone(),
+                            action: intent.action.clone(),
+                            status,
+                            failure_kind,
+                            exit_code,
+                            stdout: serde_json::to_string(&val).unwrap_or_default(),
+                            stderr: String::new(),
+                            outputs: Vec::new(),
+                            started_at: started_at.clone(),
+                            finished_at: Utc::now().to_rfc3339(),
+                        })
+                    }
                     Err(err) => Err(err),
                 }
             }

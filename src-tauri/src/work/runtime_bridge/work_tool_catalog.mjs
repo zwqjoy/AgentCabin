@@ -57,6 +57,7 @@ const BROWSER_OPERATOR_TOOL_CATALOG = [
   ["browser_click", "Click an interactive element using the ref and accessible target_label from the latest snapshot. A fresh semantic snapshot and screenshot are returned; inspect them to verify the intended page result.", "local_write", true],
   ["browser_type", "Type into an input using the ref and accessible target_label from the latest snapshot. A fresh semantic snapshot and screenshot are returned; inspect them to verify the intended page result.", "local_write", true],
   ["browser_select_option", "Select option from dropdown by semantic ref.", "local_write", true],
+  ["browser_press_key", "Press a keyboard key on the embedded browser page.", "local_write", true],
   ["browser_scroll", "Scroll page or container element.", "read", true],
 ];
 
