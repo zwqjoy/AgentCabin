@@ -163,6 +163,7 @@
     onSelectWorkspace?: (wsId: string | null) => void;
     onStopSession?: () => void;
     onToggleInspector?: () => void;
+    onOpenTasksInspector?: () => void;
     inspectorOpen?: boolean;
     onExportArtifact?: (artifactId: string) => Promise<void>;
   }
@@ -188,6 +189,7 @@
     pendingInteractions = $bindable<InboxItem[]>([]),
     onStopSession = $bindable(() => {}),
     onToggleInspector,
+    onOpenTasksInspector,
     inspectorOpen = false,
     onExportArtifact,
   }: Props = $props();
@@ -3182,6 +3184,7 @@
                 artifacts={delivery.artifacts}
                 artifactCount={delivery.artifacts.length}
                 onPreview={handlePreviewArtifact}
+                onShowAllArtifacts={onOpenTasksInspector}
                 isExpanded={false}
                 onToggleExpand={() => toggleDeliveryTurnExpand(turn.id, !isHistoricalTurn)}
               />

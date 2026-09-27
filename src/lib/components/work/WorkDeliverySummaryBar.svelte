@@ -7,6 +7,7 @@
     artifacts?: WorkArtifactSummary[];
     artifactCount?: number;
     onPreview?: (artifact: WorkArtifactSummary) => void;
+    onShowAllArtifacts?: () => void;
     onToggleExpand: () => void;
     isExpanded?: boolean;
   }
@@ -17,6 +18,7 @@
     artifacts = [],
     artifactCount = 0,
     onPreview,
+    onShowAllArtifacts,
     onToggleExpand,
     isExpanded = false,
   }: Props = $props();
@@ -25,6 +27,8 @@
     artifactCount > 0 ? artifactCount : presentation.artifactCount || 0,
   );
   let effectivePrimary = $derived(primaryArtifact ?? presentation.primaryArtifact);
+  let visibleArtifacts = $derived(artifacts.slice(0, 3));
+  let hiddenArtifactCount = $derived(Math.max(0, artifacts.length - visibleArtifacts.length));
   let isCompleted = $derived(presentation.outcome === "completed");
   let isFailed = $derived(presentation.outcome === "failed");
   let isCancelled = $derived(presentation.outcome === "cancelled");
@@ -124,7 +128,7 @@
     class="flex min-w-0 flex-wrap items-center justify-end gap-1.5"
     onclick={(e) => e.stopPropagation()}
   >
-    {#each artifacts as artifact (artifact.id)}
+    {#each visibleArtifacts as artifact (artifact.id)}
       {#if onPreview}
         <button
           type="button"
@@ -148,6 +152,16 @@
         </button>
       {/if}
     {/each}
+    {#if hiddenArtifactCount > 0 && onShowAllArtifacts}
+      <button
+        type="button"
+        class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        onclick={onShowAllArtifacts}
+        aria-label={`查看另外 ${hiddenArtifactCount} 个成果`}
+      >
+        另外 {hiddenArtifactCount} 个成果 <span aria-hidden="true">›</span>
+      </button>
+    {/if}
     {#if artifacts.length === 0 && effectivePrimary && onPreview}
       <button
         type="button"

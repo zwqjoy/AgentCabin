@@ -61,7 +61,7 @@
       id="work-home-title"
       class="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
     >
-      今天要处理什么？
+      今天要让 Agent 做什么？
     </h1>
 
     <form
@@ -92,11 +92,7 @@
         <button
           type="button"
           class="hover:text-foreground"
-          onclick={onOpenFolderWorkspace || onCreateWorkspace}>选择工作区</button
-        >
-        <span aria-hidden="true">·</span>
-        <button type="button" class="hover:text-foreground" onclick={onCreateWorkspace}
-          >添加文件</button
+          onclick={onOpenFolderWorkspace || onCreateWorkspace}>选择文件夹</button
         >
         <span aria-hidden="true">·</span>
         {#each WORK_STARTERS.slice(0, 4) as starter (starter.id)}

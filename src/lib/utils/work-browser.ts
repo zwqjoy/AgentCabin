@@ -12,6 +12,15 @@ export function isBrowserToolName(toolName: string | null | undefined): boolean 
   return normalized.includes("browser") || normalized.includes("web_");
 }
 
+export function getWorkBrowserInspectorAutoOpen(
+  runId: string,
+  activityHint: string,
+  alreadyOpenedRunId: string,
+): { runId: string; tab: "browser"; shouldOpen: boolean } | null {
+  if (!runId || !isBrowserToolName(activityHint)) return null;
+  return { runId, tab: "browser", shouldOpen: alreadyOpenedRunId !== runId };
+}
+
 export function formatBrowserAction(action: BrowserActionType): BrowserActionMeta {
   switch (action) {
     case "navigate":

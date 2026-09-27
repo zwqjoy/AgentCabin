@@ -23,7 +23,7 @@
   import WorkAutomationCenter from "$lib/components/work/WorkAutomationCenter.svelte";
   import WorkMaterialsCenter from "$lib/components/work/WorkMaterialsCenter.svelte";
   import ArchivedChatsView from "$lib/components/ArchivedChatsView.svelte";
-  import { isBrowserToolName } from "$lib/utils/work-browser";
+  import { getWorkBrowserInspectorAutoOpen } from "$lib/utils/work-browser";
   import type { SessionInfoData } from "$lib/types";
   import type {
     InboxItem,
@@ -89,12 +89,13 @@
     ]
       .filter(Boolean)
       .join(" ");
-    if (!runId || !isBrowserToolName(hint)) return;
+    const autoOpen = getWorkBrowserInspectorAutoOpen(runId, hint, browserAutoOpenedRunId);
+    if (!autoOpen) return;
 
-    browserActivityRunId = runId;
-    if (browserAutoOpenedRunId === runId) return;
-    browserAutoOpenedRunId = runId;
-    conversationInspectorTab = "browser";
+    browserActivityRunId = autoOpen.runId;
+    if (!autoOpen.shouldOpen) return;
+    browserAutoOpenedRunId = autoOpen.runId;
+    conversationInspectorTab = autoOpen.tab;
     showConversationInspector = true;
   });
   // Stable surface key: prevent {#key} from remounting WorkChatSurface when
@@ -555,6 +556,10 @@
                   bind:conversationArchived
                   bind:pendingInteractions
                   onToggleInspector={() => (showConversationInspector = !showConversationInspector)}
+                  onOpenTasksInspector={() => {
+                    conversationInspectorTab = "tasks";
+                    showConversationInspector = true;
+                  }}
                   inspectorOpen={showConversationInspector}
                 />
               {/key}
@@ -712,6 +717,10 @@
                     bind:pendingInteractions
                     onToggleInspector={() =>
                       (showConversationInspector = !showConversationInspector)}
+                    onOpenTasksInspector={() => {
+                      conversationInspectorTab = "tasks";
+                      showConversationInspector = true;
+                    }}
                     inspectorOpen={showConversationInspector}
                     onExportArtifact={exportArtifact}
                   />

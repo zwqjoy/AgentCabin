@@ -3,6 +3,7 @@ import {
   filterBrowserTraces,
   formatBrowserAction,
   formatBrowserStatus,
+  getWorkBrowserInspectorAutoOpen,
   isBrowserToolName,
   sanitizeTraceText,
 } from "../work-browser";
@@ -29,6 +30,26 @@ describe("work-browser utility", () => {
     expect(isBrowserToolName("work_browser_navigate")).toBe(true);
     expect(isBrowserToolName("work_read_file")).toBe(false);
     expect(isBrowserToolName(null)).toBe(false);
+  });
+
+  it("keeps the inspector closed for ordinary Work activity", () => {
+    expect(getWorkBrowserInspectorAutoOpen("run-1", "python: generate report", "")).toBeNull();
+  });
+
+  it("opens the Browser tab for the first Browser activity in a run", () => {
+    expect(getWorkBrowserInspectorAutoOpen("run-1", "work_browser_navigate", "")).toEqual({
+      runId: "run-1",
+      tab: "browser",
+      shouldOpen: true,
+    });
+  });
+
+  it("does not auto-open the inspector again for the same run", () => {
+    expect(getWorkBrowserInspectorAutoOpen("run-1", "web_search", "run-1")).toEqual({
+      runId: "run-1",
+      tab: "browser",
+      shouldOpen: false,
+    });
   });
 
   it("sanitizes passwords and secrets correctly", () => {
