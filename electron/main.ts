@@ -11,6 +11,7 @@
  * (P3-P6); this file must stay thin.
  */
 import { app, BrowserWindow } from "electron";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createMainWindow, getAppIconPath, preloadFile, registerWindowIpc } from "./window";
 import { registerCoreIpc, broadcastCoreEvent } from "./ipc/core";
@@ -27,6 +28,26 @@ import { startStaticServer } from "./static-server";
 
 const DEV_SERVER_URL = process.env.AGENTCABIN_DEV_SERVER_URL ?? "http://localhost:1420";
 const RENDERER_DIST = path.join(__dirname, "..", "..", "build");
+const RENDERER_PORT_FILE = "renderer-origin-port";
+
+function getSavedRendererPort(): number | undefined {
+  const filePath = path.join(app.getPath("userData"), RENDERER_PORT_FILE);
+  try {
+    const port = Number(readFileSync(filePath, "utf8").trim());
+    return Number.isInteger(port) && port > 0 && port <= 65535 ? port : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveRendererPort(port: number): void {
+  const userData = app.getPath("userData");
+  mkdirSync(userData, { recursive: true });
+  const filePath = path.join(userData, RENDERER_PORT_FILE);
+  const tempPath = `${filePath}.tmp`;
+  writeFileSync(tempPath, `${port}\n`, { mode: 0o600 });
+  renameSync(tempPath, filePath);
+}
 
 // ── Crash-dialog guards ──
 // When the app is launched from a terminal that later closes (or via `open`
@@ -96,7 +117,10 @@ async function createWindow(): Promise<void> {
     window.agentcabinAllowedOrigins = [new URL(DEV_SERVER_URL).origin];
     window.webContents.openDevTools({ mode: "detach" });
   } else {
-    const { url } = await startStaticServer(RENDERER_DIST);
+    const savedRendererPort = getSavedRendererPort();
+    const { url } = await startStaticServer(RENDERER_DIST, savedRendererPort);
+    const rendererPort = Number(new URL(url).port);
+    if (savedRendererPort === undefined) saveRendererPort(rendererPort);
     appUrl = url;
     mainWindow.agentcabinAllowedOrigins = [url];
     await window.loadURL(url);

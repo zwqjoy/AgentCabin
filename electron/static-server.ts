@@ -35,7 +35,7 @@ function contentType(filePath: string): string {
   return MIME_TYPES[path.extname(filePath).toLowerCase()] ?? "application/octet-stream";
 }
 
-export function startStaticServer(rootDir: string): Promise<{
+export function startStaticServer(rootDir: string, port = 0): Promise<{
   url: string;
   close: () => void;
 }> {
@@ -75,8 +75,10 @@ export function startStaticServer(rootDir: string): Promise<{
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    // Port 0 = OS-assigned random port, loopback only.
-    server.listen(0, "127.0.0.1", () => {
+    // Port 0 = OS-assigned random port, loopback only. The caller persists
+    // the selected port so Chromium keeps the same origin (and localStorage)
+    // across app restarts.
+    server.listen(port, "127.0.0.1", () => {
       const address = server.address();
       if (!address || typeof address === "string") {
         reject(new Error("Failed to bind static server"));
