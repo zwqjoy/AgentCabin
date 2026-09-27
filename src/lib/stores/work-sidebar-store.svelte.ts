@@ -116,13 +116,11 @@ export class WorkSidebarStore {
     return filterRecentWorkSessions(
       this.standaloneSessions.filter((session) => !session.workspace_id),
       matches,
-    )
-      .sort((left, right) =>
-        (right.last_activity_at ?? right.started_at).localeCompare(
-          left.last_activity_at ?? left.started_at,
-        ),
-      )
-      .slice(0, RECENT_CONVERSATIONS_LIMIT);
+    ).sort((left, right) =>
+      (right.last_activity_at ?? right.started_at).localeCompare(
+        left.last_activity_at ?? left.started_at,
+      ),
+    );
   }
 
   getArchivedConversations(matches: (session: TaskRun) => boolean): TaskRun[] {

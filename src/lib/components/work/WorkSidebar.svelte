@@ -41,6 +41,16 @@
   }
 
   let recentConversations = $derived(sidebar.getRecentConversations(matchesConversation));
+  let recentConversationLimit = $state(6);
+  let visibleRecentConversations = $derived(recentConversations.slice(0, recentConversationLimit));
+
+  function showMoreRecentConversations() {
+    recentConversationLimit += 10;
+  }
+
+  function collapseRecentConversations() {
+    recentConversationLimit = 6;
+  }
 
   $effect(() => {
     // Searching should reveal matching conversations in collapsed workspaces.
@@ -216,7 +226,7 @@
       <SidebarSectionLabel label="任务" count={recentConversations.length} class="mb-0.5" />
       {#if recentConversations.length > 0}
         <div class="space-y-0.5">
-          {#each recentConversations as session (session.id)}
+          {#each visibleRecentConversations as session (session.id)}
             <ConversationItem
               conversation={sessionConversation(session)}
               selected={session.id === activeRunId}
@@ -230,6 +240,28 @@
             />
           {/each}
         </div>
+        {#if recentConversations.length > 6}
+          <div class="flex items-center gap-3 px-2.5 pt-1.5 text-xs text-sidebar-foreground/60">
+            {#if visibleRecentConversations.length < recentConversations.length}
+              <button
+                type="button"
+                class="transition-colors hover:text-sidebar-foreground"
+                onclick={showMoreRecentConversations}
+              >
+                查看更多 ({recentConversations.length - visibleRecentConversations.length})
+              </button>
+            {/if}
+            {#if visibleRecentConversations.length > 6}
+              <button
+                type="button"
+                class="transition-colors hover:text-sidebar-foreground"
+                onclick={collapseRecentConversations}
+              >
+                收起
+              </button>
+            {/if}
+          </div>
+        {/if}
       {:else}
         <div class="px-2.5 py-2 text-xs text-sidebar-foreground/45">
           {normalizedSearch ? "没有匹配的对话" : "暂无最近对话"}
