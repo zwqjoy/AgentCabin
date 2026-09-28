@@ -14,6 +14,14 @@ struct CoordinateAXPressResult: Equatable {
 	let actionName: String?
 }
 
+func coordinateAXFailureCode(reason: String?, delivery: String) -> String? {
+	if reason == "process_identity_changed" { return "stale_process" }
+	if reason == "pid_mismatch" || (reason == "pid_unavailable" && delivery == "hid") {
+		return "occluded_target"
+	}
+	return nil
+}
+
 func attemptCoordinateAXAction<Element>(
 	button: String,
 	clickCount: Int,

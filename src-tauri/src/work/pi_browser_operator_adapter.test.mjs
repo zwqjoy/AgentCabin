@@ -263,6 +263,118 @@ test("adapter carries the latest snapshot identity and semantic locator with ref
   }
 });
 
+test("action observations refresh Browser refs, revision, worker, document, and tab identity", async (t) => {
+  const tempDir = fs.mkdtempSync(path.join(fs.realpathSync(path.resolve(".")), ".tmp_test_browser_observation_"));
+  try {
+    const mod = await loadAdapter(tempDir);
+    const tools = new Map();
+    const calls = [];
+    mod.registerBrowserOperatorTools({}, {
+      registerWorkTool: (tool) => tools.set(tool.name, tool),
+      callToolPipeline: async (_id, name, _action, args) => {
+        calls.push({ name, args });
+        if (name === "browser_snapshot") {
+          return { success: true, stdout: JSON.stringify({
+            ok: true,
+            snapshotType: "full",
+            workerInstanceId: "worker-1",
+            documentId: "document-A",
+            targetId: "tab-1",
+            revision: 1,
+            url: "https://example.test/a",
+            refs: {
+              e1: { ref: "e1", role: "button", name: "Open B" },
+              old: { ref: "old", role: "button", name: "Old document" },
+            },
+          }) };
+        }
+        let observation;
+        let execution = { performed: true };
+        if (name === "browser_click" && args.ref === "e1") {
+          observation = {
+            snapshotType: "full", workerInstanceId: "worker-1", documentId: "document-B", targetId: "tab-1",
+            revision: 2, url: "https://example.test/b", title: "Document B",
+            refs: {
+              e2: { ref: "e2", role: "button", name: "Updated" },
+              e3: { ref: "e3", role: "button", name: "Remove me" },
+            },
+          };
+        } else if (name === "browser_type") {
+          observation = {
+            snapshotType: "delta", workerInstanceId: "worker-1", documentId: "document-B", targetId: "tab-1",
+            revision: 3, url: "https://example.test/b",
+            added: [{ ref: "e4", role: "status", name: "Added" }],
+            changed: [{ ref: "e2", after: { role: "button", name: "Updated after delta" } }],
+            removed: ["e3"],
+          };
+        } else if (name === "browser_select_option") {
+          execution = { performed: true, selected: true, selectedValue: "yes", selectedLabel: "Yes" };
+          observation = {
+            snapshotType: "unchanged", workerInstanceId: "worker-1", documentId: "document-B", targetId: "tab-1",
+            revision: 4, url: "https://example.test/b", title: "Still B",
+          };
+        } else if (name === "browser_press_key") {
+          observation = {
+            snapshotType: "full", workerInstanceId: "worker-2", documentId: "document-B", targetId: "tab-1",
+            revision: 1, url: "https://example.test/b", refs: { e5: { ref: "e5", role: "button", name: "Worker 2" } },
+          };
+        } else if (name === "browser_click" && args.ref === "e5") {
+          observation = {
+            snapshotType: "full", workerInstanceId: "worker-2", documentId: "document-B", targetId: "tab-2",
+            revision: 1, url: "https://example.test/other-tab", refs: { e6: { ref: "e6", role: "button", name: "Tab 2" } },
+          };
+        }
+        return { success: true, stdout: JSON.stringify({ ok: true, execution, ...(observation ? { observation } : {}) }) };
+      },
+    });
+
+    const snapshot = tools.get("browser_snapshot");
+    const click = tools.get("browser_click");
+    const type = tools.get("browser_type");
+    const select = tools.get("browser_select_option");
+    const pressKey = tools.get("browser_press_key");
+    await snapshot.execute("snapshot-A", {});
+
+    await click.execute("click-to-B", { ref: "e1" });
+    await click.execute("click-in-B", { ref: "e2" });
+    assert.deepEqual(calls.at(-1).args.targetIdentity, {
+      workerInstanceId: "worker-1", documentId: "document-B", revision: 2, targetId: "tab-1",
+    });
+    assert.deepEqual(calls.at(-1).args.locator, { role: "button", name: "Updated" });
+
+    await type.execute("type-delta", { ref: "e2", text: "value" });
+    await click.execute("click-changed", { ref: "e2" });
+    assert.deepEqual(calls.at(-1).args.locator, { role: "button", name: "Updated after delta" });
+    await click.execute("click-added", { ref: "e4" });
+    assert.deepEqual(calls.at(-1).args.locator, { role: "status", name: "Added" });
+    await click.execute("click-removed", { ref: "e3" });
+    assert.equal(calls.at(-1).args.locator, undefined);
+
+    await select.execute("select-unchanged", { ref: "e2", value: "yes" });
+    await click.execute("click-after-unchanged", { ref: "e2" });
+    assert.deepEqual(calls.at(-1).args.targetIdentity, {
+      workerInstanceId: "worker-1", documentId: "document-B", revision: 4, targetId: "tab-1",
+    });
+    assert.deepEqual(calls.at(-1).args.locator, { role: "button", name: "Updated after delta" });
+
+    await pressKey.execute("press-key-worker-change", { key: "Enter" });
+    await click.execute("click-old-worker-ref", { ref: "e2" });
+    assert.deepEqual(calls.at(-1).args.targetIdentity, {
+      workerInstanceId: "worker-2", documentId: "document-B", revision: 1, targetId: "tab-1",
+    });
+    assert.equal(calls.at(-1).args.locator, undefined);
+
+    await click.execute("click-to-tab-2", { ref: "e5" });
+    await click.execute("click-old-tab-ref", { ref: "e5" });
+    assert.deepEqual(calls.at(-1).args.targetIdentity, {
+      workerInstanceId: "worker-2", documentId: "document-B", revision: 1, targetId: "tab-2",
+    });
+    assert.equal(calls.at(-1).args.locator, undefined);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("pi_browser_operator_adapter handles waiting_approval and resolves after grant", async () => {
   const tempDir = fs.mkdtempSync(
     path.join(fs.realpathSync(path.resolve(".")), ".tmp_test_browser_approval_"),

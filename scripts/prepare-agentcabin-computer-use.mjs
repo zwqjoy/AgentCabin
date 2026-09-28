@@ -21,6 +21,7 @@ const swiftSources = [
   resolve(sourceDir, "agent_cursor.swift"),
   resolve(sourceDir, "agent_cursor_motion.swift"),
   resolve(sourceDir, "CoordinateAXPress.swift"),
+  resolve(sourceDir, "AXElementIdentity.swift"),
   resolve(sourceDir, "bridge.swift"),
   resolve(appBundle, "Contents/Info.plist"),
 ];
@@ -62,6 +63,7 @@ if (!isUpToDate) {
     resolve(sourceDir, "agent_cursor.swift"),
     resolve(sourceDir, "agent_cursor_motion.swift"),
     resolve(sourceDir, "CoordinateAXPress.swift"),
+    resolve(sourceDir, "AXElementIdentity.swift"),
     resolve(sourceDir, "bridge.swift"),
     "-o",
     output,

@@ -162,6 +162,36 @@ final class CoordinateAXPressTests: XCTestCase {
 		XCTAssertNotEqual(first, reusedPid)
 	}
 
+	func testProcessRestartReturnsStaleProcessWithoutAXOrPhysicalFallback() {
+		let oldIdentity = ComputerUseProcessIdentity(pid: 42, startSeconds: 10, startMicroseconds: 20)
+		let restartedIdentity = ComputerUseProcessIdentity(pid: 42, startSeconds: 11, startMicroseconds: 0)
+		let hit = Element(pid: 42, pressable: true)
+		var axCalls: [Element] = []
+		var physicalFallbackCalls = 0
+		let result = attemptCoordinateAXAction(
+			button: "left",
+			clickCount: 1,
+			targetPid: 42,
+			processIdentityMatches: { oldIdentity == restartedIdentity },
+			hitTest: { hit },
+			ownerPid: { $0.pid },
+			role: { $0.role },
+			parent: { $0.parent },
+			supportsAction: { $0.pressable && $1 == "AXPress" },
+			performAction: { element, _ in axCalls.append(element); return true }
+		)
+
+		let failureCode = coordinateAXFailureCode(reason: result.reason, delivery: "hid")
+		if failureCode == nil { physicalFallbackCalls += 1 }
+		XCTAssertEqual(failureCode, "stale_process")
+		XCTAssertTrue(axCalls.isEmpty)
+		XCTAssertEqual(physicalFallbackCalls, 0)
+	}
+
+	func testPidMismatchRemainsOccludedTarget() {
+		XCTAssertEqual(coordinateAXFailureCode(reason: "pid_mismatch", delivery: "hid"), "occluded_target")
+	}
+
 	func testStopsBeforeWindowAndApplicationActions() {
 		let root = Element(pid: 42, role: "AXWindow", pressable: true)
 		let hit = Element(pid: 42, parent: root)

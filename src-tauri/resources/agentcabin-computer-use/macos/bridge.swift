@@ -12,17 +12,10 @@ struct BridgeFailure: Error {
 }
 
 final class AXRefStore {
-	struct Snapshot {
-		let role: String
-		let identifier: String
-		let label: String
-		let rect: CGRect
-	}
-
 	private var nextId: UInt64 = 0
 	private var windows: [String: AXUIElement] = [:]
 	private var elements: [String: AXUIElement] = [:]
-	private var snapshots: [String: Snapshot] = [:]
+	private var snapshots: [String: AXElementIdentitySnapshot] = [:]
 	private let lock = NSLock()
 
 	func storeWindow(_ window: AXUIElement) -> String {
@@ -39,7 +32,7 @@ final class AXRefStore {
 		return ref
 	}
 
-	func storeElement(_ element: AXUIElement, snapshot: Snapshot? = nil) -> String {
+	func storeElement(_ element: AXUIElement, snapshot: AXElementIdentitySnapshot) -> String {
 		lock.lock()
 		defer { lock.unlock() }
 		nextId += 1
@@ -61,7 +54,7 @@ final class AXRefStore {
 		return elements[ref]
 	}
 
-	func snapshot(for ref: String) -> Snapshot? {
+	func snapshot(for ref: String) -> AXElementIdentitySnapshot? {
 		lock.lock()
 		defer { lock.unlock() }
 		return snapshots[ref]
@@ -1363,6 +1356,11 @@ final class Bridge {
 		guard let window = windowElement(pid: pid, windowId: windowId, windowRef: windowRef) else {
 			throw BridgeFailure(message: "Root is not available through Accessibility", code: "root_not_found")
 		}
+		let baseRecord = baseLookId.flatMap { lookRecord(for: $0) }
+		if let baseRecord, baseRecord.processIdentity != processIdentity {
+			throw BridgeFailure(message: "Base look belongs to a previous app process", code: "stale_process")
+		}
+		let resolvedWindowId = windowId ?? windowIdForElement(window, pid: pid) ?? baseRecord?.windowId ?? 0
 		let rootElement: AXUIElement
 		if let scopeRef = optionalStringArg(request, "scopeRef") {
 			guard let scoped = refStore.element(for: scopeRef), isElement(scoped, descendantOf: window) else {
@@ -1398,7 +1396,7 @@ final class Bridge {
 			transform = rectTransform(windowFrame: rootFrame, imageWidth: imageWidth, imageHeight: imageHeight)
 		}
 		let describeStart = Date()
-		let outline = buildLookOutline(root: rootElement, transform: transform)
+		let outline = buildLookOutline(root: rootElement, transform: transform, pid: pid, processIdentity: processIdentity, windowId: resolvedWindowId)
 		let describeMs = elapsedMs(describeStart)
 
 		var readTextMs = 0
@@ -1412,15 +1410,11 @@ final class Bridge {
 		}
 
 		let lookId = freshLookId()
-		let baseRecord = baseLookId.flatMap { lookRecord(for: $0) }
-		if let baseRecord, baseRecord.processIdentity != processIdentity {
-			throw BridgeFailure(message: "Base look belongs to a previous app process", code: "stale_process")
-		}
 		storeLookRecord(LookRecord(
 			lookId: lookId,
 			pid: pid,
 			processIdentity: processIdentity,
-			windowId: windowId ?? baseRecord?.windowId ?? 0,
+			windowId: resolvedWindowId,
 			windowFrame: baseRecord?.windowFrame ?? capture?.frame ?? rootFrame,
 			imageWidth: baseRecord?.imageWidth ?? imageWidth,
 			imageHeight: baseRecord?.imageHeight ?? imageHeight,
@@ -1435,7 +1429,7 @@ final class Bridge {
 			"lookId": lookId,
 			"capturedAt": captureStart.timeIntervalSince1970,
 			"window": [
-				"windowId": Int(windowId ?? 0),
+				"windowId": Int(resolvedWindowId),
 				"rootRef": windowRef ?? refStore.storeWindow(window),
 				"kind": rootKind(role: role, subrole: subrole),
 				"framePoints": ["x": (capture?.frame ?? rootFrame).origin.x, "y": (capture?.frame ?? rootFrame).origin.y, "w": (capture?.frame ?? rootFrame).width, "h": (capture?.frame ?? rootFrame).height],
@@ -1503,8 +1497,8 @@ final class Bridge {
 		return CGRect(x: x1, y: y1, width: max(0, x2 - x1), height: max(0, y2 - y1))
 	}
 
-	private func buildLookOutline(root: AXUIElement, transform: @escaping (CGRect) -> CGRect) -> LookNode {
-		let rootNode = lookNode(element: root, transform: transform, offscreen: false)
+	private func buildLookOutline(root: AXUIElement, transform: @escaping (CGRect) -> CGRect, pid: Int32, processIdentity: ComputerUseProcessIdentity, windowId: UInt32) -> LookNode {
+		let rootNode = lookNode(element: root, transform: transform, offscreen: false, pid: pid, processIdentity: processIdentity, windowId: windowId)
 		let nodeLimit = 2000
 		// Apps with slow AX servers (e.g. Outlook) can take >30s to describe; the
 		// client aborts at 33s, so stop walking well before that and return a
@@ -1534,7 +1528,7 @@ final class Bridge {
 				seen.insert(identity)
 				let role = stringAttribute(child, attribute: kAXRoleAttribute as CFString) ?? ""
 				let offscreen = childOffscreen(child, role: role, visibleByKind: visibleByKind)
-				let childNode = lookNode(element: child, transform: transform, offscreen: offscreen)
+				let childNode = lookNode(element: child, transform: transform, offscreen: offscreen, pid: pid, processIdentity: processIdentity, windowId: windowId)
 				node.children.append(childNode)
 				queue.append((child, childNode))
 				walked += 1
@@ -1543,7 +1537,7 @@ final class Bridge {
 		return rootNode
 	}
 
-	private func lookNode(element: AXUIElement, transform: (CGRect) -> CGRect, offscreen: Bool) -> LookNode {
+	private func lookNode(element: AXUIElement, transform: (CGRect) -> CGRect, offscreen: Bool, pid: Int32, processIdentity: ComputerUseProcessIdentity, windowId: UInt32) -> LookNode {
 		let role = stringAttribute(element, attribute: kAXRoleAttribute as CFString) ?? ""
 		let subrole = stringAttribute(element, attribute: kAXSubroleAttribute as CFString) ?? ""
 		let actions = actionNames(element)
@@ -1558,10 +1552,19 @@ final class Bridge {
 		let screenRect = frameForElement(element) ?? .zero
 		let node = LookNode(
 			element: element,
-			ref: refStore.storeElement(element, snapshot: AXRefStore.Snapshot(
+			ref: refStore.storeElement(element, snapshot: elementIdentitySnapshot(
+				element,
+				pid: pid,
+				processIdentity: processIdentity,
+				windowId: windowId,
 				role: role,
-				identifier: stringAttribute(element, attribute: "AXIdentifier" as CFString) ?? "",
-				label: normalizedLabel([title, description, value].joined(separator: " ")),
+				subrole: subrole,
+				title: title,
+				description: description,
+				value: value,
+				actions: actions,
+				canSetValue: valueStatus == .success && valueSettable.boolValue,
+				canFocus: focusedStatus == .success && focusedSettable.boolValue,
 				rect: screenRect
 			)),
 			role: role,
@@ -1694,8 +1697,8 @@ final class Bridge {
 		return CGPoint(x: record.windowFrame.origin.x + record.windowFrame.width * relX, y: record.windowFrame.origin.y + record.windowFrame.height * relY)
 	}
 
-	private func payloadNode(element: AXUIElement) -> [String: Any] {
-		let node = lookNode(element: element, transform: { $0 }, offscreen: false)
+	private func payloadNode(element: AXUIElement, record: LookRecord) -> [String: Any] {
+		let node = lookNode(element: element, transform: { $0 }, offscreen: false, pid: record.pid, processIdentity: record.processIdentity, windowId: record.windowId)
 		var payload = node.payload()
 		payload["children"] = []
 		return payload
@@ -1837,27 +1840,57 @@ final class Bridge {
 
 	private func refindElement(ref: String, pid: Int32, windowId: UInt32) -> AXUIElement? {
 		guard let snapshot = refStore.snapshot(for: ref),
-			let window = windowElement(pid: pid, windowId: windowId)
+			let processIdentity = currentProcessIdentity(pid: pid),
+			validateAXElementIdentity(snapshot, targetPid: pid, processIdentity: processIdentity, windowId: windowId) == .valid,
+			let window = windowElement(pid: pid, windowId: windowId),
+			pidForElement(window) == pid
 		else { return nil }
-		let targetCenter = CGPoint(x: snapshot.rect.midX, y: snapshot.rect.midY)
-		let candidates = collectDescendants(startingAt: window, maxDepth: 8).filter { candidate in
-			let role = stringAttribute(candidate, attribute: kAXRoleAttribute as CFString) ?? ""
-			guard role == snapshot.role else { return false }
-			let identifier = stringAttribute(candidate, attribute: "AXIdentifier" as CFString) ?? ""
-			if !snapshot.identifier.isEmpty { return identifier == snapshot.identifier }
-			let subrole = stringAttribute(candidate, attribute: kAXSubroleAttribute as CFString) ?? ""
-			let title = stringAttribute(candidate, attribute: kAXTitleAttribute as CFString) ?? ""
-			let description = stringAttribute(candidate, attribute: kAXDescriptionAttribute as CFString) ?? ""
-			let value = displayValue(candidate, role: role, subrole: subrole)
-			return normalizedLabel([title, description, value].joined(separator: " ")) == snapshot.label
+
+		let candidates = collectDescendants(startingAt: window, maxDepth: 8).compactMap { candidate -> (AXUIElement, AXElementIdentitySnapshot)? in
+			guard isElement(candidate, descendantOf: window),
+			let current = liveElementIdentitySnapshot(candidate, pid: pid, processIdentity: processIdentity, windowId: windowId)
+			else { return nil }
+			return (candidate, current)
 		}
-		return candidates.min { left, right in
-			let leftFrame = frameForElement(left) ?? .zero
-			let rightFrame = frameForElement(right) ?? .zero
-			let leftDistance = hypot(leftFrame.midX - targetCenter.x, leftFrame.midY - targetCenter.y)
-			let rightDistance = hypot(rightFrame.midX - targetCenter.x, rightFrame.midY - targetCenter.y)
-			return leftDistance < rightDistance
+		guard let index = uniqueAXRefindCandidateIndex(snapshot: snapshot, candidates: candidates.map(\.1)) else { return nil }
+		return candidates[index].0
+	}
+
+	private func resolveElementForMutation(ref: String, record: LookRecord, pid: Int32) throws -> (AXUIElement, Bool) {
+		guard let snapshot = refStore.snapshot(for: ref) else {
+			throw BridgeFailure(message: "Element reference has no identity evidence; observe the UI again", code: "stale_ref")
 		}
+		switch validateAXElementIdentity(snapshot, targetPid: pid, processIdentity: record.processIdentity, windowId: record.windowId) {
+		case .staleProcess:
+			throw BridgeFailure(message: "The target app process changed; observe the UI again", code: "stale_process")
+		case .staleRef:
+			throw BridgeFailure(message: "Element reference belongs to another process or window", code: "stale_ref")
+		case .valid:
+			break
+		}
+		guard currentProcessIdentity(pid: pid) == record.processIdentity else {
+			throw BridgeFailure(message: "The target app process changed; observe the UI again", code: "stale_process")
+		}
+		guard let window = windowElement(pid: pid, windowId: record.windowId), pidForElement(window) == pid else {
+			throw BridgeFailure(message: "The target window changed; observe the UI again", code: "stale_ref")
+		}
+
+		if let cached = refStore.element(for: ref),
+			pidForElement(cached) == pid,
+			isElement(cached, descendantOf: window),
+			let current = liveElementIdentitySnapshot(cached, pid: pid, processIdentity: record.processIdentity, windowId: record.windowId),
+			snapshot.matchesCachedElement(current)
+		{
+			return (cached, false)
+		}
+
+		guard let refound = refindElement(ref: ref, pid: pid, windowId: record.windowId),
+			pidForElement(refound) == pid,
+			isElement(refound, descendantOf: window)
+		else {
+			throw BridgeFailure(message: "Element reference is stale or ambiguous; observe the UI again", code: "stale_ref")
+		}
+		return (refound, true)
 	}
 
 	private func hitTest(_ request: [String: Any]) throws -> [String: Any] {
@@ -1870,7 +1903,7 @@ final class Bridge {
 		guard let element = hitTestElement(at: point) else {
 			throw BridgeFailure(message: "No element at point", code: "hit_test_failed")
 		}
-		return payloadNode(element: element)
+		return payloadNode(element: element, record: record)
 	}
 
 	private func act(_ request: [String: Any]) throws -> [String: Any] {
@@ -1913,21 +1946,7 @@ final class Bridge {
 		}
 
 		if let ref = target["ref"] as? String {
-			var refound = false
-			let cached = refStore.element(for: ref)
-			let cachedIsLive = cached.map {
-				stringAttribute($0, attribute: kAXRoleAttribute as CFString) != nil && frameForElement($0) != nil
-			} ?? false
-			let resolved: AXUIElement?
-			if cachedIsLive {
-				resolved = cached
-			} else {
-				refound = true
-				resolved = refindElement(ref: ref, pid: pid, windowId: record.windowId)
-			}
-			guard let stored = resolved else {
-				throw BridgeFailure(message: "Element reference is stale", code: "stale_ref")
-			}
+			let (stored, refound) = try resolveElementForMutation(ref: ref, record: record, pid: pid)
 			if refound { performed["refound"] = true }
 			element = stored
 			beforeValue = stringAttribute(stored, attribute: kAXValueAttribute as CFString)
@@ -1985,7 +2004,7 @@ final class Bridge {
 					usleep(20_000)
 					continue
 				}
-				throw BridgeFailure(message: "Target is occluded by \(payloadNode(element: hit))", code: "occluded_target")
+				throw BridgeFailure(message: "Target is occluded by \(payloadNode(element: hit, record: record))", code: "occluded_target")
 			}
 			return nil
 		}
@@ -2027,8 +2046,11 @@ final class Bridge {
 					animateCursor(at: point)
 					return
 				}
-				if axResult.reason == "process_identity_changed" || axResult.reason == "pid_mismatch" || (axResult.reason == "pid_unavailable" && delivery == "hid") {
-					throw BridgeFailure(message: "Coordinate target could not be safely attributed to the requested app", code: "occluded_target")
+				if let failureCode = coordinateAXFailureCode(reason: axResult.reason, delivery: delivery) {
+					let message = failureCode == "stale_process"
+						? "The target app process changed; observe the UI again"
+						: "Coordinate target could not be safely attributed to the requested app"
+					throw BridgeFailure(message: message, code: failureCode)
 				}
 				performed["axFallbackReason"] = axResult.reason ?? "no_press_action"
 				acquirePhysicalInputIfNeeded()
@@ -2366,6 +2388,9 @@ final class Bridge {
 
 	private func axWaitFor(_ request: [String: Any]) throws -> [String: Any] {
 		let pid = Int32(try intArg(request, "pid"))
+		guard let processIdentity = currentProcessIdentity(pid: pid) else {
+			throw BridgeFailure(message: "Target process identity is unavailable", code: "stale_process")
+		}
 		ensureEnhancedAccessibility(pid: pid)
 		let windowId = optionalIntArg(request, "windowId").map { UInt32($0) }
 		let windowRef = optionalStringArg(request, "windowRef")
@@ -2382,6 +2407,7 @@ final class Bridge {
 		guard let window = windowElement(pid: pid, windowId: windowId, windowRef: windowRef) else {
 			return ["found": false, "reason": "window_not_found"]
 		}
+		let resolvedWindowId = windowId ?? windowIdForElement(window, pid: pid)
 		let rootElement: AXUIElement
 		if let scopeRef = optionalStringArg(request, "scopeRef") {
 			guard let scoped = refStore.element(for: scopeRef), isElement(scoped, descendantOf: window) else {
@@ -2431,6 +2457,9 @@ final class Bridge {
 					"target": self.elementPayload(
 						element: match.element,
 						key: "target",
+						pid: pid,
+						processIdentity: processIdentity,
+						windowId: resolvedWindowId,
 						source: self.axSource(role: candidateRole, insideWebArea: match.insideWebArea, isBrowser: isBrowser, containsWebArea: containsWebArea)
 					),
 					"nodeCount": lastCount,
@@ -2643,7 +2672,110 @@ final class Bridge {
 		return CGRect(origin: origin, size: size)
 	}
 
-	private func elementPayload(element: AXUIElement, key: String, score: Double? = nil, source: String? = nil, axVisible: Bool = true) -> [String: Any] {
+	private func liveElementIdentitySnapshot(_ element: AXUIElement, pid: Int32, processIdentity: ComputerUseProcessIdentity, windowId: UInt32) -> AXElementIdentitySnapshot? {
+		guard pidForElement(element) == pid, let frame = frameForElement(element) else { return nil }
+		let role = stringAttribute(element, attribute: kAXRoleAttribute as CFString) ?? ""
+		guard !role.isEmpty else { return nil }
+		let subrole = stringAttribute(element, attribute: kAXSubroleAttribute as CFString) ?? ""
+		let title = stringAttribute(element, attribute: kAXTitleAttribute as CFString) ?? ""
+		let description = stringAttribute(element, attribute: kAXDescriptionAttribute as CFString) ?? ""
+		let actions = actionNames(element)
+		var valueSettable = DarwinBoolean(false)
+		let valueStatus = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &valueSettable)
+		var focusedSettable = DarwinBoolean(false)
+		let focusStatus = AXUIElementIsAttributeSettable(element, kAXFocusedAttribute as CFString, &focusedSettable)
+		return elementIdentitySnapshot(
+			element,
+			pid: pid,
+			processIdentity: processIdentity,
+			windowId: windowId,
+			role: role,
+			subrole: subrole,
+			title: title,
+			description: description,
+			value: displayValue(element, role: role, subrole: subrole),
+			actions: actions,
+			canSetValue: valueStatus == .success && valueSettable.boolValue,
+			canFocus: focusStatus == .success && focusedSettable.boolValue,
+			rect: frame
+		)
+	}
+
+	private func elementIdentitySnapshot(
+		_ element: AXUIElement,
+		pid: Int32,
+		processIdentity: ComputerUseProcessIdentity,
+		windowId: UInt32,
+		role: String,
+		subrole: String,
+		title: String,
+		description: String,
+		value: String,
+		actions: [String],
+		canSetValue: Bool,
+		canFocus: Bool,
+		rect: CGRect
+	) -> AXElementIdentitySnapshot {
+		var traits = Set(actions)
+		if canSetValue { traits.insert("setValue") }
+		if canFocus { traits.insert("focus") }
+		let semantic = normalizedLabel([role, subrole, title, description, value].joined(separator: " "))
+		return AXElementIdentitySnapshot(
+			pid: pid,
+			processIdentity: processIdentity,
+			windowId: windowId,
+			role: role,
+			subrole: subrole,
+			identifier: stringAttribute(element, attribute: "AXIdentifier" as CFString) ?? "",
+			semanticFingerprint: semantic,
+			actionableTraits: traits,
+			parentSemanticFingerprint: parentSemanticFingerprint(element),
+			rect: rect
+		)
+	}
+
+	private func parentSemanticFingerprint(_ element: AXUIElement) -> String {
+		var parts: [String] = []
+		var current = parentElement(element)
+		var depth = 0
+		while let parent = current, depth < 4 {
+			let role = stringAttribute(parent, attribute: kAXRoleAttribute as CFString) ?? ""
+			if role == "AXApplication" { break }
+			let subrole = stringAttribute(parent, attribute: kAXSubroleAttribute as CFString) ?? ""
+			let title = stringAttribute(parent, attribute: kAXTitleAttribute as CFString) ?? ""
+			let description = stringAttribute(parent, attribute: kAXDescriptionAttribute as CFString) ?? ""
+			let identifier = stringAttribute(parent, attribute: "AXIdentifier" as CFString) ?? ""
+			let value = displayValue(parent, role: role, subrole: subrole)
+			parts.append(normalizedLabel([role, subrole, identifier, title, description, value].joined(separator: " ")))
+			if role == "AXWindow" { break }
+			current = parentElement(parent)
+			depth += 1
+		}
+		return parts.joined(separator: " > ")
+	}
+
+	private func windowIdForElement(_ element: AXUIElement, pid: Int32) -> UInt32? {
+		let app = AXUIElementCreateApplication(pid)
+		let windows = Array(axElementArray(app, attribute: kAXWindowsAttribute as CFString).prefix(128))
+		let pairings = windowPairings(windows: windows, candidates: cgWindowCandidates(pid: pid))
+		var matchingIds = Set<UInt32>()
+		for window in windows {
+			if sameElement(element, window) || isElement(element, descendantOf: window),
+				let windowId = pairings[ObjectIdentifier(window)]?.candidate?.windowId
+			{
+				matchingIds.insert(windowId)
+			}
+			for sheet in sheetElements(of: window) where sameElement(element, sheet) || isElement(element, descendantOf: sheet) {
+				if let windowId = bestCandidate(for: sheet, candidates: cgWindowCandidates(pid: pid))?.windowId {
+					matchingIds.insert(windowId)
+				}
+			}
+		}
+		guard matchingIds.count == 1 else { return nil }
+		return matchingIds.first
+	}
+
+	private func elementPayload(element: AXUIElement, key: String, pid: Int32, processIdentity: ComputerUseProcessIdentity, windowId: UInt32?, score: Double? = nil, source: String? = nil, axVisible: Bool = true) -> [String: Any] {
 		let role = stringAttribute(element, attribute: kAXRoleAttribute as CFString) ?? ""
 		let subrole = stringAttribute(element, attribute: kAXSubroleAttribute as CFString) ?? ""
 		let title = stringAttribute(element, attribute: kAXTitleAttribute as CFString) ?? ""
@@ -2665,7 +2797,6 @@ final class Bridge {
 		]
 		var payload: [String: Any] = [
 			key: true,
-			"elementRef": refStore.storeElement(element),
 			"role": role,
 			"subrole": subrole,
 			"title": title,
@@ -2684,6 +2815,9 @@ final class Bridge {
 			"x": centerX,
 			"y": centerY,
 		]
+		if let windowId, let snapshot = liveElementIdentitySnapshot(element, pid: pid, processIdentity: processIdentity, windowId: windowId) {
+			payload["elementRef"] = refStore.storeElement(element, snapshot: snapshot)
+		}
 		if let frame {
 			payload["frame"] = ["x": frame.origin.x, "y": frame.origin.y, "w": frame.width, "h": frame.height]
 		}
@@ -2775,6 +2909,9 @@ final class Bridge {
 
 	private func focusedElement(_ request: [String: Any]) throws -> [String: Any] {
 		let pid = Int32(try intArg(request, "pid"))
+		guard let processIdentity = currentProcessIdentity(pid: pid) else {
+			return ["exists": false, "reason": "stale_process"]
+		}
 		let windowId = optionalIntArg(request, "windowId").map { UInt32($0) }
 		let windowRef = optionalStringArg(request, "windowRef")
 		let app = AXUIElementCreateApplication(pid)
@@ -2783,13 +2920,17 @@ final class Bridge {
 		else {
 			return ["exists": false]
 		}
+		let window: AXUIElement?
 		if windowId != nil || windowRef != nil {
-			guard let window = windowElement(pid: pid, windowId: windowId, windowRef: windowRef) else {
-				return ["exists": false, "reason": "window_not_found"]
-			}
-			guard isElement(element, descendantOf: window) else {
-				return ["exists": false, "reason": "focused_element_outside_window"]
-			}
+			window = windowElement(pid: pid, windowId: windowId, windowRef: windowRef)
+		} else {
+			window = copyAttribute(app, attribute: kAXFocusedWindowAttribute as CFString).flatMap(asAXElement)
+		}
+		guard let window, isElement(element, descendantOf: window),
+			let resolvedWindowId = windowId ?? windowIdForElement(window, pid: pid),
+			let snapshot = liveElementIdentitySnapshot(element, pid: pid, processIdentity: processIdentity, windowId: resolvedWindowId)
+		else {
+			return ["exists": false, "reason": "window_identity_unavailable"]
 		}
 
 		let role = stringAttribute(element, attribute: kAXRoleAttribute as CFString) ?? ""
@@ -2811,11 +2952,12 @@ final class Bridge {
 		]
 
 		let isTextInput = textRoles.contains(role) || canSetValue
-		let elementRef = refStore.storeElement(element)
+		let elementRef = refStore.storeElement(element, snapshot: snapshot)
 
 		return [
 			"exists": true,
 			"elementRef": elementRef,
+			"windowId": Int(resolvedWindowId),
 			"role": role,
 			"subrole": subrole,
 			"isTextInput": isTextInput,

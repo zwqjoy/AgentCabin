@@ -9,7 +9,7 @@ let package = Package(
 			name: "CoordinateAXPress",
 			path: ".",
 			exclude: ["Tests", "Package.swift", ".build", "agentcabin-computer-use.app", "bridge.swift", "agent_cursor.swift", "agent_cursor_motion.swift", "ocr-helper"],
-			sources: ["CoordinateAXPress.swift"]
+			sources: ["CoordinateAXPress.swift", "AXElementIdentity.swift"]
 		),
 		.testTarget(name: "CoordinateAXPressTests", dependencies: ["CoordinateAXPress"], path: "Tests"),
 	]

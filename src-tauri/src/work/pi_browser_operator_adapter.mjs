@@ -190,6 +190,36 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   const waitForApproval = options.waitForWorkInboxResolution;
   const callRuntime = options.callBrowserRuntime || callBrowserRuntime;
   let latestSnapshot;
+  const ingestSnapshotObservation = (observation) => {
+    if (!observation?.workerInstanceId || !observation?.documentId || observation.revision === undefined) return;
+    const sameIdentity = latestSnapshot?.workerInstanceId === observation.workerInstanceId
+      && latestSnapshot?.documentId === observation.documentId
+      && latestSnapshot?.targetId === observation.targetId;
+    let refs = sameIdentity ? { ...(latestSnapshot.refs || {}) } : {};
+
+    if (observation.snapshotType === "full") {
+      refs = { ...(observation.refs || {}) };
+    } else if (observation.snapshotType === "delta") {
+      for (const item of observation.added || []) {
+        if (item?.ref) refs[item.ref] = item;
+      }
+      for (const item of observation.changed || []) {
+        if (item?.ref && item.after && typeof item.after === "object") {
+          refs[item.ref] = { ...(refs[item.ref] || {}), ...item.after, ref: item.ref };
+        }
+      }
+      for (const ref of observation.removed || []) delete refs[String(ref).replace(/^@/, "")];
+    } else if (observation.snapshotType !== "unchanged") {
+      return;
+    }
+
+    latestSnapshot = { ...(sameIdentity ? latestSnapshot : {}), ...observation, refs };
+  };
+  const ingestActionObservation = (parsed) => {
+    if (parsed?.observation && typeof parsed.observation === "object") {
+      ingestSnapshotObservation(parsed.observation);
+    }
+  };
   const carrySnapshotIdentity = (params = {}) => {
     if (!latestSnapshot?.workerInstanceId) return params;
     const ref = String(params.ref || "").replace(/^@/, "");
@@ -291,18 +321,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       );
       if (!res.success) return fail(res.stderr || res.error || "Snapshot failed", res);
       const parsed = parseResultPayload(res);
-      if (parsed.workerInstanceId && parsed.documentId && parsed.revision !== undefined) {
-        const sameDocument = latestSnapshot?.workerInstanceId === parsed.workerInstanceId
-          && latestSnapshot?.documentId === parsed.documentId && latestSnapshot?.targetId === parsed.targetId;
-        const refs = sameDocument ? { ...(latestSnapshot.refs || {}) } : {};
-        if (parsed.snapshotType === "full") Object.assign(refs, parsed.refs || {});
-        else {
-          for (const item of parsed.added || []) refs[item.ref] = item;
-          for (const item of parsed.changed || []) refs[item.ref] = { ...(refs[item.ref] || {}), ...item.after };
-          for (const ref of parsed.removed || []) delete refs[ref];
-        }
-        latestSnapshot = { ...(sameDocument ? latestSnapshot : {}), ...parsed, refs };
-      }
+      ingestSnapshotObservation(parsed);
       const text = parsed.snapshotType === "unchanged"
         ? `Page unchanged at revision ${parsed.revision} (${parsed.url}).`
         : parsed.snapshotType === "delta"
@@ -409,6 +428,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       const res = await callOperationWithApproval(toolCallId, "browser_click", "click", carrySnapshotIdentity(params), signal);
       const parsed = parseResultPayload(res);
       if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Click failed.", { ...res, ...parsed, ok: false });
+      ingestActionObservation(parsed);
       return result(`Click action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
     },
   });
@@ -423,6 +443,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       const res = await callOperationWithApproval(toolCallId, "browser_type", "type", carrySnapshotIdentity(params), signal);
       const parsed = parseResultPayload(res);
       if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Type failed.", { ...res, ...parsed, ok: false });
+      ingestActionObservation(parsed);
       return result(`Text input action executed on ${params?.target_label ? `“${params.target_label}”` : params?.ref ? `[ref=${params.ref}]` : params?.selector}. Inspect the returned page state to verify the intended result.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
     },
   });
@@ -445,6 +466,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
           resultVerified: false,
         });
       }
+      ingestActionObservation(parsed);
       const target = params?.ref ? "[ref=" + params.ref + "]" : params?.selector;
       const selectedLabel = parsed.execution?.selectedLabel || params?.value;
       const selectedValue = parsed.execution?.selectedValue || params?.value;
@@ -465,6 +487,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       const res = await callOperationWithApproval(toolCallId, "browser_scroll", "scroll", params, signal);
       const parsed = parseResultPayload(res);
       if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Scroll failed.", { ...res, ...parsed, ok: false });
+      ingestActionObservation(parsed);
       return result(`Scrolled ${params?.direction || "down"}.${formatPageObservation(parsed)}`, { ok: true, ...parsed });
     },
   });
@@ -478,6 +501,7 @@ export function registerBrowserOperatorTools(pi, options = {}) {
       const res = await callOperationWithApproval(toolCallId, "browser_press_key", "press_key", carrySnapshotIdentity(params), signal);
       const parsed = parseResultPayload(res);
       if (!res.success || parsed.ok === false) return fail(parsed.error?.message || res.stderr || res.error || "Key press failed.", { ...res, ...parsed, ok: false });
+      ingestActionObservation(parsed);
       return result(`Pressed ${params.key}.${formatPageObservation(parsed)}`, { ok: true, ...parsed, actionExecuted: true, resultVerified: false });
     },
   });
