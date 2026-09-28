@@ -1,7 +1,6 @@
 pub mod apps;
 pub mod artifacts;
 pub mod browser;
-pub mod browser_operator;
 pub mod capability_projection;
 pub mod cli_runtime;
 pub mod command_info;

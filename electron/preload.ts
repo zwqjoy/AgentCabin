@@ -119,16 +119,6 @@ const bridge: AgentCabinDesktopBridge = {
     homeDir: () => invoke("path:home"),
     join: (...segments: string[]) => invoke("path:join", segments),
   },
-
-  browser: {
-    attach: (payload) => invoke("browser:attach", payload),
-    setBounds: (payload) => invoke("browser:set-bounds", payload),
-    setVisible: (payload) => invoke("browser:set-visible", payload),
-    command: (payload) => invoke("browser:command", payload),
-    getEndpoint: (payload) => invoke("browser:get-endpoint", payload),
-    unbind: (payload) => invoke("browser:unbind", payload),
-    destroy: (payload) => invoke("browser:destroy", payload),
-  },
 };
 
 contextBridge.exposeInMainWorld("agentcabinDesktop", bridge);

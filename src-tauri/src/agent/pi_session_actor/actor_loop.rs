@@ -1783,12 +1783,7 @@ async fn cleanup_actor(
     desktop_token: Option<&str>,
     work_bridge_token: Option<&str>,
 ) {
-    // Code's browser bridge credential belongs to this actor; the native
-    // Browser session belongs to the Run. Revoke only this actor's exact
-    // credentials here so natural exit/replacement preserves the user's tabs.
-    if let Some(token) = browser_token {
-        crate::browser_runtime::revoke_token(token).await;
-    }
+    let _ = browser_token;
     if let Some(token) = connector_token {
         crate::code_connector_runtime::revoke_token(token).await;
     }

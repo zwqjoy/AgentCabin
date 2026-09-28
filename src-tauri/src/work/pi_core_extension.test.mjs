@@ -42,16 +42,24 @@ async function loadExtension(tempRoot) {
     path.join(extensionDir, "pi_workspace_paths.mjs"),
   );
   fs.copyFileSync(
-    new URL("./pi_browser_operator_adapter.mjs", import.meta.url),
-    path.join(extensionDir, "pi_browser_operator_adapter.mjs"),
-  );
-  fs.copyFileSync(
     new URL("./pi_browser_adapter.mjs", import.meta.url),
     path.join(extensionDir, "pi_browser_adapter.mjs"),
   );
   fs.copyFileSync(
     new URL("./agentcabin_computer_use_v2_adapter.mjs", import.meta.url),
     path.join(extensionDir, "agentcabin_computer_use_v2_adapter.mjs"),
+  );
+  fs.copyFileSync(
+    new URL("./pi_computer_use_proxy.mjs", import.meta.url),
+    path.join(extensionDir, "pi_computer_use_proxy.mjs"),
+  );
+  fs.copyFileSync(
+    new URL("./pi_computer_use_definitions.json", import.meta.url),
+    path.join(extensionDir, "pi_computer_use_definitions.json"),
+  );
+  fs.copyFileSync(
+    new URL("./computer_use_tool_pipeline.mjs", import.meta.url),
+    path.join(extensionDir, "computer_use_tool_pipeline.mjs"),
   );
   fs.copyFileSync(
     new URL("./computer_use_v2_runtime.mjs", import.meta.url),
@@ -1730,13 +1738,51 @@ test("Work core exposes Computer Use V2 tools only when the desktop gate is enab
       on() {},
     });
     assert.equal(tools.has("desktop_list_apps"), false);
+    assert.equal(tools.has("launch_app"), false);
     assert.equal(tools.has("find_roots"), true);
     assert.equal(tools.has("observe_ui"), true);
     assert.equal(tools.has("act_ui"), true);
+    assert.equal(tools.has("launch_browser"), true);
   } finally {
     if (previous.workspaceRoot === undefined) delete process.env.AGENTCABIN_WORKSPACE_ROOT; else process.env.AGENTCABIN_WORKSPACE_ROOT = previous.workspaceRoot;
     if (previous.workspaceId === undefined) delete process.env.AGENTCABIN_WORKSPACE_ID; else process.env.AGENTCABIN_WORKSPACE_ID = previous.workspaceId;
     if (previous.desktop === undefined) delete process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED; else process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED = previous.desktop;
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("Work core exposes legacy Computer Use tools when AGENTCABIN_COMPUTER_USE_ENGINE=legacy", async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-desktop-legacy-"));
+  const workspaceRoot = path.join(temp, "workspace");
+  fs.mkdirSync(path.join(workspaceRoot, "input"), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, "context"), { recursive: true });
+  fs.writeFileSync(path.join(workspaceRoot, "manifest.json"), JSON.stringify({ accessRoots: [] }), "utf8");
+  const previous = {
+    workspaceRoot: process.env.AGENTCABIN_WORKSPACE_ROOT,
+    workspaceId: process.env.AGENTCABIN_WORKSPACE_ID,
+    desktop: process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED,
+    engine: process.env.AGENTCABIN_COMPUTER_USE_ENGINE,
+  };
+  process.env.AGENTCABIN_WORKSPACE_ROOT = workspaceRoot;
+  process.env.AGENTCABIN_WORKSPACE_ID = "fixture";
+  process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED = "1";
+  process.env.AGENTCABIN_COMPUTER_USE_ENGINE = "legacy";
+  try {
+    const extension = await loadExtension(temp);
+    const tools = new Map();
+    extension({
+      registerTool(tool) { tools.set(tool.name, tool); },
+      setActiveTools() {},
+      on() {},
+    });
+    assert.equal(tools.has("launch_app"), true);
+    assert.equal(tools.has("find_roots"), true);
+    assert.equal(tools.has("launch_browser"), false);
+  } finally {
+    if (previous.workspaceRoot === undefined) delete process.env.AGENTCABIN_WORKSPACE_ROOT; else process.env.AGENTCABIN_WORKSPACE_ROOT = previous.workspaceRoot;
+    if (previous.workspaceId === undefined) delete process.env.AGENTCABIN_WORKSPACE_ID; else process.env.AGENTCABIN_WORKSPACE_ID = previous.workspaceId;
+    if (previous.desktop === undefined) delete process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED; else process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED = previous.desktop;
+    if (previous.engine === undefined) delete process.env.AGENTCABIN_COMPUTER_USE_ENGINE; else process.env.AGENTCABIN_COMPUTER_USE_ENGINE = previous.engine;
     fs.rmSync(temp, { recursive: true, force: true });
   }
 });

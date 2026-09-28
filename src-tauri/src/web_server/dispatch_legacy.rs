@@ -1920,33 +1920,6 @@ pub async fn dispatch_command(
         "get_browser_traces" => {
             to_json(caps::get_browser_traces(extract_str(&params, "run_id")?).await?)
         }
-        "list_embedded_browsers" => to_json(caps::list_embedded_browsers().await?),
-        "unregister_embedded_browser" => {
-            to_json(caps::unregister_embedded_browser(extract_str(&params, "endpoint")?).await?)
-        }
-        "register_embedded_browser" => to_json(
-            caps::register_embedded_browser(
-                serde_json::from_value(
-                    params
-                        .get("payload")
-                        .cloned()
-                        .ok_or_else(|| "missing required param: payload".to_string())?,
-                )
-                .map_err(|e| format!("invalid embedded registration: {e}"))?,
-            )
-            .await?,
-        ),
-        "browser_user_interact" => to_json(
-            caps::browser_user_interact(
-                extract_str(&params, "run_id")?,
-                extract_str(&params, "action")?,
-                params
-                    .get("params")
-                    .cloned()
-                    .ok_or_else(|| "missing required param: params".to_string())?,
-            )
-            .await?,
-        ),
         "get_browser_use_binding" => to_json(caps::get_browser_use_binding()?),
         "prepare_browser_runtime" => {
             to_json(caps::prepare_browser_runtime_impl(state.emitter.clone()).await?)

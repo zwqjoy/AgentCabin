@@ -352,16 +352,6 @@ impl WorkHarnessController {
             let run_id_owned = run_id.to_string();
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn(async move {
-                    if let Err(error) = crate::work::browser_operator::browser_operator_manager()
-                        .close_context(&run_id_owned)
-                        .await
-                    {
-                        log::warn!(
-                            "[work/lifecycle] Failed to close browser context for WorkRun {}: {}",
-                            run_id_owned,
-                            error
-                        );
-                    }
                     crate::work::desktop_operator::desktop_operator_manager()
                         .release_for_run(&run_id_owned)
                         .await;

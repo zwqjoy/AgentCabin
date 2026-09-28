@@ -61,7 +61,6 @@
     ],
     "category": "DeveloperTool",
     "resources": [
-      "browser-worker/**/*",
       "resources/agentcabin-computer-use"
     ],
     "shortDescription": "AI-assisted vibe coding desktop app",

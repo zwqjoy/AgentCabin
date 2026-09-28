@@ -191,11 +191,7 @@ pub(crate) async fn pi_launch_context(
     let web_access_enabled =
         browser_config.enabled && crate::storage::profile_bindings::is_web_access_enabled();
     let browser_use_enabled = crate::storage::profile_bindings::is_browser_use_enabled();
-    let mut shared_browser_adapters: Option<(std::path::PathBuf, std::path::PathBuf)> = None;
-    if web_access_enabled || browser_use_enabled {
-        let (web_adapter, browser_adapter) =
-            crate::browser_runtime::ensure_code_adapters(&shared_paths)?;
-        shared_browser_adapters = Some((web_adapter, browser_adapter));
+    if browser_use_enabled {
         extra_env.insert("AGENTCABIN_BROWSER_ENABLED".to_string(), "1".to_string());
         extra_env.insert("AGENTCABIN_BROWSER_SESSION_ID".to_string(), run.id.clone());
         if !browser_config.allowed_hosts.is_empty() {
@@ -281,18 +277,17 @@ pub(crate) async fn pi_launch_context(
             .into_owned(),
         );
     }
-    if web_access_enabled || browser_use_enabled {
-        if let Some((web_adapter, browser_adapter)) = shared_browser_adapters {
-            if web_access_enabled {
-                settings
-                    .pi_shared_extension_sources
-                    .push(web_adapter.to_string_lossy().into_owned());
-            }
-            if browser_use_enabled {
-                settings
-                    .pi_shared_extension_sources
-                    .push(browser_adapter.to_string_lossy().into_owned());
-            }
+    if web_access_enabled {
+        let web_adapter = crate::work::browser::ensure_code_web_adapter(&shared_paths)?;
+        settings
+            .pi_shared_extension_sources
+            .push(web_adapter.to_string_lossy().into_owned());
+    }
+    if browser_use_enabled {
+        if let Some(path) = crate::agent::claude_stream::bundled_pi_package_path(
+            crate::work::system_packages::PI_AGENT_BROWSER_NATIVE_PACKAGE_NAME,
+        ) {
+            settings.pi_shared_extension_sources.push(path);
         }
     }
     if let Some(adapter) = code_desktop_adapter {
@@ -405,7 +400,6 @@ async fn fail_work_session_launch(
         );
         return Err(error);
     }
-    crate::browser_runtime::revoke_session_tokens(run_id).await;
     storage::runs::update_status(run_id, RunStatus::Failed, None, Some(error.clone())).ok();
     emit_state(emitter, run_id, "failed", Some(error.clone()));
     Err(error)
@@ -605,7 +599,6 @@ async fn start_grok_session(
     {
         Ok(sender) => sender,
         Err(error) => {
-            crate::browser_runtime::revoke_session_tokens(&run_id).await;
             crate::desktop_runtime::revoke_session(&run_id).await;
             storage::runs::update_status(&run_id, RunStatus::Failed, None, Some(error.clone()))
                 .ok();
@@ -1226,20 +1219,6 @@ pub(crate) async fn start_session_impl_with_overrides(
     // directory, but registering here prevents stop/replace cleanup from
     // revoking the fresh token before the new Pi actor starts.
     if extra_env
-        .get("AGENTCABIN_BROWSER_ENABLED")
-        .map(String::as_str)
-        == Some("1")
-    {
-        let browser_run_dir = storage::run_dir(&run.id).join("browser");
-        let (browser_port, browser_token) =
-            crate::browser_runtime::register_session(&run.id, &browser_run_dir).await?;
-        extra_env.insert(
-            "AGENTCABIN_BROWSER_BRIDGE_PORT".to_string(),
-            browser_port.to_string(),
-        );
-        extra_env.insert("AGENTCABIN_BROWSER_BRIDGE_TOKEN".to_string(), browser_token);
-    }
-    if extra_env
         .get("AGENTCABIN_CODE_CONNECTOR_ENABLED")
         .map(String::as_str)
         == Some("1")
@@ -1248,10 +1227,6 @@ pub(crate) async fn start_session_impl_with_overrides(
             match crate::code_connector_runtime::register_session(&run.id).await {
                 Ok(value) => value,
                 Err(error) => {
-                    // Browser registration above may already have succeeded;
-                    // do not leave that session lease behind on a connector
-                    // bridge startup failure.
-                    crate::browser_runtime::revoke_session_tokens(&run.id).await;
                     return Err(error);
                 }
             };
@@ -1271,7 +1246,6 @@ pub(crate) async fn start_session_impl_with_overrides(
             match crate::desktop_runtime::register_session(&run.id).await {
                 Ok(value) => value,
                 Err(error) => {
-                    crate::browser_runtime::revoke_session_tokens(&run.id).await;
                     crate::code_connector_runtime::revoke_session(&run.id).await;
                     return Err(error);
                 }
@@ -1298,7 +1272,6 @@ pub(crate) async fn start_session_impl_with_overrides(
     {
         Ok(sender) => sender,
         Err(error) => {
-            crate::browser_runtime::revoke_session_tokens(&run_id).await;
             crate::code_connector_runtime::revoke_session(&run_id).await;
             crate::desktop_runtime::revoke_session(&run_id).await;
             storage::runs::update_status(&run_id, RunStatus::Failed, None, Some(error.clone()))

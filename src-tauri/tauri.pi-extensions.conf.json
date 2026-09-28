@@ -1,7 +1,6 @@
 {
   "bundle": {
     "resources": [
-      "browser-worker/**/*",
       "runtime/extensions/**/*",
       "resources/agentcabin-computer-use/macos/agentcabin-computer-use.app",
       "resources/agentcabin-computer-use/macos/ocr-helper",

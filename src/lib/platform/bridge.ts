@@ -42,47 +42,6 @@ export interface AgentCabinDesktopBridge {
     homeDir(): Promise<string>;
     join(...segments: string[]): Promise<string>;
   };
-  browser: {
-    attach(payload: {
-      viewId: string;
-      runId: string;
-      bindingId: string;
-      url?: string;
-      rect?: { x: number; y: number; width: number; height: number };
-    }): Promise<{
-      viewId: string;
-      bindingId: string;
-      targetId: string;
-      endpoint: { host: string; port: number; token: string };
-      tabs: Array<{
-        id: string;
-        targetId: string;
-        index: number;
-        url: string;
-        title: string;
-        active: boolean;
-      }>;
-      activeTargetId: string;
-    }>;
-    setBounds(payload: {
-      viewId: string;
-      bindingId: string;
-      rect: { x: number; y: number; width: number; height: number };
-    }): Promise<void>;
-    setVisible(payload: { viewId: string; bindingId: string; visible: boolean }): Promise<void>;
-    command(payload: {
-      viewId: string;
-      action: "back" | "forward" | "reload" | "stop";
-    }): Promise<void>;
-    getEndpoint(payload: { viewId: string }): Promise<{
-      host: string;
-      port: number;
-      token: string;
-      targetId: string;
-    } | null>;
-    unbind(payload: { viewId: string; bindingId: string }): Promise<void>;
-    destroy(payload: { runId: string }): Promise<void>;
-  };
 }
 
 declare global {

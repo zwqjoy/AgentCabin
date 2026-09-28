@@ -78,6 +78,111 @@ pub fn is_private_ip(ip: IpAddr) -> bool {
     }
 }
 
+/// Check if an IP address is cloud metadata or dangerous unspecified/broadcast address.
+/// These addresses are NEVER allowed, even if they match an allowlist rule.
+pub fn is_dangerous_metadata_or_special(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            // 169.254.169.254 (Cloud metadata)
+            if v4.octets() == [169, 254, 169, 254] {
+                return true;
+            }
+            if v4.is_unspecified() || v4.is_broadcast() {
+                return true;
+            }
+            false
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_dangerous_metadata_or_special(IpAddr::V4(v4));
+            }
+            v6.is_unspecified()
+        }
+    }
+}
+
+/// Helper to match an IPv4 address against an IPv4 CIDR string (e.g. "10.73.0.0/16").
+pub fn matches_ipv4_cidr(ip: std::net::Ipv4Addr, cidr: &str) -> bool {
+    if let Some((net_str, prefix_str)) = cidr.split_once('/') {
+        if let (Ok(net_ip), Ok(prefix)) = (
+            net_str.parse::<std::net::Ipv4Addr>(),
+            prefix_str.parse::<u32>(),
+        ) {
+            if prefix <= 32 {
+                let mask = if prefix == 0 {
+                    0u32
+                } else {
+                    !0u32 << (32 - prefix)
+                };
+                let ip_u32 = u32::from(ip);
+                let net_u32 = u32::from(net_ip);
+                return (ip_u32 & mask) == (net_u32 & mask);
+            }
+        }
+    }
+    false
+}
+
+/// Check if a target host string or resolved IPs match any of the allowed rules.
+pub fn is_host_or_ip_allowed(
+    host_str: &str,
+    resolved_ips: &[IpAddr],
+    allowed_hosts: &[String],
+) -> bool {
+    if allowed_hosts.is_empty() {
+        return false;
+    }
+    let lower_host = host_str.trim().to_ascii_lowercase();
+
+    for pattern in allowed_hosts {
+        let pat = pattern.trim().to_ascii_lowercase();
+        if pat.is_empty() {
+            continue;
+        }
+
+        // 1. Exact hostname match
+        if pat == lower_host {
+            return true;
+        }
+
+        // 2. Wildcard domain match (*.domain.com or .domain.com)
+        if let Some(suffix) = pat.strip_prefix("*.") {
+            if lower_host == suffix || lower_host.ends_with(&format!(".{suffix}")) {
+                return true;
+            }
+        } else if let Some(suffix) = pat.strip_prefix('.') {
+            if lower_host == suffix || lower_host.ends_with(&format!(".{suffix}")) {
+                return true;
+            }
+        }
+
+        // 3. Pattern is an exact IP address
+        if let Ok(pat_ip) = pat.parse::<IpAddr>() {
+            if resolved_ips.contains(&pat_ip) {
+                return true;
+            }
+        }
+
+        // 4. Pattern is an IPv4 CIDR (e.g. 10.73.0.0/16)
+        if pat.contains('/') {
+            for &ip in resolved_ips {
+                if let IpAddr::V4(v4) = ip {
+                    if matches_ipv4_cidr(v4, &pat) {
+                        return true;
+                    }
+                }
+            }
+            if let Ok(host_v4) = lower_host.parse::<std::net::Ipv4Addr>() {
+                if matches_ipv4_cidr(host_v4, &pat) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 pub fn reject_unsafe_hostname(hostname: &str) -> Result<(), String> {
     let host = hostname
         .trim()
@@ -152,16 +257,12 @@ pub async fn assert_public_url_with_allowed_hosts(
     };
 
     // Metadata is NEVER allowed
-    if ips
-        .iter()
-        .any(|&ip| crate::work::browser_operator::security::is_dangerous_metadata_or_special(ip))
-    {
+    if ips.iter().any(|&ip| is_dangerous_metadata_or_special(ip)) {
         return Err("网络访问 URL 指向本机、内网或云 metadata 地址，已拒绝".into());
     }
 
     // Check allowlist
-    if crate::work::browser_operator::security::is_host_or_ip_allowed(host_str, &ips, allowed_hosts)
-    {
+    if is_host_or_ip_allowed(host_str, &ips, allowed_hosts) {
         return Ok(parsed);
     }
 
@@ -227,6 +328,159 @@ pub async fn assert_first_stage_url_with_allowed_hosts(
 /// First-stage policy: public HTML/text/JSON URLs only.
 pub async fn assert_first_stage_url(raw_url: &str, proxy_active: bool) -> Result<Url, String> {
     assert_first_stage_url_with_allowed_hosts(raw_url, proxy_active, &[]).await
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UrlValidationError {
+    InvalidUrl(String),
+    DisallowedScheme(String),
+    BlockedHost(String),
+    BlockedIp(String),
+    DnsResolutionFailed(String),
+    LocalFileOutsideOutput(String),
+}
+
+impl std::fmt::Display for UrlValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidUrl(err) => write!(f, "Invalid URL format: {err}"),
+            Self::DisallowedScheme(scheme) => {
+                write!(
+                    f,
+                    "Disallowed URL scheme '{scheme}'; only http/https and workspace output file:// are allowed"
+                )
+            }
+            Self::BlockedHost(host) => {
+                write!(f, "Access to host '{host}' is blocked (SSRF policy)")
+            }
+            Self::BlockedIp(ip) => {
+                write!(f, "Access to IP '{ip}' is blocked (SSRF policy: private/loopback/metadata restricted)")
+            }
+            Self::DnsResolutionFailed(err) => write!(f, "DNS resolution failed: {err}"),
+            Self::LocalFileOutsideOutput(path) => {
+                write!(f, "Local file access is strictly restricted to workspace output/ directory: {path}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for UrlValidationError {}
+
+pub fn is_blocked_hostname(host: &str) -> bool {
+    let lower = host.trim().to_lowercase();
+    lower == "localhost"
+        || lower.ends_with(".localhost")
+        || lower.ends_with(".local")
+        || lower.ends_with(".internal")
+        || lower == "instance-data"
+        || lower == "metadata.google.internal"
+}
+
+/// Validate a target URL against SSRF policy with allowed host rules.
+pub fn validate_browser_url_with_allowed_hosts(
+    raw_url: &str,
+    allowed_hosts: &[String],
+    allowed_output_root: Option<&std::path::Path>,
+) -> Result<Url, UrlValidationError> {
+    use std::net::ToSocketAddrs;
+    let parsed = Url::parse(raw_url).map_err(|e| UrlValidationError::InvalidUrl(e.to_string()))?;
+
+    // A generated HTML deliverable may be opened directly, but only when the
+    // caller supplies the exact managed output directory for this WorkRun.
+    if parsed.scheme() == "file" {
+        let root = allowed_output_root
+            .ok_or_else(|| UrlValidationError::DisallowedScheme(parsed.scheme().to_string()))?;
+        let file_path = parsed
+            .to_file_path()
+            .map_err(|_| UrlValidationError::InvalidUrl("Invalid file URL".into()))?;
+        let canonical_root = std::fs::canonicalize(root).map_err(|_| {
+            UrlValidationError::LocalFileOutsideOutput(file_path.display().to_string())
+        })?;
+        let canonical_file = std::fs::canonicalize(&file_path).map_err(|_| {
+            UrlValidationError::LocalFileOutsideOutput(file_path.display().to_string())
+        })?;
+        if !canonical_file.starts_with(&canonical_root) || !canonical_file.is_file() {
+            return Err(UrlValidationError::LocalFileOutsideOutput(
+                file_path.display().to_string(),
+            ));
+        }
+        return Ok(parsed);
+    }
+
+    // Only http and https are allowed for network navigation.
+    let scheme = parsed.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err(UrlValidationError::DisallowedScheme(scheme.to_string()));
+    }
+
+    // 2. Check host
+    let host_str = match parsed.host_str() {
+        Some(h) => h,
+        None => return Err(UrlValidationError::InvalidUrl("Missing host in URL".into())),
+    };
+
+    // Metadata endpoints are NEVER allowed
+    let lower_host = host_str.trim().to_ascii_lowercase();
+    if lower_host == "metadata.google.internal" || lower_host == "instance-data" {
+        return Err(UrlValidationError::BlockedHost(host_str.to_string()));
+    }
+
+    if is_blocked_hostname(host_str) && !is_host_or_ip_allowed(host_str, &[], allowed_hosts) {
+        return Err(UrlValidationError::BlockedHost(host_str.to_string()));
+    }
+
+    // 3. Direct IP or DNS Resolution
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    let socket_addr_str = format!("{host_str}:{port}");
+
+    let resolved_ips = if let Ok(ip) = host_str.parse::<IpAddr>() {
+        vec![ip]
+    } else {
+        match socket_addr_str.to_socket_addrs() {
+            Ok(addrs) => {
+                let ips: Vec<IpAddr> = addrs.map(|a| a.ip()).collect();
+                if ips.is_empty() {
+                    return Err(UrlValidationError::DnsResolutionFailed(
+                        "No IP addresses found".into(),
+                    ));
+                }
+                ips
+            }
+            Err(e) => {
+                return Err(UrlValidationError::DnsResolutionFailed(e.to_string()));
+            }
+        }
+    };
+
+    // 4. Any dangerous metadata IP is strictly blocked
+    for &ip in &resolved_ips {
+        if is_dangerous_metadata_or_special(ip) {
+            return Err(UrlValidationError::BlockedIp(ip.to_string()));
+        }
+    }
+
+    // 5. Check allowlist
+    if is_host_or_ip_allowed(host_str, &resolved_ips, allowed_hosts) {
+        return Ok(parsed);
+    }
+
+    // 6. Default blocked host and blocked IP checks
+    if is_blocked_hostname(host_str) {
+        return Err(UrlValidationError::BlockedHost(host_str.to_string()));
+    }
+
+    for &ip in &resolved_ips {
+        if is_private_ip(ip) {
+            return Err(UrlValidationError::BlockedIp(ip.to_string()));
+        }
+    }
+
+    Ok(parsed)
+}
+
+/// Validate a target URL against SSRF policy (disallowing file:// by default).
+pub fn validate_browser_url(raw_url: &str) -> Result<Url, UrlValidationError> {
+    validate_browser_url_with_allowed_hosts(raw_url, &[], None)
 }
 
 #[cfg(test)]

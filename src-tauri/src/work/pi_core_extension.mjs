@@ -11,7 +11,6 @@ import {
   readArtifactStorageMode,
   WORKSPACE_AREAS,
 } from "./pi_workspace_paths.mjs";
-import { registerBrowserOperatorTools } from "./pi_browser_operator_adapter.mjs";
 import { registerComputerUseV2Tools } from "./agentcabin_computer_use_v2_adapter.mjs";
 import agentCabinWorkBrowserExtension from "./pi_browser_adapter.mjs";
 import {
@@ -2764,16 +2763,6 @@ export default function agentCabinWorkExtension(pi) {
   });
 
   const desktopEnabled = process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED === "1";
-  const browserUseEnabled = process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED === "1";
-
-  // When Browser Use is enabled, register the built-in browser operator tools.
-  if (browserUseEnabled) {
-    registerBrowserOperatorTools(pi, {
-      registerWorkTool,
-      callToolPipeline,
-      waitForWorkInboxResolution,
-    });
-  }
 
   if (desktopEnabled) {
     registerComputerUseV2Tools(pi, {

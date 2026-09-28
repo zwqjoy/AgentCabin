@@ -94,8 +94,6 @@ impl CoreRuntime {
         }
         crate::hooks::setup::cleanup_hook_bridge();
         crate::web_server::broadcaster::register_shared_emitter(self.emitter.clone());
-        crate::work::browser_operator::browser_session_manager()
-            .set_event_emitter(self.emitter.clone());
     }
 
     /// Spawn background bridges (work, browser, desktop, code connector).
@@ -103,11 +101,6 @@ impl CoreRuntime {
         tokio::spawn(async {
             if let Err(e) = crate::work::internal_bridge::start_internal_bridge().await {
                 log::error!("[work/bridge] Failed to start internal bridge: {e}");
-            }
-        });
-        tokio::spawn(async {
-            if let Err(e) = crate::browser_runtime::start_bridge().await {
-                log::error!("[browser/bridge] Failed to start browser bridge: {e}");
             }
         });
         tokio::spawn(async {

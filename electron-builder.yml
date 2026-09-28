@@ -16,8 +16,6 @@ extraResources:
     filter:
       - "AgentCabin"
       - "AgentCabin.exe"
-  - from: "src-tauri/browser-worker"
-    to: "browser-worker"
   - from: "src-tauri/resources/agentcabin-computer-use"
     to: "resources/agentcabin-computer-use"
   - from: "runtime-build"

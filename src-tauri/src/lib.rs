@@ -1,5 +1,4 @@
 pub mod agent;
-pub mod browser_runtime;
 pub mod code_connector_runtime;
 pub mod commands;
 pub mod core;
@@ -113,15 +112,6 @@ pub fn run() {
     tauri::async_runtime::spawn(async {
         if let Err(e) = work::internal_bridge::start_internal_bridge().await {
             log::error!("[work/bridge] Failed to start internal bridge: {e}");
-        }
-    });
-
-    // Shared Code/Work Browser Runtime bridge. Work still routes
-    // calls through its own Harness ToolPipeline; Code uses this bridge
-    // directly with per-session bearer tokens.
-    tauri::async_runtime::spawn(async {
-        if let Err(e) = browser_runtime::start_bridge().await {
-            log::error!("[browser/bridge] Failed to start browser bridge: {e}");
         }
     });
 
@@ -561,11 +551,7 @@ pub fn run() {
             commands::capabilities::get_browser_session,
             commands::capabilities::list_browser_sessions,
             commands::capabilities::control_browser_session,
-            commands::capabilities::browser_user_interact,
             commands::capabilities::get_browser_traces,
-            commands::capabilities::register_embedded_browser,
-            commands::capabilities::unregister_embedded_browser,
-            commands::capabilities::list_embedded_browsers,
             commands::pi_extensions::list_mcp_catalog,
             commands::pi_extensions::save_mcp_catalog_server,
             commands::pi_extensions::delete_mcp_catalog_server,
@@ -697,8 +683,6 @@ pub fn run() {
             app.manage(broadcaster);
             let scheduler_emitter = emitter.clone();
             web_server::broadcaster::register_shared_emitter(emitter.clone());
-            crate::work::browser_operator::browser_session_manager()
-                .set_event_emitter(emitter.clone());
             app.manage(emitter);
 
             // Start web server (non-blocking, spawns async task)

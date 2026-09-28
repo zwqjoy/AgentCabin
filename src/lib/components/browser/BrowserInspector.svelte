@@ -1,12 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { getBrowserSession, getBrowserTraces, browserUserInteract } from "$lib/api/work";
+  import { getBrowserSession, getBrowserTraces } from "$lib/api/work";
   import { getTransport } from "$lib/transport";
+  import { platform } from "$lib/platform";
   import { withTimeout } from "$lib/utils/async-utils";
-  import EmbeddedBrowserSurface from "$lib/components/browser/EmbeddedBrowserSurface.svelte";
-  import { isEmbeddedBrowserAvailable } from "$lib/platform/browser";
-  import type { EmbeddedBrowserTab } from "$lib/platform/browser";
-  import { t } from "$lib/i18n/index.svelte";
   import {
     formatBrowserAction,
     formatBrowserStatus,
@@ -36,13 +33,11 @@
   let session = $state<BrowserSession | null>(null);
   let traces = $state<BrowserTraceEntry[]>([]);
   let loading = $state(true);
-  let interacting = $state(false);
-  let addressInput = $state("");
-  let browserTabs = $state<EmbeddedBrowserTab[]>([]);
-  let activeTargetId = $state("");
   let searchQuery = $state("");
   let previewImageModal = $state<string | null>(null);
-  let embeddedAttachFailed = $state(false);
+  let copiedUrl = $state(false);
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
   let pollInterval: ReturnType<typeof setInterval> | null = null;
   let unlistenBrowserEvent: (() => void) | null = null;
   let stateRequestInFlight = false;
@@ -51,21 +46,12 @@
   let lastLoadedUpdatedAt = "";
   const BROWSER_STATE_TIMEOUT_MS = 5_000;
 
-  let interactError = $state("");
-  let pageHidden = $state(false);
-  let lastPageUrl = "";
-
   function isTerminalStatus(status: string | undefined): boolean {
-    return status === "completed" || status === "failed";
+    return status === "completed" || status === "failed" || status === "closed";
   }
 
   const isTerminal = $derived(readOnly || isTaskCompleted);
-
   const effectiveRunId = $derived(runId?.trim() || "default-browser");
-
-  const embedded = isEmbeddedBrowserAvailable();
-  const embeddedViewId = $derived(`browser-view-${effectiveRunId}`);
-  let overlayOpen = $state(false);
 
   const statusMeta = $derived(formatBrowserStatus(session?.status ?? "idle"));
 
@@ -112,11 +98,6 @@
         };
     }
   }
-
-  // Keep the native view mounted for archived/read-only runs as well. The
-  // inspector can be reopened after a task finishes, and the view is the only
-  // source of truth now that the standalone browser fallback is gone.
-  const useEmbeddedSurface = $derived(embedded && !embeddedAttachFailed);
 
   function stopPolling() {
     if (pollInterval) {
@@ -177,6 +158,29 @@
     }
   }
 
+  async function copyCurrentUrl() {
+    if (!session?.currentUrl) return;
+    try {
+      await navigator.clipboard.writeText(session.currentUrl);
+      copiedUrl = true;
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => {
+        copiedUrl = false;
+      }, 2000);
+    } catch (e) {
+      console.warn("Failed to copy URL:", e);
+    }
+  }
+
+  async function openInExternalBrowser() {
+    if (!session?.currentUrl) return;
+    try {
+      await platform.shell.openExternal(session.currentUrl);
+    } catch (e) {
+      console.warn("Failed to open external browser:", e);
+    }
+  }
+
   onMount(() => {
     const transport = getTransport();
     let destroyed = false;
@@ -208,231 +212,92 @@
     stopPolling();
     if (stateRefreshTimer) clearTimeout(stateRefreshTimer);
     stateRefreshTimer = null;
+    if (copyTimer) clearTimeout(copyTimer);
     unlistenBrowserEvent?.();
     unlistenBrowserEvent = null;
-  });
-
-  $effect(() => {
-    if (session?.currentUrl && !interacting) {
-      addressInput = session.currentUrl;
-    }
-  });
-
-  $effect(() => {
-    const currentUrl = session?.currentUrl ?? "";
-    if (currentUrl && currentUrl !== lastPageUrl) {
-      lastPageUrl = currentUrl;
-      pageHidden = false;
-    }
-  });
-
-  async function performInteract(action: string, params: Record<string, unknown> = {}) {
-    const id = effectiveRunId;
-    const readOnlyTabSwitch = action === "tabs" && params.action === "switch";
-    if (!id || interacting || (isTerminal && !readOnlyTabSwitch)) return;
-    interacting = true;
-    interactError = "";
-    try {
-      const updated = await browserUserInteract(id, action, params);
-      if (updated) {
-        lastLoadedUpdatedAt = updated.updatedAt;
-        session = updated;
-        if (updated.currentUrl) addressInput = updated.currentUrl;
-      }
-    } catch (e) {
-      console.warn("Browser interact error:", e);
-      interactError = e instanceof Error ? e.message : String(e);
-    } finally {
-      interacting = false;
-    }
-  }
-
-  function handleTabsChange(tabs: EmbeddedBrowserTab[], activeId: string): void {
-    browserTabs = tabs;
-    activeTargetId = activeId;
-  }
-
-  function tabLabel(tab: EmbeddedBrowserTab): string {
-    if (tab.title?.trim()) return tab.title.trim();
-    try {
-      return new URL(tab.url).hostname || "新标签页";
-    } catch {
-      return "新标签页";
-    }
-  }
-
-  function handleAddressKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      let target = addressInput.trim();
-      if (target) {
-        if (!/^https?:\/\//i.test(target) && !target.startsWith("about:")) {
-          target = `https://${target}`;
-        }
-        addressInput = target;
-        void performInteract("navigate", { url: target });
-      }
-    }
-  }
-
-  $effect(() => {
-    overlayOpen = Boolean(previewImageModal);
   });
 </script>
 
 <div class="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-  {#if embedded}
-    <div
-      class="flex h-9 shrink-0 items-end gap-1 overflow-hidden border-b border-border/70 bg-muted/25 px-2 pt-1"
-      role="tablist"
-      aria-label="浏览器标签页"
-      data-testid="browser-tab-strip"
-    >
-      <div class="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto scrollbar-none">
-        {#each browserTabs as tab (tab.targetId)}
-          <div
-            class="group flex h-7 max-w-52 min-w-0 shrink-0 items-center rounded-t-md border border-b-0 px-2 {tab.targetId ===
-            activeTargetId
-              ? 'border-border/70 bg-background text-foreground'
-              : 'border-transparent text-muted-foreground'}"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab.targetId === activeTargetId}
-              title={tab.url ? `${tab.title || tabLabel(tab)}\n${tab.url}` : tabLabel(tab)}
-              class="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[11px]"
-              disabled={interacting || tab.targetId === activeTargetId}
-              onclick={() =>
-                void performInteract("tabs", { action: "switch", target_id: tab.targetId })}
-              data-testid="browser-tab"
-            >
-              <span class="shrink-0 text-[10px]">🌐</span>
-              <span class="truncate">{tabLabel(tab)}</span>
-            </button>
-            {#if browserTabs.length > 1}
-              <button
-                type="button"
-                class="ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground group-hover:opacity-100"
-                aria-label={`关闭标签页 ${tabLabel(tab)}`}
-                title="关闭标签页"
-                disabled={isTerminal || interacting}
-                onclick={() =>
-                  void performInteract("tabs", { action: "close", target_id: tab.targetId })}
-              >
-                ×
-              </button>
-            {/if}
-          </div>
-        {/each}
-      </div>
-      <button
-        type="button"
-        class="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-        aria-label="新建浏览器标签页"
-        title="新建标签页"
-        disabled={isTerminal || interacting || !useEmbeddedSurface}
-        onclick={() => void performInteract("tabs", { action: "new" })}
-        data-testid="browser-new-tab"
-      >
-        +
-      </button>
-    </div>
-  {/if}
-
-  <!-- Codex-style Browser Navigation Bar -->
+  <!-- Observation Panel Top Header -->
   <div
-    class="flex min-h-11 shrink-0 items-center gap-1.5 border-b border-border/70 bg-muted/20 px-3 py-1.5 text-xs"
+    class="flex min-h-11 shrink-0 items-center justify-between gap-2 border-b border-border/70 bg-muted/20 px-3 py-1.5 text-xs"
   >
-    <div class="flex items-center gap-0.5 shrink-0">
-      <button
-        type="button"
-        class="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 transition-colors"
-        disabled={isTerminal || interacting || !session?.currentUrl}
-        title="后退"
-        onclick={() => void performInteract("go_back")}
-      >
-        ◀
-      </button>
-      <button
-        type="button"
-        class="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 transition-colors"
-        disabled={isTerminal || interacting || !session?.currentUrl}
-        title="前进"
-        onclick={() => void performInteract("go_forward")}
-      >
-        ▶
-      </button>
-      <button
-        type="button"
-        class="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 transition-colors"
-        disabled={isTerminal || interacting}
-        title="刷新"
-        onclick={() => void performInteract("reload")}
-      >
-        <span class={interacting ? "animate-spin" : ""}>🔄</span>
-      </button>
+    <div class="flex items-center gap-2 min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 shrink-0 text-muted-foreground font-medium">
+        <span class="text-sm">🌐</span>
+        <span class="hidden sm:inline">浏览器</span>
+      </div>
+
+      <!-- Current URL display with external actions -->
+      {#if session?.currentUrl}
+        <div
+          class="flex items-center gap-1.5 min-w-0 flex-1 bg-muted/40 border border-border/70 rounded-md px-2 py-1"
+        >
+          <span class="text-muted-foreground text-[11px] shrink-0">🔒</span>
+          <span
+            class="font-mono text-[11px] text-foreground truncate select-all flex-1"
+            title={session.currentUrl}
+          >
+            {session.currentUrl}
+          </span>
+          <button
+            type="button"
+            class="shrink-0 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-[10px]"
+            title={copiedUrl ? "已复制" : "复制网址"}
+            aria-label="复制网址"
+            onclick={copyCurrentUrl}
+          >
+            {#if copiedUrl}
+              <span class="text-emerald-500">✓</span>
+            {:else}
+              <span>📋</span>
+            {/if}
+          </button>
+          <button
+            type="button"
+            class="shrink-0 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-[10px]"
+            title="在系统浏览器中打开"
+            aria-label="在系统浏览器中打开"
+            onclick={openInExternalBrowser}
+          >
+            ↗
+          </button>
+        </div>
+      {:else}
+        <div
+          class="flex items-center gap-1.5 min-w-0 flex-1 bg-muted/20 border border-border/40 rounded-md px-2 py-1 text-[11px] text-muted-foreground"
+        >
+          <span>等待导航目标…</span>
+        </div>
+      {/if}
     </div>
 
-    <div
-      class="flex items-center gap-1.5 flex-1 min-w-0 bg-muted/40 border border-border/70 rounded-md px-2 py-0.5 focus-within:ring-1 focus-within:ring-primary focus-within:border-primary transition-all"
-    >
-      <span class="text-muted-foreground text-[11px] shrink-0">🔒</span>
-      <input
-        type="text"
-        class="bg-transparent font-mono text-[11px] text-foreground w-full outline-none select-all"
-        placeholder="输入网址并回车跳转…"
-        bind:value={addressInput}
-        readonly={isTerminal}
-        onkeydown={handleAddressKeydown}
-      />
-    </div>
+    <!-- Status badge and controls -->
+    <div class="flex items-center gap-1.5 shrink-0">
+      <span
+        class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] {displayStatusMeta.colorClass}"
+        title={`模式：${mode.toUpperCase()}`}
+      >
+        <span class="h-1.5 w-1.5 rounded-full {displayStatusMeta.dotClass}"></span>
+        {displayStatusMeta.label}
+      </span>
 
-    {#if session?.currentUrl}
-      <button
-        type="button"
-        class="shrink-0 rounded-md border border-border/70 px-2 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        title={pageHidden ? "显示当前网页" : "隐藏当前网页"}
-        aria-label={pageHidden ? "显示当前网页" : "隐藏当前网页"}
-        onclick={() => (pageHidden = !pageHidden)}
-      >
-        {pageHidden ? "显示页面" : "隐藏页面"}
-      </button>
-    {/if}
-    <span
-      class="hidden shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] text-muted-foreground sm:inline-flex"
-      title={`${mode.toUpperCase()} · ${session?.surface === "embedded" ? t("browser_surfaceEmbedded") : t("browser_surfaceManaged")}`}
-    >
-      <span class="h-1.5 w-1.5 rounded-full {displayStatusMeta.dotClass}"></span>
-      {displayStatusMeta.label}
-    </span>
-    {#if onClose}
-      <button
-        type="button"
-        class="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        onclick={onClose}
-        aria-label="关闭浏览器"
-        title="关闭浏览器"
-      >
-        ✕
-      </button>
-    {/if}
+      {#if onClose}
+        <button
+          type="button"
+          class="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          onclick={onClose}
+          aria-label="关闭浏览器面板"
+          title="关闭浏览器面板"
+        >
+          ✕
+        </button>
+      {/if}
+    </div>
   </div>
 
-  {#if interactError}
-    <div
-      class="flex shrink-0 items-center justify-between gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
-    >
-      <span class="truncate">{interactError}</span>
-      <button
-        type="button"
-        class="shrink-0 rounded px-1 hover:bg-destructive/10"
-        onclick={() => (interactError = "")}
-        aria-label="关闭错误提示">✕</button
-      >
-    </div>
-  {/if}
-
+  <!-- Agent Active Action Banner -->
   {#if session?.currentAction && session.status === "running"}
     <div
       class="flex shrink-0 items-center gap-2 border-b border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs"
@@ -445,66 +310,73 @@
     </div>
   {/if}
 
-  <div class="relative min-h-0 flex-1 overflow-hidden bg-white dark:bg-zinc-900">
-    {#if useEmbeddedSurface}
-      <EmbeddedBrowserSurface
-        viewId={embeddedViewId}
-        runId={effectiveRunId}
-        initialUrl={session?.currentUrl ?? ""}
-        visible={surfaceVisible && !overlayOpen && !pageHidden}
-        onTabsChange={handleTabsChange}
-        onError={() => (embeddedAttachFailed = true)}
-      />
-      {#if pageHidden}
-        <div
-          class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background px-6 text-center"
-        >
-          <span class="text-sm font-medium">网页已隐藏</span>
-          <span class="max-w-xs text-xs text-muted-foreground"
-            >浏览器会话仍保留；需要时可以重新显示当前页面。</span
-          >
-          <button
-            type="button"
-            class="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
-            onclick={() => (pageHidden = false)}>重新显示</button
-          >
-        </div>
-      {/if}
-    {:else if loading && !session}
+  <!-- Observation Visual Screen Area -->
+  <div
+    class="relative min-h-0 flex-1 overflow-hidden bg-white dark:bg-zinc-900 flex flex-col items-center justify-center p-4"
+  >
+    {#if loading && !session}
       <div
-        class="flex h-full min-h-64 flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground"
+        class="flex flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"
       >
-        <span class="text-xl">🌐</span>
-        <span>正在连接浏览器…</span>
+        <span class="text-2xl animate-pulse">🌐</span>
+        <span>正在读取浏览器状态…</span>
       </div>
     {:else if session?.lastScreenshot}
-      <div class="flex h-full items-center justify-center overflow-auto bg-muted/10 p-4">
-        <img
-          src={session.lastScreenshot}
-          alt="受控浏览器页面"
-          class="max-h-full max-w-full object-contain"
-        />
+      <div class="relative flex h-full w-full items-center justify-center overflow-auto group">
+        <button
+          type="button"
+          class="relative flex h-full w-full items-center justify-center cursor-zoom-in"
+          onclick={() => (previewImageModal = session?.lastScreenshot ?? null)}
+          aria-label="点击放大查看页面快照"
+        >
+          <img
+            src={session.lastScreenshot}
+            alt="受控浏览器最新截图"
+            class="max-h-full max-w-full rounded-md object-contain shadow-sm border border-border/40"
+          />
+          <span
+            class="absolute bottom-3 right-3 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 backdrop-blur-xs"
+          >
+            🔍 点击放大
+          </span>
+        </button>
       </div>
     {:else}
-      <div class="flex h-full min-h-64 flex-col items-center justify-center gap-2 px-6 text-center">
-        <span class="text-muted-foreground">🌐</span>
-        <span class="text-sm font-medium">开始浏览</span>
-        <span class="text-xs text-muted-foreground">输入网址并按回车打开页面</span>
+      <div
+        class="flex max-w-sm flex-col items-center justify-center gap-2 text-center text-muted-foreground"
+      >
+        <span class="text-3xl">🖥️</span>
+        <span class="text-sm font-medium text-foreground">浏览器观察面板</span>
+        <p class="text-xs leading-relaxed text-muted-foreground">
+          由 Pi 浏览器扩展负责自动化操作。页面快照与操作轨迹将在此实时更新。
+        </p>
+        {#if session?.status === "running"}
+          <span
+            class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+          >
+            <span class="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+            浏览器任务执行中…
+          </span>
+        {/if}
       </div>
     {/if}
   </div>
 
-  <details class="max-h-48 shrink-0 overflow-hidden border-t border-border/70 bg-muted/10">
+  <!-- Action Traces Footer (Collapsible) -->
+  <details open class="max-h-56 shrink-0 overflow-hidden border-t border-border/70 bg-muted/10">
     <summary
-      class="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 text-xs text-muted-foreground hover:bg-muted/40"
+      class="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 text-xs text-muted-foreground hover:bg-muted/40 transition-colors"
     >
       <span class="font-medium text-foreground">操作轨迹</span>
-      <span>({filteredTraces.length})</span>
-      <span class="ml-auto"
-        >{isTerminal ? "会话已归档 · 只读" : interacting ? "正在响应…" : "点击查看"}</span
-      >
+      <span class="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-mono">
+        {filteredTraces.length}
+      </span>
+      <span class="ml-auto text-[11px]">
+        {isTerminal ? "会话已结束 · 只读" : "实时记录"}
+      </span>
     </summary>
-    <div class="max-h-36 space-y-2 overflow-y-auto border-t border-border/60 p-3">
+
+    <div class="max-h-44 space-y-2 overflow-y-auto border-t border-border/60 p-3">
       {#if traces.length === 0}
         <p class="py-3 text-center text-xs text-muted-foreground">暂无浏览器操作记录</p>
       {:else}
@@ -521,12 +393,13 @@
           {@const actMeta = formatBrowserAction(trace.actionType)}
           {@const traceStatus = traceStatusMeta(trace.status)}
           <div
-            class="flex items-start gap-2 rounded-lg border border-border/70 bg-card p-2.5 text-xs"
+            class="flex items-start gap-2 rounded-lg border border-border/70 bg-card p-2.5 text-xs shadow-xs"
           >
             <span
               class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted text-[11px] font-bold text-muted-foreground"
-              >{trace.stepIndex}</span
             >
+              {trace.stepIndex}
+            </span>
             <div class="min-w-0 flex-1 space-y-1">
               <div class="flex items-center justify-between gap-2">
                 <span
@@ -534,39 +407,44 @@
                 >
                   <span>{actMeta.icon}</span><span>{actMeta.label}</span>
                 </span>
-                <span class="text-[10px] font-mono text-muted-foreground"
-                  >{trace.durationMs > 0 ? `${trace.durationMs}ms` : ""}</span
-                >
+                <span class="text-[10px] font-mono text-muted-foreground">
+                  {trace.durationMs > 0 ? `${trace.durationMs}ms` : ""}
+                </span>
                 <span
                   class="rounded border px-1.5 py-0.5 text-[9px] font-medium {traceStatus.className}"
-                  >{traceStatus.label}</span
                 >
+                  {traceStatus.label}
+                </span>
               </div>
               <p class="break-all text-[11px] leading-snug text-foreground">
                 {sanitizeTraceText(trace.description)}
               </p>
-              {#if trace.selector}<div class="truncate font-mono text-[10px] text-muted-foreground">
+              {#if trace.selector}
+                <div class="truncate font-mono text-[10px] text-muted-foreground">
                   Selector: {trace.selector}
-                </div>{/if}
-              {#if trace.error}<div
-                  class="rounded bg-destructive/10 p-1 text-[10px] text-destructive"
-                >
+                </div>
+              {/if}
+              {#if trace.error}
+                <div class="rounded bg-destructive/10 p-1 text-[10px] text-destructive">
                   {trace.error}
-                </div>{/if}
+                </div>
+              {/if}
               {#if trace.screenshotData}
                 <button
                   type="button"
-                  class="mt-1 flex items-center gap-2 rounded-md border border-border/70 p-1 text-left hover:bg-accent/50"
+                  class="mt-1 flex items-center gap-2 rounded-md border border-border/70 p-1 text-left hover:bg-accent/50 transition-colors"
                   aria-label={`查看第 ${trace.stepIndex} 步截图`}
                   onclick={() => (previewImageModal = trace.screenshotData ?? null)}
                 >
                   <img
                     src={trace.screenshotData}
                     alt=""
-                    class="h-12 w-20 rounded object-cover"
+                    class="h-12 w-20 rounded object-cover border border-border/40"
                     loading="lazy"
                   />
-                  <span class="text-[10px] text-muted-foreground">查看此步页面截图</span>
+                  <span class="text-[10px] text-muted-foreground hover:text-foreground">
+                    查看此步页面截图 🔍
+                  </span>
                 </button>
               {/if}
             </div>
@@ -594,7 +472,7 @@
         <span class="font-semibold text-foreground">网页快照完整大图</span>
         <button
           type="button"
-          class="rounded p-1 text-muted-foreground hover:text-foreground"
+          class="rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
           onclick={() => (previewImageModal = null)}
         >
           ✕

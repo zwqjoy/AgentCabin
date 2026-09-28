@@ -8,61 +8,6 @@ use crate::work::tasks::TaskManager;
 use crate::work::workspace::WorkspaceManager;
 use tempfile::TempDir;
 
-#[test]
-fn structured_browser_failure_is_a_capability_failure_with_exit_code_one() {
-    let result = serde_json::json!({
-        "ok": false,
-        "execution": { "performed": false },
-        "error": { "code": "stale_browser_instance", "message": "Worker restarted" },
-        "recovery": { "recommended": "snapshot" }
-    });
-    let (status, failure_kind, exit_code) = super::browser_action_outcome(&result);
-    assert_eq!(status, WorkExecutionStatus::Failed);
-    assert_eq!(failure_kind, Some(ExecutionFailureKind::CapabilityFailure));
-    assert_eq!(exit_code, Some(1));
-    assert_eq!(result["error"]["code"], "stale_browser_instance");
-    let stdout = serde_json::to_string(&result).unwrap();
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&stdout).unwrap(),
-        result
-    );
-}
-
-#[test]
-fn browser_action_transport_preserves_target_identity_for_all_ref_actions() {
-    let target_identity = serde_json::json!({
-        "workerInstanceId": "bw-old",
-        "documentId": "doc-old",
-        "revision": 12,
-        "targetId": "tab-a"
-    });
-    let arguments = serde_json::json!({
-        "ref": "e17",
-        "targetIdentity": target_identity,
-        "locator": { "role": "button", "name": "Continue" }
-    });
-
-    for action in [
-        "browser_click",
-        "browser_type",
-        "browser_select_option",
-        "browser_press_key",
-    ] {
-        let params = serde_json::json!({
-            "action": action,
-            "ref": arguments.get("ref"),
-            "locator": arguments.get("locator")
-        });
-        let transported = super::preserve_browser_target_identity(&arguments, params);
-        assert_eq!(
-            transported["targetIdentity"], arguments["targetIdentity"],
-            "{action}"
-        );
-        assert_eq!(transported["ref"], "e17", "{action}");
-        assert_eq!(transported["locator"], arguments["locator"], "{action}");
-    }
-}
-
 fn intent_with_args(args: serde_json::Value) -> ToolIntent {
     ToolIntent {
         task_id: "t".to_string(),

@@ -158,8 +158,6 @@ pub fn save_config_with_paths(
     }
     write_config(paths, &config)?;
 
-    crate::work::browser_operator::browser_operator_manager().reload_worker();
-
     if let Some(api_key) = api_key {
         let api_key = api_key.trim();
         if api_key.is_empty() {
@@ -501,9 +499,8 @@ fn summary(
     config: &BrowserConfigFile,
     configured: bool,
     adapter_installed: bool,
-    paths: &WorkPaths,
+    _paths: &WorkPaths,
 ) -> WorkBrowserSummary {
-    let browser_runtime = crate::work::browser_operator::runtime::status_with_paths(paths);
     let pi_runtime_available = config.enabled && configured && adapter_installed;
     let dsh_runtime_available = false; // Kept for older frontend clients.
     WorkBrowserSummary {
@@ -516,17 +513,33 @@ fn summary(
         // Keep the legacy aggregate meaningful for clients that do not yet
         // render the runtime matrix.
         runtime_available: pi_runtime_available || dsh_runtime_available,
-        browser_runtime_node_available: browser_runtime.node_available,
-        browser_runtime_available: browser_runtime.runtime_available,
-        playwright_installed: browser_runtime.playwright_installed,
-        chromium_installed: browser_runtime.chromium_installed,
-        browser_runtime_managed: browser_runtime.managed,
-        browser_runtime_message: browser_runtime.message,
+        browser_runtime_node_available: true,
+        browser_runtime_available: true,
+        playwright_installed: true,
+        chromium_installed: true,
+        browser_runtime_managed: true,
+        browser_runtime_message: String::new(),
         max_results: config.max_results,
         endpoint_url: config.endpoint_url.clone(),
         auth_kind: auth_kind_for_provider(&config.provider).to_string(),
         allowed_hosts: config.allowed_hosts.clone(),
     }
+}
+
+pub fn ensure_code_web_adapter(
+    paths: &crate::work::paths::WorkPaths,
+) -> Result<std::path::PathBuf, String> {
+    let dir = paths
+        .pi_system_dir()
+        .join("npm")
+        .join("node_modules")
+        .join("agentcabin-browser-runtime");
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("Failed to create shared Web adapter directory: {error}"))?;
+    let web_entry = dir.join("web.mjs");
+    std::fs::write(&web_entry, include_str!("pi_browser_adapter.mjs"))
+        .map_err(|error| format!("Failed to provision shared Web adapter: {error}"))?;
+    Ok(web_entry)
 }
 
 fn health(

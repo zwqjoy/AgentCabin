@@ -237,6 +237,12 @@ impl PiWorkRuntimeAdapter {
         settings.pi_work_browser_adapter = runtime
             .browser_enabled
             .then(|| runtime.browser_adapter_entry.to_string_lossy().into_owned());
+        if runtime.browser_use_enabled {
+            settings.pi_browser_native_extension =
+                crate::agent::claude_stream::bundled_pi_package_path(
+                    crate::work::system_packages::PI_AGENT_BROWSER_NATIVE_PACKAGE_NAME,
+                );
+        }
         settings.pi_work_package_sources = runtime.package_sources.clone();
         settings.pi_shared_extension_sources =
             crate::storage::profile_bindings::list_enabled_pi_extension_sources("work")

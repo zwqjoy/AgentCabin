@@ -141,6 +141,13 @@ fn build_rpc_args(
     {
         push_explicit_extension(&mut args, &mut explicit_extensions, extension);
     }
+    if let Some(browser_ext) = settings
+        .pi_browser_native_extension
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        push_explicit_extension(&mut args, &mut explicit_extensions, browser_ext);
+    }
     for source in &settings.pi_shared_extension_sources {
         if !source.trim().is_empty() {
             push_explicit_extension(&mut args, &mut explicit_extensions, source);
@@ -540,6 +547,7 @@ async fn spawn_actor_with_launch(
                 .chain(settings.pi_work_extension.iter())
                 .chain(settings.pi_work_mcp_adapter.iter())
                 .chain(settings.pi_work_browser_adapter.iter())
+                .chain(settings.pi_browser_native_extension.iter())
             {
                 if source.starts_with('/') {
                     read_only_roots.push(PathBuf::from(source));
@@ -792,6 +800,7 @@ mod tests {
             pi_work_extension: None,
             pi_work_mcp_adapter: None,
             pi_work_browser_adapter: None,
+            pi_browser_native_extension: None,
             pi_shared_extension_sources: vec![],
             pi_work_package_sources: vec![],
             pi_work_skill_sources: vec![],

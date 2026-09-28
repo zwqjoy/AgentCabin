@@ -2,7 +2,6 @@ import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
 import { ComputerUseV2Session } from "./computer_use_v2_runtime.mjs";
 import { createComputerUseToolPipelineInvoker } from "./computer_use_tool_pipeline.mjs";
-import { createBrowserInvoker } from "./pi_browser_operator_adapter.mjs";
 
 const StateId = Type.String({ description: "Immutable UI state owning every @e ref used by this operation." });
 const Condition = {
@@ -22,9 +21,18 @@ const Action = Type.Union([
   Type.Object({ action: Type.Literal("scroll"), ref: Type.Optional(Type.String()), scrollX: Type.Optional(Type.Number()), scrollY: Type.Optional(Type.Number()) }),
 ]);
 
+import { registerComputerUseProxy } from "./pi_computer_use_proxy.mjs";
+
 export function registerComputerUseV2Tools(pi, options = {}) {
+  if (process.env.AGENTCABIN_COMPUTER_USE_ENGINE === "legacy") {
+    return registerLegacyComputerUseV2Tools(pi, options);
+  }
+  return registerComputerUseProxy(pi, options);
+}
+
+export function registerLegacyComputerUseV2Tools(pi, options = {}) {
   const registerTool = options.registerTool || options.registerWorkTool || ((tool) => pi.registerTool(tool));
-  const browserInvoker = options.invokeBrowser || options.browserInvoker || createBrowserInvoker(options);
+  const browserInvoker = options.invokeBrowser || options.browserInvoker || undefined;
   const session = options.session || new ComputerUseV2Session(createComputerUseToolPipelineInvoker(options), {
     invokeBrowser: browserInvoker,
   });
@@ -64,6 +72,8 @@ export function registerComputerUseV2Tools(pi, options = {}) {
   return session;
 }
 
-export default function agentCabinComputerUseV2Extension(pi, dependencies = {}) {
+export { registerComputerUseProxy };
+
+export default function agentCabinComputerUseExtension(pi, dependencies = {}) {
   return registerComputerUseV2Tools(pi, dependencies);
 }

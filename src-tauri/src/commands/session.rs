@@ -61,10 +61,6 @@ pub(super) async fn stop_actor(
         map.remove(run_id)
     };
 
-    // Code's shared Browser Runtime credential belongs to the actor, while
-    // the native Browser session belongs to the Run. Replacements revoke the
-    // credential without closing the user's tabs or Browser surface.
-    crate::browser_runtime::revoke_session_tokens(run_id).await;
     crate::code_connector_runtime::revoke_session(run_id).await;
     crate::desktop_runtime::revoke_session(run_id).await;
 

@@ -216,6 +216,72 @@ const toolColors: Record<string, ToolColor> = {
     icon: "M12 8v4l3 2M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z",
     border: "border-amber-500/30",
   },
+  find_roots: {
+    bg: "bg-violet-500/10",
+    text: "text-violet-600 dark:text-violet-400",
+    icon: "M3 4h18v13H3zM8 21h8M12 17v4",
+    border: "border-violet-500/30",
+  },
+  observe_ui: {
+    bg: "bg-violet-500/10",
+    text: "text-violet-600 dark:text-violet-400",
+    icon: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+    border: "border-violet-500/30",
+  },
+  search_ui: {
+    bg: "bg-indigo-500/10",
+    text: "text-indigo-600 dark:text-indigo-400",
+    icon: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
+    border: "border-indigo-500/30",
+  },
+  expand_ui: {
+    bg: "bg-indigo-500/10",
+    text: "text-indigo-600 dark:text-indigo-400",
+    icon: "M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4",
+    border: "border-indigo-500/30",
+  },
+  inspect_ui: {
+    bg: "bg-indigo-500/10",
+    text: "text-indigo-600 dark:text-indigo-400",
+    icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z",
+    border: "border-indigo-500/30",
+  },
+  act_ui: {
+    bg: "bg-amber-500/10",
+    text: "text-amber-600 dark:text-amber-400",
+    icon: "M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5",
+    border: "border-amber-500/30",
+  },
+  read_text: {
+    bg: "bg-sky-500/10",
+    text: "text-sky-600 dark:text-sky-400",
+    icon: "M4 6h16M4 12h16M4 18h7",
+    border: "border-sky-500/30",
+  },
+  wait_for: {
+    bg: "bg-blue-500/10",
+    text: "text-blue-600 dark:text-blue-400",
+    icon: "M12 8v4l3 2M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z",
+    border: "border-blue-500/30",
+  },
+  launch_browser: {
+    bg: "bg-emerald-500/10",
+    text: "text-emerald-600 dark:text-emerald-400",
+    icon: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z",
+    border: "border-emerald-500/30",
+  },
+  navigate_browser: {
+    bg: "bg-emerald-500/10",
+    text: "text-emerald-600 dark:text-emerald-400",
+    icon: "M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14",
+    border: "border-emerald-500/30",
+  },
+  evaluate_browser: {
+    bg: "bg-teal-500/10",
+    text: "text-teal-600 dark:text-teal-400",
+    icon: "M16 18l6-6-6-6M8 6l-6 6 6 6",
+    border: "border-teal-500/30",
+  },
 };
 
 const defaultToolColor: ToolColor = {

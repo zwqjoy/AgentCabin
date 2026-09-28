@@ -45,9 +45,6 @@ const WORK_PI_MCP_PERMISSIONS_FILENAME: &str = "agentcabin-work-mcp-permissions.
 const WORK_PI_MCP_PERMISSIONS_SOURCE: &str = include_str!("pi_mcp_permissions.mjs");
 const WORK_PI_BROWSER_ADAPTER_FILENAME: &str = browser::WORK_BROWSER_ADAPTER_FILENAME;
 const WORK_PI_BROWSER_ADAPTER_SOURCE: &str = include_str!("pi_browser_adapter.mjs");
-const WORK_PI_BROWSER_OPERATOR_ADAPTER_FILENAME: &str = "pi_browser_operator_adapter.mjs";
-const WORK_PI_BROWSER_OPERATOR_ADAPTER_SOURCE: &str =
-    include_str!("pi_browser_operator_adapter.mjs");
 const WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_FILENAME: &str =
     "agentcabin_computer_use_v2_adapter.mjs";
 const WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_SOURCE: &str =
@@ -65,6 +62,11 @@ const WORK_VISUAL_GROUNDING_BACKEND_FILENAME: &str = "visual_grounding_backend.m
 const WORK_VISUAL_GROUNDING_BACKEND_SOURCE: &str = include_str!("visual_grounding_backend.mjs");
 const WORK_COMPUTER_USE_TOOL_PIPELINE_FILENAME: &str = "computer_use_tool_pipeline.mjs";
 const WORK_COMPUTER_USE_TOOL_PIPELINE_SOURCE: &str = include_str!("computer_use_tool_pipeline.mjs");
+const WORK_PI_COMPUTER_USE_PROXY_FILENAME: &str = "pi_computer_use_proxy.mjs";
+const WORK_PI_COMPUTER_USE_PROXY_SOURCE: &str = include_str!("pi_computer_use_proxy.mjs");
+const WORK_PI_COMPUTER_USE_DEFINITIONS_FILENAME: &str = "pi_computer_use_definitions.json";
+const WORK_PI_COMPUTER_USE_DEFINITIONS_SOURCE: &str =
+    include_str!("pi_computer_use_definitions.json");
 
 const RESOURCE_DIRECTORIES: &[(&str, WorkResourceKind)] = &[
     ("skills", WorkResourceKind::Skill),
@@ -446,7 +448,6 @@ pub fn prepare_pi_runtime_with_paths(paths: &WorkPaths) -> Result<WorkPiRuntime,
     ensure_work_pi_mcp_permissions(paths)?;
     let mcp_adapter_entry = ensure_work_pi_mcp_adapter(paths)?;
     let browser_adapter_entry = ensure_work_pi_browser_adapter(paths)?;
-    ensure_work_pi_browser_operator_adapter(paths)?;
     ensure_work_computer_use_v2_modules(paths)?;
     let (browser_config, browser_api_key) = browser::runtime(paths)?;
     let browser_enabled =
@@ -595,19 +596,6 @@ fn ensure_work_pi_browser_adapter(paths: &WorkPaths) -> Result<PathBuf, String> 
     Ok(path)
 }
 
-fn ensure_work_pi_browser_operator_adapter(paths: &WorkPaths) -> Result<PathBuf, String> {
-    let path = paths
-        .work_extensions_dir()
-        .join(WORK_PI_BROWSER_OPERATOR_ADAPTER_FILENAME);
-    fs::write(&path, WORK_PI_BROWSER_OPERATOR_ADAPTER_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare Work Pi browser operator adapter {}: {error}",
-            path.display()
-        )
-    })?;
-    Ok(path)
-}
-
 fn ensure_work_computer_use_v2_modules(paths: &WorkPaths) -> Result<PathBuf, String> {
     let dir = paths.work_extensions_dir();
     let runtime_path = dir.join(WORK_COMPUTER_USE_V2_RUNTIME_FILENAME);
@@ -649,22 +637,25 @@ fn ensure_work_computer_use_v2_modules(paths: &WorkPaths) -> Result<PathBuf, Str
             visual_backend_path.display()
         )
     })?;
-    let browser_operator_path = dir.join(WORK_PI_BROWSER_OPERATOR_ADAPTER_FILENAME);
-    fs::write(
-        &browser_operator_path,
-        WORK_PI_BROWSER_OPERATOR_ADAPTER_SOURCE,
-    )
-    .map_err(|error| {
-        format!(
-            "failed to prepare Work Browser operator adapter {}: {error}",
-            browser_operator_path.display()
-        )
-    })?;
     let pipeline_path = dir.join(WORK_COMPUTER_USE_TOOL_PIPELINE_FILENAME);
     fs::write(&pipeline_path, WORK_COMPUTER_USE_TOOL_PIPELINE_SOURCE).map_err(|error| {
         format!(
             "failed to prepare Work Computer Use tool pipeline {}: {error}",
             pipeline_path.display()
+        )
+    })?;
+    let proxy_path = dir.join(WORK_PI_COMPUTER_USE_PROXY_FILENAME);
+    fs::write(&proxy_path, WORK_PI_COMPUTER_USE_PROXY_SOURCE).map_err(|error| {
+        format!(
+            "failed to prepare Work Computer Use proxy {}: {error}",
+            proxy_path.display()
+        )
+    })?;
+    let defs_path = dir.join(WORK_PI_COMPUTER_USE_DEFINITIONS_FILENAME);
+    fs::write(&defs_path, WORK_PI_COMPUTER_USE_DEFINITIONS_SOURCE).map_err(|error| {
+        format!(
+            "failed to prepare Work Computer Use definitions {}: {error}",
+            defs_path.display()
         )
     })?;
     let adapter_path = dir.join(WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_FILENAME);
@@ -734,22 +725,25 @@ pub fn ensure_code_desktop_operator_adapter(paths: &WorkPaths) -> Result<PathBuf
             visual_backend_path.display()
         )
     })?;
-    let browser_operator_path = dir.join(WORK_PI_BROWSER_OPERATOR_ADAPTER_FILENAME);
-    fs::write(
-        &browser_operator_path,
-        WORK_PI_BROWSER_OPERATOR_ADAPTER_SOURCE,
-    )
-    .map_err(|error| {
-        format!(
-            "failed to prepare shared Code Browser operator adapter {}: {error}",
-            browser_operator_path.display()
-        )
-    })?;
     let pipeline_path = dir.join(WORK_COMPUTER_USE_TOOL_PIPELINE_FILENAME);
     fs::write(&pipeline_path, WORK_COMPUTER_USE_TOOL_PIPELINE_SOURCE).map_err(|error| {
         format!(
             "failed to prepare shared Code Computer Use tool pipeline {}: {error}",
             pipeline_path.display()
+        )
+    })?;
+    let proxy_path = dir.join(WORK_PI_COMPUTER_USE_PROXY_FILENAME);
+    fs::write(&proxy_path, WORK_PI_COMPUTER_USE_PROXY_SOURCE).map_err(|error| {
+        format!(
+            "failed to prepare shared Code Computer Use proxy {}: {error}",
+            proxy_path.display()
+        )
+    })?;
+    let defs_path = dir.join(WORK_PI_COMPUTER_USE_DEFINITIONS_FILENAME);
+    fs::write(&defs_path, WORK_PI_COMPUTER_USE_DEFINITIONS_SOURCE).map_err(|error| {
+        format!(
+            "failed to prepare shared Code Computer Use definitions {}: {error}",
+            defs_path.display()
         )
     })?;
     let path = dir.join(WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_FILENAME);

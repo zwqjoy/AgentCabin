@@ -12,7 +12,6 @@
 import "./bridge"; // installs the Window.agentcabinDesktop ambient type
 
 import * as app from "./app";
-import * as browser from "./browser";
 import * as dialog from "./dialog";
 import * as path from "./path";
 import * as shell from "./shell";
@@ -20,7 +19,6 @@ import * as window_ from "./window";
 
 export const platform = {
   app,
-  browser,
   dialog,
   path,
   shell,

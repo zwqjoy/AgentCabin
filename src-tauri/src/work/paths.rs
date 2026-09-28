@@ -40,10 +40,11 @@ impl WorkPaths {
         self.data_root.join("pi").join("system")
     }
 
-    /// AgentCabin-owned Browser Worker files. The packaged app copies the small
-    /// native-CDP worker bundle here without installing browser dependencies.
     pub fn browser_worker_dir(&self) -> PathBuf {
-        self.pi_system_dir().join("browser-worker")
+        self.data_root
+            .join("binaries")
+            .join("playwright")
+            .join("worker")
     }
 
     /// Legacy location retained for cleanup/backward-compatible path handling.

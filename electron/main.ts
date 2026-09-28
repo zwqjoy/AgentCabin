@@ -16,12 +16,6 @@ import path from "node:path";
 import { createMainWindow, getAppIconPath, preloadFile, registerWindowIpc } from "./window";
 import { registerCoreIpc, broadcastCoreEvent } from "./ipc/core";
 import { registerSystemIpc } from "./ipc/system";
-import {
-  destroyBrowserViews,
-  destroyBrowserViewsForWindow,
-  destroyBrowserGroup,
-  registerBrowserIpc,
-} from "./ipc/browser";
 import { unregisterDesktopShortcuts } from "./ipc/desktop";
 import { CoreProcessManager } from "./core-process";
 import { startStaticServer } from "./static-server";
@@ -82,14 +76,6 @@ import { petWindowManager } from "./pet-window";
 
 const coreProcess = new CoreProcessManager((event, payload) => {
   broadcastCoreEvent(event, payload);
-  if (event === "browser-event" && payload && typeof payload === "object") {
-    const browserEvent = payload as { eventType?: unknown; runId?: unknown };
-    if (browserEvent.eventType === "session_closed" && typeof browserEvent.runId === "string") {
-      void destroyBrowserGroup(browserEvent.runId).catch((error: unknown) => {
-        safeLog(`[browser] failed to destroy closed Run group: ${String(error)}`);
-      });
-    }
-  }
   if (event === "bus-event") {
     petWindowManager.handleBusEvent(payload);
   }
@@ -106,9 +92,6 @@ async function createWindow(): Promise<void> {
   mainWindow = window;
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
-    void destroyBrowserViewsForWindow(window).catch((error: unknown) => {
-      safeLog(`[browser] failed to clean up views for closed window: ${String(error)}`);
-    });
   });
 
   let appUrl = DEV_SERVER_URL;
@@ -158,10 +141,6 @@ if (!gotLock) {
     registerWindowIpc(() => mainWindow);
     registerSystemIpc(() => mainWindow);
     registerCoreIpc(coreProcess, () => mainWindow);
-    registerBrowserIpc(
-      () => mainWindow,
-      (method, params) => coreProcess.invokeWhenReady(method, params ?? {}),
-    );
 
     try {
       await createWindow();
@@ -219,11 +198,8 @@ if (!gotLock) {
     // Give the core a chance to shut down its actors gracefully, then exit.
     event.preventDefault();
     coreStopped = true;
-    void destroyBrowserViews()
-      .catch((error: unknown) => {
-        safeLog(`[browser] failed to clean up views during shutdown: ${String(error)}`);
-      })
-      .then(() => coreProcess.stop())
+    coreProcess
+      .stop()
       .then(() => app.exit(0));
   });
 }

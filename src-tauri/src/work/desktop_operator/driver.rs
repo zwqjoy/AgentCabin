@@ -49,6 +49,18 @@ struct DesktopTarget {
     title: String,
 }
 
+type PendingRequests = Arc<
+    std::sync::Mutex<
+        std::collections::HashMap<u64, tokio::sync::oneshot::Sender<Result<Value, String>>>,
+    >,
+>;
+
+struct UpstreamWorker {
+    child: Child,
+    stdin: tokio::process::ChildStdin,
+    pending: PendingRequests,
+}
+
 #[derive(Clone)]
 pub struct DesktopOperatorManager {
     helper_path: PathBuf,
@@ -57,6 +69,7 @@ pub struct DesktopOperatorManager {
     startup_lock: Arc<Mutex<()>>,
     request_id: Arc<AtomicU64>,
     desktop_lease: Arc<Mutex<Option<String>>>,
+    upstream_worker: Arc<Mutex<Option<UpstreamWorker>>>,
 }
 
 impl Default for DesktopOperatorManager {
@@ -77,6 +90,199 @@ impl DesktopOperatorManager {
             startup_lock: Arc::new(Mutex::new(())),
             request_id: Arc::new(AtomicU64::new(1)),
             desktop_lease: Arc::new(Mutex::new(None)),
+            upstream_worker: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn active_engine() -> &'static str {
+        match std::env::var("AGENTCABIN_COMPUTER_USE_ENGINE")
+            .as_deref()
+            .map(str::trim)
+        {
+            Ok("legacy") => "legacy",
+            _ => "upstream",
+        }
+    }
+
+    fn resolve_upstream_runtime_script() -> Result<PathBuf, String> {
+        if let Ok(path) = std::env::var("AGENTCABIN_PI_COMPUTER_USE_RUNTIME") {
+            let p = PathBuf::from(path);
+            if p.is_file() {
+                return Ok(p);
+            }
+        }
+        let dev_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/work/pi_computer_use_runtime.mjs");
+        if dev_path.is_file() {
+            return Ok(dev_path);
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                let candidate1 = parent.join("../Resources/runtime/pi_computer_use_runtime.mjs");
+                if candidate1.is_file() {
+                    return Ok(candidate1);
+                }
+                let candidate2 = parent.join("runtime/pi_computer_use_runtime.mjs");
+                if candidate2.is_file() {
+                    return Ok(candidate2);
+                }
+            }
+        }
+        let cache_dir = std::env::temp_dir().join("agentcabin-computer-use-runtime");
+        let _ = std::fs::create_dir_all(&cache_dir);
+        let target = cache_dir.join("pi_computer_use_runtime.mjs");
+        let shim_target = cache_dir.join("pi_coding_agent_shim.mjs");
+        let _ = std::fs::write(&target, include_str!("../pi_computer_use_runtime.mjs"));
+        let _ = std::fs::write(&shim_target, include_str!("../pi_coding_agent_shim.mjs"));
+        if target.is_file() {
+            return Ok(target);
+        }
+        Err("Failed to resolve pi_computer_use_runtime.mjs".to_string())
+    }
+
+    async fn ensure_upstream_worker(&self) -> Result<(), String> {
+        let mut guard = self.upstream_worker.lock().await;
+        if let Some(worker) = guard.as_mut() {
+            match worker.child.try_wait() {
+                Ok(None) => return Ok(()),
+                _ => {
+                    *guard = None;
+                }
+            }
+        }
+
+        let node_bin =
+            crate::agent::runtime_locator::resolve_node().unwrap_or_else(|_| "node".to_string());
+        let runtime_script = Self::resolve_upstream_runtime_script()?;
+
+        let ext_dir = crate::agent::runtime_locator::extension_node_modules_dirs()
+            .into_iter()
+            .find(|d| d.join("@injaneity/pi-computer-use").is_dir())
+            .or_else(|| {
+                let cur = std::env::current_dir().ok()?;
+                let candidate = cur.join("src-tauri/runtime/extensions/node_modules");
+                if candidate.join("@injaneity/pi-computer-use").is_dir() {
+                    Some(candidate)
+                } else {
+                    None
+                }
+            });
+
+        let mut cmd = Command::new(&node_bin);
+        cmd.arg(&runtime_script)
+            .arg("--serve")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .hide_console();
+
+        if let Some(ext) = ext_dir {
+            cmd.env("AGENTCABIN_PI_EXTENSIONS_DIR", ext);
+        }
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn upstream computer use runtime: {e}"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Failed to capture stdin for upstream runtime".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Failed to capture stdout for upstream runtime".to_string())?;
+
+        let pending: PendingRequests =
+            Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let pending_clone = Arc::clone(&pending);
+
+        tokio::spawn(async move {
+            use tokio::io::AsyncBufReadExt;
+            let reader = tokio::io::BufReader::new(stdout);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                if let Ok(resp) = serde_json::from_str::<Value>(line) {
+                    if let Some(id) = resp.get("id").and_then(Value::as_u64) {
+                        let tx = pending_clone.lock().unwrap().remove(&id);
+                        if let Some(tx) = tx {
+                            if resp.get("ok").and_then(Value::as_bool) == Some(true) {
+                                let _ =
+                                    tx.send(Ok(resp.get("result").cloned().unwrap_or(Value::Null)));
+                            } else {
+                                let err = resp
+                                    .get("error")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("Upstream error");
+                                let _ = tx.send(Err(err.to_string()));
+                            }
+                        }
+                    }
+                }
+            }
+            let mut map = pending_clone.lock().unwrap();
+            for (_, tx) in map.drain() {
+                let _ = tx.send(Err("Upstream worker process terminated".to_string()));
+            }
+        });
+
+        *guard = Some(UpstreamWorker {
+            child,
+            stdin,
+            pending,
+        });
+
+        Ok(())
+    }
+
+    async fn send_upstream_request(&self, method: &str, mut args: Value) -> Result<Value, String> {
+        self.ensure_upstream_worker().await?;
+        let req_id = self.request_id.fetch_add(1, Ordering::SeqCst);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let mut guard = self.upstream_worker.lock().await;
+        let worker = guard
+            .as_mut()
+            .ok_or_else(|| "Upstream worker unavailable".to_string())?;
+
+        worker.pending.lock().unwrap().insert(req_id, tx);
+
+        if let Value::Object(ref mut map) = args {
+            map.insert("id".to_string(), json!(req_id));
+            map.insert("method".to_string(), json!(method));
+        } else {
+            args = json!({
+                "id": req_id,
+                "method": method,
+                "params": args,
+            });
+        }
+
+        let mut line = serde_json::to_vec(&args).map_err(|e| e.to_string())?;
+        line.push(b'\n');
+
+        if let Err(e) = worker.stdin.write_all(&line).await {
+            worker.pending.lock().unwrap().remove(&req_id);
+            *guard = None;
+            return Err(format!("Failed to write to upstream worker: {e}"));
+        }
+        let _ = worker.stdin.flush().await;
+        drop(guard);
+
+        match timeout(Duration::from_secs(60), rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err("Upstream worker channel dropped".to_string()),
+            Err(_) => {
+                if let Ok(guard) = self.upstream_worker.try_lock() {
+                    if let Some(worker) = guard.as_ref() {
+                        worker.pending.lock().unwrap().remove(&req_id);
+                    }
+                }
+                Err(format!("Upstream request '{method}' timed out after 60s"))
+            }
         }
     }
 
@@ -129,7 +335,11 @@ impl DesktopOperatorManager {
     }
 
     pub fn helper_available(&self) -> bool {
-        cfg!(target_os = "macos") && self.helper_path.is_file()
+        if Self::active_engine() == "legacy" {
+            cfg!(target_os = "macos") && self.helper_path.is_file()
+        } else {
+            cfg!(target_os = "macos")
+        }
     }
 
     #[cfg(unix)]
@@ -950,6 +1160,69 @@ impl DesktopOperatorManager {
         if !cfg!(target_os = "macos") {
             return Err("Computer Use macOS backend is unavailable on this platform.".to_string());
         }
+        if Self::active_engine() == "legacy" {
+            return self.legacy_execute(run_id, tool_name, arguments).await;
+        }
+
+        match tool_name {
+            "desktop_release" => {
+                self.release_for_run(run_id).await;
+                let _ = self
+                    .send_upstream_request("release", json!({"runId": run_id}))
+                    .await;
+                Ok(Self::tool_result(
+                    "Desktop control released",
+                    json!({"backend": "upstream", "released": true}),
+                    None,
+                ))
+            }
+            "find_roots" | "observe_ui" | "search_ui" | "expand_ui" | "inspect_ui" | "act_ui"
+            | "read_text" | "wait_for" | "launch_browser" | "navigate_browser"
+            | "evaluate_browser" => {
+                self.claim(run_id).await?;
+                let res = self
+                    .send_upstream_request(
+                        "execute",
+                        json!({
+                            "runId": run_id,
+                            "toolName": tool_name,
+                            "params": arguments,
+                        }),
+                    )
+                    .await?;
+
+                if res.get("success").and_then(Value::as_bool) == Some(true) {
+                    let duration_ms = res.get("durationMs").and_then(Value::as_u64).unwrap_or(0);
+                    let inner_result = res.get("result").cloned().unwrap_or(Value::Null);
+                    Ok(json!({
+                        "backend": "upstream",
+                        "tool": tool_name,
+                        "durationMs": duration_ms,
+                        "result": inner_result,
+                    }))
+                } else {
+                    let err_msg = res
+                        .get("stderr")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Upstream tool execution failed");
+                    Err(err_msg.to_string())
+                }
+            }
+            "desktop_list_apps" | "desktop_open_app" | "desktop_observe" | "desktop_screenshot"
+            | "desktop_click" | "desktop_type" | "desktop_key" | "desktop_scroll"
+            | "desktop_act_batch" | "launch_app" => {
+                self.legacy_execute(run_id, tool_name, arguments).await
+            }
+            other => Err(format!("Unknown desktop tool: {other}")),
+        }
+    }
+
+    pub async fn legacy_execute(
+        &self,
+        run_id: &str,
+        tool_name: &str,
+        arguments: Value,
+    ) -> Result<Value, String> {
         match tool_name {
             "desktop_list_apps" => {
                 let roots = self.list_roots(None).await?;
@@ -1002,58 +1275,113 @@ impl DesktopOperatorManager {
         if lease.as_deref() == Some(run_id) {
             *lease = None;
         }
+        drop(lease);
+        if Self::active_engine() != "legacy" {
+            let _ = self
+                .send_upstream_request("release", json!({"runId": run_id}))
+                .await;
+        }
     }
 
     pub async fn request_permissions(&self) -> Result<DesktopOperatorStatus, String> {
-        self.request(
-            "registerPermissions",
-            json!({"promptAccessibility": true, "promptScreenRecording": true}),
-        )
-        .await?;
+        if Self::active_engine() == "legacy" {
+            self.request(
+                "registerPermissions",
+                json!({"promptAccessibility": true, "promptScreenRecording": true}),
+            )
+            .await?;
+            return Ok(self.status().await);
+        }
+        let _ = self
+            .send_upstream_request("request_permissions", json!({}))
+            .await?;
         Ok(self.status().await)
     }
 
     pub async fn refresh_status(&self) -> DesktopOperatorStatus {
-        let current = self.status().await;
-        if current.ready
-            && (current.screen_recording != Some(true) || current.accessibility != Some(true))
-            && self.restart_for_permission_refresh().await.is_ok()
-        {
-            return self.status().await;
+        if Self::active_engine() == "legacy" {
+            let current = self.legacy_status().await;
+            if current.ready
+                && (current.screen_recording != Some(true) || current.accessibility != Some(true))
+                && self.restart_for_permission_refresh().await.is_ok()
+            {
+                return self.legacy_status().await;
+            }
+            return current;
         }
-        current
+        self.status().await
     }
 
     pub async fn open_permission_pane(&self, kind: &str) -> Result<(), String> {
-        let native_kind = match kind {
-            "accessibility" => "accessibility",
-            "screen-recording" | "screenRecording" => "screenRecording",
-            _ => return Err(format!("Unknown desktop permission kind: {kind}")),
-        };
-        // Register the current bundled helper with TCC before opening System
-        // Settings. Without a real ScreenCaptureKit request, macOS may not
-        // create a row for a helper that is only embedded in the dev tree.
-        let _ = self
-            .request(
-                "registerPermissions",
-                json!({"promptAccessibility": false, "promptScreenRecording": true}),
-            )
-            .await;
-        self.request("openPermissionPane", json!({"kind": native_kind}))
+        if Self::active_engine() == "legacy" {
+            let native_kind = match kind {
+                "accessibility" => "accessibility",
+                "screen-recording" | "screenRecording" => "screenRecording",
+                _ => return Err(format!("Unknown desktop permission kind: {kind}")),
+            };
+            let _ = self
+                .request(
+                    "registerPermissions",
+                    json!({"promptAccessibility": false, "promptScreenRecording": true}),
+                )
+                .await;
+            self.request("openPermissionPane", json!({"kind": native_kind}))
+                .await?;
+            return Ok(());
+        }
+        self.send_upstream_request("open_permission_pane", json!({"kind": kind}))
             .await?;
         Ok(())
     }
 
     pub async fn status(&self) -> DesktopOperatorStatus {
+        if Self::active_engine() == "legacy" {
+            return self.legacy_status().await;
+        }
+        match self.send_upstream_request("status", json!({})).await {
+            Ok(res) => {
+                let enabled = res.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+                let ready = res.get("ready").and_then(Value::as_bool).unwrap_or(false);
+                let command = res
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .unwrap_or("pi-computer-use")
+                    .to_string();
+                let message = res
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let accessibility = res.get("accessibility").and_then(Value::as_bool);
+                let screen_recording = res.get("screenRecording").and_then(Value::as_bool);
+                DesktopOperatorStatus {
+                    enabled: crate::work::desktop_operator::is_requested() && enabled,
+                    ready,
+                    owner_run_id: self.desktop_lease.lock().await.clone(),
+                    command,
+                    message,
+                    accessibility,
+                    screen_recording,
+                }
+            }
+            Err(e) => DesktopOperatorStatus {
+                enabled: crate::work::desktop_operator::is_requested(),
+                ready: false,
+                owner_run_id: self.desktop_lease.lock().await.clone(),
+                command: "pi-computer-use".to_string(),
+                message: format!("Upstream status error: {e}"),
+                accessibility: Some(false),
+                screen_recording: Some(false),
+            },
+        }
+    }
+
+    pub async fn legacy_status(&self) -> DesktopOperatorStatus {
         let diagnostics = if self.helper_available() && self.ensure_started().await.is_ok() {
             self.request("diagnostics", json!({})).await.ok()
         } else {
             None
         };
-        // `diagnostics` intentionally uses only the cheap preflight checks so
-        // it can serve as a liveness probe. Those checks can remain stale in a
-        // long-lived process after the user changes TCC settings. Use the
-        // bridge's live ScreenCaptureKit probe for the settings page instead.
         let permissions = if diagnostics.is_some() {
             self.request("checkPermissions", json!({})).await.ok()
         } else {
@@ -1253,5 +1581,58 @@ mod tests {
         let selected_ambiguous =
             DesktopOperatorManager::disambiguate_candidates(&ambiguous_candidates);
         assert!(selected_ambiguous.is_none());
+    }
+
+    #[test]
+    fn upstream_engine_defaults_and_resolves_script() {
+        assert_eq!(DesktopOperatorManager::active_engine(), "upstream");
+        let script = DesktopOperatorManager::resolve_upstream_runtime_script();
+        assert!(
+            script.is_ok(),
+            "resolve_upstream_runtime_script should succeed: {:?}",
+            script
+        );
+        let path = script.unwrap();
+        assert!(
+            path.is_file(),
+            "resolved script must exist: {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn helper_available_under_upstream_engine() {
+        let manager = DesktopOperatorManager::new();
+        if cfg!(target_os = "macos") {
+            assert!(manager.helper_available());
+        }
+    }
+
+    #[tokio::test]
+    async fn live_upstream_status_and_find_roots() {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        let manager = DesktopOperatorManager::new();
+        let status = manager.status().await;
+        println!("Upstream status: {:?}", status);
+        assert!(status.enabled);
+        if status.ready {
+            let roots = manager
+                .execute("test-run", "find_roots", serde_json::json!({}))
+                .await;
+            println!("find_roots result: {:?}", roots);
+            if status.accessibility == Some(true) && status.screen_recording == Some(true) {
+                assert!(roots.is_ok());
+            } else {
+                assert!(roots.is_err());
+                let err = roots.unwrap_err();
+                assert!(
+                    err.contains("Accessibility")
+                        || err.contains("Screen Recording")
+                        || err.contains("interactive")
+                );
+            }
+        }
     }
 }

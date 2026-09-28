@@ -281,6 +281,7 @@ mod tests {
             pi_work_extension: None,
             pi_work_mcp_adapter: None,
             pi_work_browser_adapter: None,
+            pi_browser_native_extension: None,
             pi_shared_extension_sources: vec![],
             pi_work_package_sources: vec![],
             pi_work_skill_sources: vec![],

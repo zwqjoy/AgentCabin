@@ -23,7 +23,10 @@ pub(crate) fn with_proxy(
 
 pub use fetch::{execute_web_fetch, WebFetchResult};
 pub use search::{execute_web_search, WebSearchResult};
-pub use security::{assert_first_stage_url, assert_public_url, is_private_ip};
+pub use security::{
+    assert_first_stage_url, assert_public_url, is_private_ip, validate_browser_url,
+    validate_browser_url_with_allowed_hosts, UrlValidationError,
+};
 
 #[cfg(test)]
 mod tests {

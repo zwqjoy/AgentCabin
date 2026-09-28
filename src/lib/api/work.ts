@@ -1201,14 +1201,6 @@ export function controlBrowserSession(runId: string, action: string): Promise<Br
   return invoke<BrowserSession>("control_browser_session", { runId, action });
 }
 
-export function browserUserInteract(
-  runId: string,
-  action: string,
-  params: Record<string, unknown> = {},
-): Promise<BrowserSession> {
-  return invoke<BrowserSession>("browser_user_interact", { runId, action, params });
-}
-
 export function getBrowserTraces(runId: string): Promise<BrowserTraceEntry[]> {
   return invoke<BrowserTraceEntry[]>("get_browser_traces", { runId });
 }

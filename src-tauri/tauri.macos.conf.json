@@ -5,7 +5,6 @@
   },
   "bundle": {
     "resources": [
-      "browser-worker/**/*",
       "resources/agentcabin-computer-use/macos/agentcabin-computer-use.app",
       "resources/agentcabin-computer-use/macos/ocr-helper",
       "resources/agentcabin-computer-use/LICENSE",

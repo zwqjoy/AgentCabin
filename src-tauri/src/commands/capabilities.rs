@@ -973,18 +973,9 @@ pub async fn open_desktop_permission_pane(kind: String) -> Result<(), String> {
 }
 
 pub async fn prepare_browser_runtime_impl(
-    emitter: std::sync::Arc<crate::web_server::broadcaster::BroadcastEmitter>,
+    _emitter: std::sync::Arc<crate::web_server::broadcaster::BroadcastEmitter>,
 ) -> Result<crate::work::models::WorkBrowserSummary, String> {
-    let paths = crate::work::paths::WorkPaths::app();
-    tokio::task::spawn_blocking(move || {
-        let reporter = |progress| {
-            emitter.emit_realtime("browser-runtime-preparation", &progress, None);
-        };
-        crate::work::browser_operator::runtime::prepare_with_progress(&paths, reporter)?;
-        crate::work::browser::get_config_with_paths(&paths)
-    })
-    .await
-    .map_err(|error| format!("Browser Runtime preparation task failed: {error}"))?
+    crate::work::browser::get_config()
 }
 
 #[tauri::command]
@@ -996,145 +987,47 @@ pub async fn prepare_browser_runtime(
 
 #[tauri::command]
 pub async fn get_browser_session(
-    run_id: String,
+    _run_id: String,
 ) -> Result<Option<crate::work::models::BrowserSession>, String> {
-    Ok(crate::work::browser_operator::browser_session_manager()
-        .get_session(&run_id)
-        .await)
+    Ok(None)
 }
 
 #[tauri::command]
 pub async fn list_browser_sessions() -> Result<Vec<crate::work::models::BrowserSession>, String> {
-    Ok(crate::work::browser_operator::browser_session_manager()
-        .list_sessions()
-        .await)
-}
-
-fn resolve_browser_actor_run_id(run_id: &str) -> Result<Option<String>, String> {
-    let paths = crate::work::paths::WorkPaths::app();
-    paths.ensure_layout()?;
-    let task_manager = crate::work::tasks::TaskManager::new(paths);
-    if let Some(work_run) = task_manager.find_run_by_id(run_id)? {
-        return Ok(work_run.session_id);
-    }
-
-    // Code sessions and standalone Work sessions use the persisted RunMeta id
-    // directly. A WorkRun id is handled above so we never stop the wrong layer.
-    Ok(crate::storage::runs::get_run(run_id).map(|_| run_id.to_string()))
+    Ok(Vec::new())
 }
 
 #[tauri::command]
 pub async fn control_browser_session(
-    emitter: State<'_, Arc<BroadcastEmitter>>,
-    sessions: State<'_, ActorSessionMap>,
-    spawn_locks: State<'_, SpawnLocks>,
+    _emitter: State<'_, Arc<BroadcastEmitter>>,
+    _sessions: State<'_, ActorSessionMap>,
+    _spawn_locks: State<'_, SpawnLocks>,
     run_id: String,
-    action: String,
+    _action: String,
 ) -> Result<crate::work::models::BrowserSession, String> {
-    let mgr = crate::work::browser_operator::browser_session_manager();
-    match action.as_str() {
-        "pause" => mgr.pause_session(&run_id).await,
-        "resume" => mgr.resume_session(&run_id).await,
-        "stop" => {
-            let session = mgr.stop_session(&run_id).await?;
-            if let Some(actor_run_id) = resolve_browser_actor_run_id(&run_id)? {
-                crate::commands::session_dispatch::stop_session_impl(
-                    emitter.inner(),
-                    sessions.inner(),
-                    spawn_locks.inner(),
-                    actor_run_id,
-                )
-                .await?;
-            }
-            let _ = crate::work::browser_operator::browser_operator_manager()
-                .close_context(&run_id)
-                .await;
-            Ok(session)
-        }
-        "takeover_start" => {
-            let session = mgr.start_takeover(&run_id).await?;
-            if let Err(error) = crate::work::browser_operator::browser_operator_manager()
-                .focus_page(&run_id)
-                .await
-            {
-                let _ = mgr.finish_takeover(&run_id).await;
-                return Err(format!("无法打开浏览器接管窗口: {error}"));
-            }
-            Ok(session)
-        }
-        "takeover_finish" => mgr.finish_takeover(&run_id).await,
-        "close" => {
-            let session = mgr.get_session(&run_id).await.unwrap_or_else(|| {
-                crate::work::models::BrowserSession {
-                    session_id: format!("bsess-{}", run_id),
-                    run_id: run_id.clone(),
-                    mode: "work".to_string(),
-                    surface: "managed".to_string(),
-                    status: crate::work::models::BrowserSessionStatus::Closed,
-                    current_url: None,
-                    page_title: None,
-                    current_action: None,
-                    last_screenshot: None,
-                    traces: Vec::new(),
-                    last_error: None,
-                    is_taking_over: false,
-                    created_at: chrono::Utc::now().to_rfc3339(),
-                    updated_at: chrono::Utc::now().to_rfc3339(),
-                }
-            });
-            crate::browser_runtime::close_browser_session(&run_id).await;
-            let _ = crate::work::browser_operator::browser_operator_manager()
-                .close_context(&run_id)
-                .await;
-            Ok(mgr.get_session(&run_id).await.unwrap_or(session))
-        }
-        other => Err(format!(
-            "Unsupported browser session control action: {other}"
-        )),
-    }
-}
-
-#[tauri::command]
-pub async fn browser_user_interact(
-    run_id: String,
-    action: String,
-    params: serde_json::Value,
-) -> Result<crate::work::models::BrowserSession, String> {
-    crate::work::browser_operator::browser_operator_manager()
-        .user_interact(&run_id, &action, params)
-        .await
+    Ok(crate::work::models::BrowserSession {
+        session_id: format!("bsess-{}", run_id),
+        run_id,
+        mode: "work".to_string(),
+        surface: "managed".to_string(),
+        status: crate::work::models::BrowserSessionStatus::Closed,
+        current_url: None,
+        page_title: None,
+        current_action: None,
+        last_screenshot: None,
+        traces: Vec::new(),
+        last_error: None,
+        is_taking_over: false,
+        created_at: chrono::Utc::now().to_rfc3339(),
+        updated_at: chrono::Utc::now().to_rfc3339(),
+    })
 }
 
 #[tauri::command]
 pub async fn get_browser_traces(
-    run_id: String,
+    _run_id: String,
 ) -> Result<Vec<crate::work::models::BrowserTraceEntry>, String> {
-    let mgr = crate::work::browser_operator::browser_session_manager();
-    Ok(mgr
-        .get_session(&run_id)
-        .await
-        .map(|s| s.traces)
-        .unwrap_or_default())
-}
-
-#[tauri::command]
-pub async fn register_embedded_browser(
-    payload: crate::work::browser_operator::EmbeddedRegistration,
-) -> Result<(), String> {
-    crate::work::browser_operator::embedded_registry().register(payload);
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn unregister_embedded_browser(endpoint: String) -> Result<(), String> {
-    crate::work::browser_operator::embedded_registry().unregister(&endpoint);
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn list_embedded_browsers(
-) -> Result<Vec<crate::work::browser_operator::EmbeddedRegistration>, String> {
-    Ok(crate::work::browser_operator::embedded_registry().list())
+    Ok(Vec::new())
 }
 
 // ── Global MCP Catalog & Binding Commands ──

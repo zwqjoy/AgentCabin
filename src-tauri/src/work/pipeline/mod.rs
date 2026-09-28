@@ -26,6 +26,7 @@ use crate::work::resources;
 mod types;
 pub use types::{ToolIntent, ToolResult};
 
+#[allow(dead_code)]
 fn browser_action_outcome(
     result: &serde_json::Value,
 ) -> (
@@ -44,6 +45,7 @@ fn browser_action_outcome(
     }
 }
 
+#[allow(dead_code)]
 fn preserve_browser_target_identity(
     arguments: &serde_json::Value,
     mut params: serde_json::Value,
@@ -120,6 +122,10 @@ impl ToolPipeline {
         {
             ToolConcurrencyClass::ParallelSafe
         } else if name_lower.starts_with("desktop_")
+            || name_lower.ends_with("_ui")
+            || name_lower == "find_roots"
+            || name_lower == "wait_for"
+            || name_lower == "read_text"
             || name_lower.contains("gui")
             || name_lower.contains("terminal_exclusive")
         {
@@ -200,6 +206,9 @@ impl ToolPipeline {
                 | "act_ui"
                 | "read_text"
                 | "wait_for"
+                | "launch_browser"
+                | "navigate_browser"
+                | "evaluate_browser"
         )
     }
 
@@ -214,6 +223,9 @@ impl ToolPipeline {
                 | "desktop_act_batch"
                 | "launch_app"
                 | "act_ui"
+                | "launch_browser"
+                | "navigate_browser"
+                | "evaluate_browser"
         )
     }
 
@@ -1889,9 +1901,7 @@ impl ToolPipeline {
         let started_at = Utc::now().to_rfc3339();
         let full_access = policy.execution_mode == WorkExecutionMode::FullAccess;
         match intent.tool_name.as_str() {
-            "desktop_list_apps" | "desktop_probe_app" | "desktop_open_app" | "desktop_observe"
-            | "desktop_screenshot" | "desktop_click" | "desktop_type" | "desktop_key"
-            | "desktop_scroll" | "desktop_act_batch" | "desktop_release" => {
+            tool if Self::is_desktop_operator_tool(tool) => {
                 let payload = crate::work::desktop_operator::desktop_operator_manager()
                     .execute(
                         &intent.work_run_id,
@@ -2867,555 +2877,10 @@ impl ToolPipeline {
                     finished_at: Utc::now().to_rfc3339(),
                 })
             }
-            "browser_navigate" => {
-                let url = intent
-                    .arguments
-                    .get("url")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .trim();
-                let wait_ms = intent.arguments.get("wait_ms").and_then(|v| v.as_u64());
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_navigate",
-                        serde_json::json!({ "url": url, "wait_ms": wait_ms }),
-                    )
-                    .await
-                {
-                    Ok(val) => Ok(WorkExecutionResult {
-                        execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                        resource_id: intent.tool_name.clone(),
-                        action: intent.action.clone(),
-                        status: WorkExecutionStatus::Success,
-                        failure_kind: None,
-                        exit_code: Some(0),
-                        stdout: serde_json::to_string(&val).unwrap_or_default(),
-                        stderr: String::new(),
-                        // A successful navigation is a real page visit; record
-                        // the URL so Sources/Browser history can show it.
-                        outputs: if url.starts_with("http://") || url.starts_with("https://") {
-                            vec![url.to_string()]
-                        } else {
-                            Vec::new()
-                        },
-                        started_at: started_at.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    }),
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_cdp_observe" | "browser_cdp_act" => {
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                let val = manager
-                    .execute(
-                        &intent.work_run_id,
-                        &intent.tool_name,
-                        intent.arguments.clone(),
-                    )
-                    .await?;
-                Ok(WorkExecutionResult {
-                    execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                    resource_id: intent.tool_name.clone(),
-                    action: intent.action.clone(),
-                    status: WorkExecutionStatus::Success,
-                    failure_kind: None,
-                    exit_code: Some(0),
-                    stdout: serde_json::to_string(&val).unwrap_or_default(),
-                    stderr: String::new(),
-                    outputs: Vec::new(),
-                    started_at,
-                    finished_at: Utc::now().to_rfc3339(),
-                })
-            }
-            "browser_snapshot" => {
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_snapshot",
-                        serde_json::json!({
-                            "sinceRevision": intent.arguments.get("sinceRevision").and_then(|value| value.as_u64()),
-                            "include_screenshot": intent.arguments.get("include_screenshot").and_then(|value| value.as_bool()),
-                        }),
-                    )
-                    .await
-                {
-                    Ok(val) => Ok(WorkExecutionResult {
-                        execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                        resource_id: intent.tool_name.clone(),
-                        action: intent.action.clone(),
-                        status: WorkExecutionStatus::Success,
-                        failure_kind: None,
-                        exit_code: Some(0),
-                        stdout: serde_json::to_string(&val).unwrap_or_default(),
-                        stderr: String::new(),
-                        outputs: Vec::new(),
-                        started_at: started_at.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    }),
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_take_screenshot" => {
-                let filename = intent.arguments.get("filename").and_then(|v| v.as_str());
-                let full_page = intent.arguments.get("full_page").and_then(|v| v.as_bool());
-
-                // Enforce output path constraint strictly within output/
-                let resolved_path = if let Some(fname) = filename {
-                    let safe_name = std::path::Path::new(fname)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .filter(|name| !name.is_empty())
-                        .ok_or_else(|| {
-                            "browser_take_screenshot filename must name a file".to_string()
-                        })?;
-                    let ws_dir = if intent.workspace_id.trim().is_empty() {
-                        self.paths.standalone_task_dir(&intent.work_run_id)?
-                    } else {
-                        self.paths.workspace_dir(&intent.workspace_id)?
-                    };
-                    let out_dir = ws_dir.join("output");
-                    std::fs::create_dir_all(&out_dir).map_err(|error| {
-                        format!(
-                            "Failed to create screenshot output directory {}: {error}",
-                            out_dir.display()
-                        )
-                    })?;
-                    Some(out_dir.join(safe_name).to_string_lossy().into_owned())
-                } else {
-                    None
-                };
-
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_take_screenshot",
-                        serde_json::json!({
-                            "outputPath": resolved_path.clone(),
-                            "fullPage": full_page,
-                        }),
-                    )
-                    .await
-                {
-                    Ok(val) => {
-                        let outputs = if let Some(p) = resolved_path {
-                            let file_name = std::path::Path::new(&p)
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy();
-                            vec![format!("output/{}", file_name)]
-                        } else {
-                            Vec::new()
-                        };
-                        Ok(WorkExecutionResult {
-                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                            resource_id: intent.tool_name.clone(),
-                            action: intent.action.clone(),
-                            status: WorkExecutionStatus::Success,
-                            failure_kind: None,
-                            exit_code: Some(0),
-                            stdout: serde_json::to_string(&val).unwrap_or_default(),
-                            stderr: String::new(),
-                            outputs,
-                            started_at: started_at.clone(),
-                            finished_at: Utc::now().to_rfc3339(),
-                        })
-                    }
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_wait_for" => {
-                let ms = intent.arguments.get("ms").and_then(|v| v.as_u64());
-                let timeout_ms = intent.arguments.get("timeout_ms").and_then(|v| v.as_u64());
-                let load_state = intent
-                    .arguments
-                    .get("load_state")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let expect = intent.arguments.get("expect").cloned();
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_wait_for",
-                        serde_json::json!({
-                            "ms": ms,
-                            "timeout_ms": timeout_ms,
-                            "load_state": load_state,
-                            "expect": expect,
-                        }),
-                    )
-                    .await
-                {
-                    Ok(val) => {
-                        let verification_failed = val
-                            .get("timedOut")
-                            .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(false);
-                        let failure_message = val
-                            .get("failures")
-                            .and_then(serde_json::Value::as_array)
-                            .map(|failures| {
-                                failures
-                                    .iter()
-                                    .filter_map(serde_json::Value::as_str)
-                                    .collect::<Vec<_>>()
-                                    .join("; ")
-                            })
-                            .unwrap_or_default();
-                        Ok(WorkExecutionResult {
-                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                            resource_id: intent.tool_name.clone(),
-                            action: intent.action.clone(),
-                            status: if verification_failed {
-                                WorkExecutionStatus::Failed
-                            } else {
-                                WorkExecutionStatus::Success
-                            },
-                            failure_kind: None,
-                            exit_code: Some(if verification_failed { 1 } else { 0 }),
-                            stdout: serde_json::to_string(&val).unwrap_or_default(),
-                            stderr: failure_message,
-                            outputs: Vec::new(),
-                            started_at: started_at.clone(),
-                            finished_at: Utc::now().to_rfc3339(),
-                        })
-                    }
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_tabs" => {
-                let action = intent
-                    .arguments
-                    .get("action")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("list");
-                let index = intent
-                    .arguments
-                    .get("index")
-                    .and_then(|v| v.as_u64())
-                    .map(|n| n as usize);
-                let url = intent
-                    .arguments
-                    .get("url")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_tabs",
-                        serde_json::json!({
-                            "action": action,
-                            "index": index,
-                            "url": url,
-                        }),
-                    )
-                    .await
-                {
-                    Ok(val) => Ok(WorkExecutionResult {
-                        execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                        resource_id: intent.tool_name.clone(),
-                        action: intent.action.clone(),
-                        status: WorkExecutionStatus::Success,
-                        failure_kind: None,
-                        exit_code: Some(0),
-                        stdout: serde_json::to_string(&val).unwrap_or_default(),
-                        stderr: String::new(),
-                        outputs: Vec::new(),
-                        started_at: started_at.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    }),
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_close" => {
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(&intent.work_run_id, "browser_close", serde_json::json!({}))
-                    .await
-                {
-                    Ok(val) => Ok(WorkExecutionResult {
-                        execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                        resource_id: intent.tool_name.clone(),
-                        action: intent.action.clone(),
-                        status: WorkExecutionStatus::Success,
-                        failure_kind: None,
-                        exit_code: Some(0),
-                        stdout: serde_json::to_string(&val).unwrap_or_default(),
-                        stderr: String::new(),
-                        outputs: Vec::new(),
-                        started_at: started_at.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    }),
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_click" => {
-                let ref_id = intent
-                    .arguments
-                    .get("ref")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let selector = intent
-                    .arguments
-                    .get("selector")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let target_label = intent
-                    .arguments
-                    .get("target_label")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let button = intent
-                    .arguments
-                    .get("button")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let double_click = intent
-                    .arguments
-                    .get("double_click")
-                    .and_then(|v| v.as_bool());
-                let locator = intent.arguments.get("locator").cloned();
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_click",
-                        preserve_browser_target_identity(
-                            &intent.arguments,
-                            serde_json::json!({
-                                "ref": ref_id,
-                                "selector": selector,
-                                "target_label": target_label,
-                                "locator": locator,
-                                "button": button,
-                                "double_click": double_click,
-                            }),
-                        ),
-                    )
-                    .await
-                {
-                    Ok(val) => {
-                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
-                        Ok(WorkExecutionResult {
-                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                            resource_id: intent.tool_name.clone(),
-                            action: intent.action.clone(),
-                            status,
-                            failure_kind,
-                            exit_code,
-                            stdout: serde_json::to_string(&val).unwrap_or_default(),
-                            stderr: String::new(),
-                            outputs: Vec::new(),
-                            started_at: started_at.clone(),
-                            finished_at: Utc::now().to_rfc3339(),
-                        })
-                    }
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_type" => {
-                let ref_id = intent
-                    .arguments
-                    .get("ref")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let text = intent
-                    .arguments
-                    .get("text")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let selector = intent
-                    .arguments
-                    .get("selector")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let target_label = intent
-                    .arguments
-                    .get("target_label")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let clear = intent.arguments.get("clear").and_then(|v| v.as_bool());
-                let press_enter = intent
-                    .arguments
-                    .get("press_enter")
-                    .and_then(|v| v.as_bool());
-                let locator = intent.arguments.get("locator").cloned();
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_type",
-                        preserve_browser_target_identity(
-                            &intent.arguments,
-                            serde_json::json!({
-                                "ref": ref_id,
-                                "text": text,
-                                "selector": selector,
-                                "target_label": target_label,
-                                "locator": locator,
-                                "clear": clear,
-                                "press_enter": press_enter,
-                            }),
-                        ),
-                    )
-                    .await
-                {
-                    Ok(val) => {
-                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
-                        Ok(WorkExecutionResult {
-                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                            resource_id: intent.tool_name.clone(),
-                            action: intent.action.clone(),
-                            status,
-                            failure_kind,
-                            exit_code,
-                            stdout: serde_json::to_string(&val).unwrap_or_default(),
-                            stderr: String::new(),
-                            outputs: Vec::new(),
-                            started_at: started_at.clone(),
-                            finished_at: Utc::now().to_rfc3339(),
-                        })
-                    }
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_select_option" => {
-                let ref_id = intent
-                    .arguments
-                    .get("ref")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let value = intent
-                    .arguments
-                    .get("value")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let selector = intent
-                    .arguments
-                    .get("selector")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let locator = intent.arguments.get("locator").cloned();
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_select_option",
-                        preserve_browser_target_identity(
-                            &intent.arguments,
-                            serde_json::json!({
-                                "ref": ref_id,
-                                "value": value,
-                                "selector": selector,
-                                "locator": locator,
-                            }),
-                        ),
-                    )
-                    .await
-                {
-                    Ok(val) => {
-                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
-                        Ok(WorkExecutionResult {
-                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                            resource_id: intent.tool_name.clone(),
-                            action: intent.action.clone(),
-                            status,
-                            failure_kind,
-                            exit_code,
-                            stdout: serde_json::to_string(&val).unwrap_or_default(),
-                            stderr: String::new(),
-                            outputs: Vec::new(),
-                            started_at: started_at.clone(),
-                            finished_at: Utc::now().to_rfc3339(),
-                        })
-                    }
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_press_key" => {
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_press_key",
-                        preserve_browser_target_identity(&intent.arguments, serde_json::json!({
-                            "key": intent.arguments.get("key").and_then(|value| value.as_str()).unwrap_or(""),
-                            "ref": intent.arguments.get("ref"),
-                            "selector": intent.arguments.get("selector"),
-                            "locator": intent.arguments.get("locator"),
-                        })),
-                    )
-                    .await
-                {
-                    Ok(val) => {
-                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
-                        Ok(WorkExecutionResult {
-                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                            resource_id: intent.tool_name.clone(),
-                            action: intent.action.clone(),
-                            status,
-                            failure_kind,
-                            exit_code,
-                            stdout: serde_json::to_string(&val).unwrap_or_default(),
-                            stderr: String::new(),
-                            outputs: Vec::new(),
-                            started_at: started_at.clone(),
-                            finished_at: Utc::now().to_rfc3339(),
-                        })
-                    }
-                    Err(err) => Err(err),
-                }
-            }
-            "browser_scroll" => {
-                let direction = intent
-                    .arguments
-                    .get("direction")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let amount = intent.arguments.get("amount").and_then(|v| v.as_u64());
-                let ref_id = intent
-                    .arguments
-                    .get("ref")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let manager = crate::work::browser_operator::browser_operator_manager();
-                match manager
-                    .execute(
-                        &intent.work_run_id,
-                        "browser_scroll",
-                        serde_json::json!({
-                            "direction": direction,
-                            "amount": amount,
-                            "ref": ref_id,
-                        }),
-                    )
-                    .await
-                {
-                    Ok(val) => {
-                        let (status, failure_kind, exit_code) = browser_action_outcome(&val);
-                        Ok(WorkExecutionResult {
-                            execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                            resource_id: intent.tool_name.clone(),
-                            action: intent.action.clone(),
-                            status,
-                            failure_kind,
-                            exit_code,
-                            stdout: serde_json::to_string(&val).unwrap_or_default(),
-                            stderr: String::new(),
-                            outputs: Vec::new(),
-                            started_at: started_at.clone(),
-                            finished_at: Utc::now().to_rfc3339(),
-                        })
-                    }
-                    Err(err) => Err(err),
-                }
+            t if Self::is_browser_operator_tool(t) => {
+                Err(format!(
+                    "Browser tool '{t}' is deprecated. Browser automation is now handled directly by the Pi Browser extension."
+                ))
             }
             "work_run_command" => {
                 let command = intent

@@ -17,7 +17,13 @@ export function isInteractiveBrowserToolName(toolName: string | null | undefined
   const normalized = toolName?.trim().toLowerCase() ?? "";
   return normalized
     .split(/[\s,]+/)
-    .some((name) => /(?:^|_)browser_[a-z0-9]+(?:_[a-z0-9]+)*$/.test(name));
+    .some(
+      (name) =>
+        /(?:^|_)browser_[a-z0-9]+(?:_[a-z0-9]+)*$/.test(name) ||
+        name === "agent_browser" ||
+        name === "browser" ||
+        name.startsWith("agent_browser_"),
+    );
 }
 
 /** Resolve the run identity shared by Browser relay registration and execution. */

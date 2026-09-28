@@ -482,113 +482,46 @@ function prepareEvalBrowserParams(toolName, params, evalFixtureOrigin) {
 }
 
 export function createLiveBrowserInvoker(options = {}) {
-  const serverScript = resolve(REPO_ROOT, "src-tauri/browser-worker/server.mjs");
-  const evalFixtureOrigin = String(options.evalFixtureOrigin || "").trim().replace(/\/$/, "");
+  const hostOnly = Boolean(options.hostOnly);
+  const evalFixtureOrigin = options.evalFixtureOrigin || "";
   const fetchImpl = options.fetchImpl || globalThis.fetch;
+  const bridgePort = options.bridgePort || Number(process.env.AGENTCABIN_BROWSER_BRIDGE_PORT || 0);
+  const bridgeToken = options.bridgeToken || process.env.AGENTCABIN_BROWSER_BRIDGE_TOKEN || "";
 
-  if (options.hostOnly) {
-    return async (_toolCallId, toolName, params = {}, signal) => {
-      const bridgePort = Number(options.bridgePort ?? process.env.AGENTCABIN_BROWSER_BRIDGE_PORT ?? 0);
-      const bridgeToken = String(options.bridgeToken ?? process.env.AGENTCABIN_BROWSER_BRIDGE_TOKEN ?? "").trim();
-      if (!bridgePort || !bridgeToken) {
-        return { ok: false, error: "Host-only live eval requires AGENTCABIN_BROWSER_BRIDGE_PORT and AGENTCABIN_BROWSER_BRIDGE_TOKEN." };
-      }
+  if (hostOnly) {
+    return async (toolCallId, toolName, params = {}) => {
       const prepared = prepareEvalBrowserParams(toolName, params, evalFixtureOrigin);
       const evalOrigin = prepared?.__evalFixtureOrigin;
-      const bridgeParams = prepared && typeof prepared === "object"
-        ? Object.fromEntries(Object.entries(prepared).filter(([key]) => key !== "__evalFixtureOrigin"))
+      const workerParams = prepared && typeof prepared === "object"
+        ? { ...prepared }
         : prepared;
-      try {
-        const response = await fetchImpl(`http://127.0.0.1:${bridgePort}/internal/browser/call`, {
-          method: "POST",
-          headers: { authorization: `Bearer ${bridgeToken}`, "content-type": "application/json" },
-          body: JSON.stringify({
-            toolCallId: _toolCallId,
-            method: toolName,
-            params: bridgeParams,
-            ...(evalOrigin ? { evalFixtureOrigin: evalOrigin } : {}),
-          }),
-          signal,
-        });
-        const payload = await response.json();
-        return parseBrowserBridgeResponse(payload, response.ok, response.status);
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
-      }
+      if (workerParams && typeof workerParams === "object") delete workerParams.__evalFixtureOrigin;
+
+      const body = {
+        toolCallId,
+        method: toolName,
+        params: workerParams,
+        ...(evalOrigin ? { evalFixtureOrigin: evalOrigin } : {}),
+      };
+
+      const resp = await fetchImpl(`http://127.0.0.1:${bridgePort}/browser`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${bridgeToken}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const payload = await resp.json();
+      return parseBrowserBridgeResponse(payload);
     };
   }
 
-  let workerProc = null;
-  let reqId = 1;
-  const pendingRequests = new Map();
-
-  function ensureWorker() {
-    if (workerProc && !workerProc.killed) return workerProc;
-
-    workerProc = spawn("node", [serverScript], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, AGENTCABIN_BROWSER_HEADLESS: "1" },
-    });
-
-    const rl = readline.createInterface({ input: workerProc.stdout });
-    rl.on("line", (line) => {
-      try {
-        const parsed = JSON.parse(line.trim());
-        const cb = pendingRequests.get(parsed.id);
-        if (cb) {
-          pendingRequests.delete(parsed.id);
-          cb(parsed);
-        }
-      } catch {}
-    });
-
-    workerProc.on("exit", () => {
-      for (const cb of pendingRequests.values()) {
-        cb({ ok: false, error: "Browser worker exited unexpectedly." });
-      }
-      pendingRequests.clear();
-      workerProc = null;
-    });
-
-    return workerProc;
-  }
-
-  return async (toolCallId, toolName, params = {}, signal) => {
-    const worker = ensureWorker();
-    const id = reqId++;
-    const prepared = prepareEvalBrowserParams(toolName, params, evalFixtureOrigin);
-    const evalOrigin = prepared?.__evalFixtureOrigin;
-    const workerParams = prepared && typeof prepared === "object"
-      ? {
-        ...prepared,
-        ...(evalOrigin ? { allowOrigin: evalOrigin } : {}),
-      }
-      : prepared;
-    if (workerParams && typeof workerParams === "object") delete workerParams.__evalFixtureOrigin;
-
-    return await new Promise((resolvePromise) => {
-      pendingRequests.set(id, (resp) => {
-        if (resp.ok) {
-          resolvePromise(resp.result ?? { ok: true });
-        } else {
-          resolvePromise({ error: resp.error || "Browser command failed", ok: false });
-        }
-      });
-
-      const req = JSON.stringify({
-        id,
-        runId: "live-eval-run",
-        method: toolName,
-        params: workerParams,
-      }) + "\n";
-
-      try {
-        worker.stdin.write(req);
-      } catch (err) {
-        resolvePromise({ error: err.message, ok: false });
-      }
-    });
-  };
+  return async () => ({
+    ok: false,
+    error: "Legacy browser worker has been removed. Browser automation is handled directly by Pi Browser Extension.",
+  });
 }
 
 /**

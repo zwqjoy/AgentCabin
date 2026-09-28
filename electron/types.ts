@@ -58,13 +58,6 @@ export const INVOKE_CHANNELS = [
   "path:join",
   "core:invoke",
   "core:emit",
-  "browser:attach",
-  "browser:set-bounds",
-  "browser:set-visible",
-  "browser:command",
-  "browser:unbind",
-  "browser:destroy",
-  "browser:get-endpoint",
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];
@@ -74,8 +67,6 @@ export const EVENT_CHANNELS = [
   "window:moved",
   "window:focus",
   "core:event",
-  "browser:state-changed",
-  "browser:tabs-changed",
 ] as const;
 
 export type EventChannel = (typeof EVENT_CHANNELS)[number];
@@ -85,22 +76,6 @@ export interface CoreEventEnvelope {
   event: string;
   payload?: unknown;
   seq?: number;
-}
-
-export interface BrowserTabInfo {
-  id: string;
-  targetId: string;
-  index: number;
-  url: string;
-  title: string;
-  active: boolean;
-}
-
-export interface BrowserTabsChanged {
-  viewId: string;
-  runId: string;
-  activeTargetId: string;
-  tabs: BrowserTabInfo[];
 }
 
 export interface AgentCabinDesktopBridge {
@@ -149,41 +124,6 @@ export interface AgentCabinDesktopBridge {
   path: {
     homeDir(): Promise<string>;
     join(...segments: string[]): Promise<string>;
-  };
-  browser: {
-    attach(payload: {
-      viewId: string;
-      runId: string;
-      bindingId: string;
-      url?: string;
-      rect?: { x: number; y: number; width: number; height: number };
-    }): Promise<{
-      viewId: string;
-      bindingId: string;
-      targetId: string;
-      endpoint: { host: string; port: number; token: string };
-      state: unknown;
-      tabs: BrowserTabInfo[];
-      activeTargetId: string;
-    }>;
-    setBounds(payload: {
-      viewId: string;
-      bindingId: string;
-      rect: { x: number; y: number; width: number; height: number };
-    }): Promise<void>;
-    setVisible(payload: { viewId: string; bindingId: string; visible: boolean }): Promise<void>;
-    command(payload: {
-      viewId: string;
-      action: "back" | "forward" | "reload" | "stop";
-    }): Promise<void>;
-    getEndpoint(payload: { viewId: string }): Promise<{
-      host: string;
-      port: number;
-      token: string;
-      targetId: string;
-    } | null>;
-    unbind(payload: { viewId: string; bindingId: string }): Promise<void>;
-    destroy(payload: { runId: string }): Promise<void>;
   };
 }
 
