@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { generatePageSnapshot } from "./snapshot.mjs";
 
 function pageState(documentKey, refs, tree = "tree") {
@@ -32,6 +33,53 @@ test("returns full then unchanged snapshots with increasing revisions", async ()
   assert.equal(second.snapshotType, "unchanged");
   assert.equal(second.revision, 2);
   assert.equal(second.baseRevision, 1);
+});
+
+test("HTTP page snapshot creates a document namespace without randomUUID", async () => {
+  let randomValuesCalls = 0;
+  const crypto = {
+    getRandomValues(bytes) {
+      randomValuesCalls++;
+      for (let index = 0; index < bytes.length; index++) bytes[index] = index;
+      return bytes;
+    },
+  };
+  const attributes = new Map();
+  const button = {
+    nodeType: 1,
+    tagName: "BUTTON",
+    children: [],
+    innerText: "Save",
+    textContent: "Save",
+    type: "button",
+    disabled: false,
+    readOnly: false,
+    isContentEditable: false,
+    getAttribute: (name) => attributes.get(name) ?? null,
+    setAttribute: (name, value) => attributes.set(name, String(value)),
+    hasAttribute: () => false,
+    getBoundingClientRect: () => ({ width: 80, height: 24 }),
+  };
+  const sandbox = {
+    crypto,
+    window: { getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) },
+    document: { body: button, querySelector: () => null, getElementById: () => null },
+    Node: { ELEMENT_NODE: 1 },
+    performance: { timeOrigin: 1234 },
+  };
+  const page = {
+    title: async () => "Intranet",
+    url: () => "http://192.168.1.10/",
+    evaluate: async (fn, input) => vm.runInNewContext(`(${fn.toString()})(input)`, { ...sandbox, input }),
+  };
+
+  const snapshot = await generatePageSnapshot(page, { workerInstanceId: "bw-http", targetId: "tab-http" });
+  assert.doesNotMatch(snapshot.tree, /Failed to capture DOM snapshot/);
+  const [ref] = Object.keys(snapshot.refs);
+  assert.equal(randomValuesCalls, 1);
+  assert.equal(snapshot.url, "http://192.168.1.10/");
+  assert.match(ref, /^ebw-http_[0-9a-f-]{36}_1$/);
+  assert.equal(snapshot.refs[ref].name, "Save");
 });
 
 test("reports added, changed, and removed semantic refs", async () => {

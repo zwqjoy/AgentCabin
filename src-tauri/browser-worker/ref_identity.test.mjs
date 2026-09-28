@@ -16,3 +16,25 @@ test("Browser refs are scoped to both the Worker lifetime and document", () => {
   assert.equal(refs.isInNamespace(oldRef, worker2DocumentA), false);
   assert.equal(refs.makeRef(worker1DocumentA, 2), `${worker1DocumentA}2`);
 });
+
+test("document nonce falls back to getRandomValues when randomUUID is unavailable", () => {
+  const refs = createRefIdentityHelpers();
+  let generated = 0;
+  const insecureContextCrypto = {
+    getRandomValues(bytes) {
+      generated++;
+      for (let index = 0; index < bytes.length; index++) bytes[index] = index;
+      return bytes;
+    },
+  };
+
+  const nonce = refs.createDocumentNonce(insecureContextCrypto);
+  assert.equal(generated, 1);
+  assert.match(nonce, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test("document nonce prefers randomUUID when available", () => {
+  const refs = createRefIdentityHelpers();
+  const nonce = "worker-document-nonce";
+  assert.equal(refs.createDocumentNonce({ randomUUID: () => nonce }), nonce);
+});

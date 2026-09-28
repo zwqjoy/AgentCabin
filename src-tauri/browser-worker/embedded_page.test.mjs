@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { createEmbeddedPage } from "./embedded_page.mjs";
+import { createRefIdentityHelpers } from "./ref_identity.mjs";
 import { generatePageSnapshot } from "./snapshot.mjs";
 
 function makeClient(responder) {
@@ -60,6 +62,57 @@ test("clickRef resolves the element rect before clicking its centre", async () =
   const click = client.calls.find((call) => call.method === "Input.dispatchMouseEvent");
   assert.equal(click.params.x, 60);
   assert.equal(click.params.y, 40);
+});
+
+test("HTTP page click resolves a document ref when randomUUID is unavailable", async () => {
+  const refIdentity = createRefIdentityHelpers();
+  const bytesToNonce = { getRandomValues(bytes) { for (let i = 0; i < bytes.length; i++) bytes[i] = i; return bytes; } };
+  const nonce = refIdentity.createDocumentNonce(bytesToNonce);
+  const ref = refIdentity.makeRef(refIdentity.namespace("legacy", nonce), 1);
+  const crypto = { getRandomValues(bytes) { for (let i = 0; i < bytes.length; i++) bytes[i] = i; return bytes; } };
+  const button = {
+    isConnected: true,
+    tagName: "BUTTON",
+    type: "button",
+    disabled: false,
+    readOnly: false,
+    labels: [],
+    innerText: "Save",
+    textContent: "Save",
+    getAttribute: (name) => name === "data-work-ref" ? ref : null,
+    getBoundingClientRect: () => ({ x: 12, y: 24, width: 80, height: 30 }),
+  };
+  const refNodes = new WeakMap([[button, ref]]);
+  const document = {
+    querySelector: (selector) => selector.includes(ref) ? button : null,
+    querySelectorAll: () => [button],
+    getElementById: () => null,
+  };
+  const window = {
+    __agentCabinWorkRefNodes: refNodes,
+    getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }),
+  };
+  const client = makeClient(async (method, params) => {
+    if (method === "Runtime.evaluate") {
+      const expression = String(params.expression);
+      if (expression.includes("const ref =")) {
+        const result = await vm.runInNewContext(expression, { crypto, window, document, getComputedStyle: window.getComputedStyle });
+        return { result: { value: result } };
+      }
+      return { result: { value: false } };
+    }
+    return {};
+  });
+  const page = createEmbeddedPage({ client });
+
+  const result = await page.clickRef(ref);
+  assert.equal(window.__agentCabinWorkDocumentNonce, nonce);
+  assert.equal(result.resolvedBy, "ref");
+  assert.equal(result.target.ref, ref);
+  const click = client.calls.filter((call) => call.method === "Input.dispatchMouseEvent");
+  assert.deepEqual(click.map((call) => call.params.type), ["mousePressed", "mouseReleased"]);
+  assert.equal(click[0].params.x, 52);
+  assert.equal(click[0].params.y, 39);
 });
 
 test("clickRef reports an actionable error for an unknown ref", async () => {

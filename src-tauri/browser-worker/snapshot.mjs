@@ -61,7 +61,7 @@ export async function generatePageSnapshot(page, options = {}) {
     .evaluate(({ roleSource, refIdentitySource, workerId }) => {
       const inferRole = new Function(`return (${roleSource});`)();
       const refIdentity = new Function(`return (${refIdentitySource})();`)();
-      const documentNonce = window.__agentCabinWorkDocumentNonce ||= crypto.randomUUID();
+      const documentNonce = window.__agentCabinWorkDocumentNonce ||= refIdentity.createDocumentNonce();
       const refNamespace = refIdentity.namespace(workerId, documentNonce);
       const refNodes = window.__agentCabinWorkRefNodes ||= new WeakMap();
       let idCounter = Number.isSafeInteger(Number(window.__agentCabinWorkRefCounter)) && Number(window.__agentCabinWorkRefCounter) > 0

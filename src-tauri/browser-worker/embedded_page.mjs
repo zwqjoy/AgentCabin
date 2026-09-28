@@ -57,7 +57,7 @@ export function createEmbeddedPage({ client }) {
       const locator = ${JSON.stringify(locator || {})};
       const selector = ${JSON.stringify(String(selector || ""))};
       const refIdentity = (${createRefIdentityHelpers.toString()})();
-      const documentNonce = window.__agentCabinWorkDocumentNonce ||= crypto.randomUUID();
+      const documentNonce = window.__agentCabinWorkDocumentNonce ||= refIdentity.createDocumentNonce();
       const refNamespace = refIdentity.namespace(${JSON.stringify(page.workerInstanceId || "legacy")}, documentNonce);
       const refNodes = window.__agentCabinWorkRefNodes ||= new WeakMap();
       const visible = (el) => {
@@ -183,7 +183,7 @@ export function createEmbeddedPage({ client }) {
       const safeRef = String(ref).replace(/[^a-zA-Z0-9_-]/g, "");
       const cleared = await evaluateValue(`
         const refIdentity = (${createRefIdentityHelpers.toString()})();
-        const documentNonce = window.__agentCabinWorkDocumentNonce ||= crypto.randomUUID();
+        const documentNonce = window.__agentCabinWorkDocumentNonce ||= refIdentity.createDocumentNonce();
         const refNamespace = refIdentity.namespace(${JSON.stringify(page.workerInstanceId || "legacy")}, documentNonce);
         const refNodes = window.__agentCabinWorkRefNodes ||= new WeakMap();
         if (!refIdentity.isInNamespace(${JSON.stringify(safeRef)}, refNamespace)) return false;
