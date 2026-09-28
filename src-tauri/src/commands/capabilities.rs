@@ -5,12 +5,6 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tauri::State;
-
-use crate::agent::adapter::ActorSessionMap;
-use crate::agent::spawn_locks::SpawnLocks;
-use crate::web_server::broadcaster::BroadcastEmitter;
 
 fn pi_settings_path(scope: &str, cwd: Option<&str>) -> Result<PathBuf, String> {
     match scope {
@@ -983,51 +977,6 @@ pub async fn prepare_browser_runtime(
     emitter: tauri::State<'_, std::sync::Arc<crate::web_server::broadcaster::BroadcastEmitter>>,
 ) -> Result<crate::work::models::WorkBrowserSummary, String> {
     prepare_browser_runtime_impl(emitter.inner().clone()).await
-}
-
-#[tauri::command]
-pub async fn get_browser_session(
-    _run_id: String,
-) -> Result<Option<crate::work::models::BrowserSession>, String> {
-    Ok(None)
-}
-
-#[tauri::command]
-pub async fn list_browser_sessions() -> Result<Vec<crate::work::models::BrowserSession>, String> {
-    Ok(Vec::new())
-}
-
-#[tauri::command]
-pub async fn control_browser_session(
-    _emitter: State<'_, Arc<BroadcastEmitter>>,
-    _sessions: State<'_, ActorSessionMap>,
-    _spawn_locks: State<'_, SpawnLocks>,
-    run_id: String,
-    _action: String,
-) -> Result<crate::work::models::BrowserSession, String> {
-    Ok(crate::work::models::BrowserSession {
-        session_id: format!("bsess-{}", run_id),
-        run_id,
-        mode: "work".to_string(),
-        surface: "managed".to_string(),
-        status: crate::work::models::BrowserSessionStatus::Closed,
-        current_url: None,
-        page_title: None,
-        current_action: None,
-        last_screenshot: None,
-        traces: Vec::new(),
-        last_error: None,
-        is_taking_over: false,
-        created_at: chrono::Utc::now().to_rfc3339(),
-        updated_at: chrono::Utc::now().to_rfc3339(),
-    })
-}
-
-#[tauri::command]
-pub async fn get_browser_traces(
-    _run_id: String,
-) -> Result<Vec<crate::work::models::BrowserTraceEntry>, String> {
-    Ok(Vec::new())
 }
 
 // ── Global MCP Catalog & Binding Commands ──

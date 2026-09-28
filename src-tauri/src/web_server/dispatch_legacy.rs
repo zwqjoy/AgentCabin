@@ -1913,13 +1913,6 @@ pub async fn dispatch_command(
             opt_typed::<Vec<String>>(&params, "allowed_hosts")?,
         )),
         "test_browser" => to_json(caps::test_browser().await?),
-        "list_browser_sessions" => to_json(caps::list_browser_sessions().await?),
-        "get_browser_session" => {
-            to_json(caps::get_browser_session(extract_str(&params, "run_id")?).await?)
-        }
-        "get_browser_traces" => {
-            to_json(caps::get_browser_traces(extract_str(&params, "run_id")?).await?)
-        }
         "get_browser_use_binding" => to_json(caps::get_browser_use_binding()?),
         "prepare_browser_runtime" => {
             to_json(caps::prepare_browser_runtime_impl(state.emitter.clone()).await?)

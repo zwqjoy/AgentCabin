@@ -48,8 +48,6 @@ import type {
   LibraryCategory,
   LibraryItem,
   LibraryItemSummary,
-  BrowserSession,
-  BrowserTraceEntry,
   WorkArtifactRequirement,
   WorkArtifactStorageMode,
   WorkTaskState,
@@ -1187,22 +1185,6 @@ export function checkConfirmationRequired(
 
 export function assignSessionWorkspace(runId: string, workspaceId: string): Promise<TaskRun> {
   return invoke<TaskRun>("work_assign_session_workspace", { runId, workspaceId });
-}
-
-export function getBrowserSession(runId: string): Promise<BrowserSession | null> {
-  return invoke<BrowserSession | null>("get_browser_session", { runId });
-}
-
-export function listBrowserSessions(): Promise<BrowserSession[]> {
-  return invoke<BrowserSession[]>("list_browser_sessions");
-}
-
-export function controlBrowserSession(runId: string, action: string): Promise<BrowserSession> {
-  return invoke<BrowserSession>("control_browser_session", { runId, action });
-}
-
-export function getBrowserTraces(runId: string): Promise<BrowserTraceEntry[]> {
-  return invoke<BrowserTraceEntry[]>("get_browser_traces", { runId });
 }
 
 export function getCapabilityCenterProjection(

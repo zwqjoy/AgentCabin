@@ -44,6 +44,8 @@ pub const PI_COMPUTER_USE_VERSION: &str = "0.5.1";
 pub const PI_COMPUTER_USE_SOURCE: &str = "npm:@injaneity/pi-computer-use@0.5.1";
 
 pub const PI_AGENT_BROWSER_NATIVE_PACKAGE_NAME: &str = "pi-agent-browser-native";
+pub const PI_AGENT_BROWSER_NATIVE_VERSION: &str = "0.6.12";
+pub const PI_AGENT_BROWSER_NATIVE_SOURCE: &str = "npm:pi-agent-browser-native@0.6.12";
 
 pub const SYSTEM_MANAGED_PACKAGE_MESSAGE: &str =
     "这是 AgentCabin Work 系统组件，已由系统管理，请在对应能力设置中启用或停用。";
@@ -122,6 +124,7 @@ pub fn is_system_managed_source(source: &str) -> bool {
         || is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME)
         || is_package_source(source, PI_TODO_PACKAGE_NAME)
         || is_package_source(source, LEGACY_PI_TODO_PACKAGE_NAME)
+        || is_package_source(source, PI_AGENT_BROWSER_NATIVE_PACKAGE_NAME)
 }
 
 pub fn is_pi_interaction_source(source: &str) -> bool {

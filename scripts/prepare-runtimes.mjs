@@ -65,27 +65,42 @@ const installRuntime = (name, spec, overrides = undefined) => {
   run(npm, ["install", "--prefix", prefix, "--omit=dev", "--no-audit", "--no-fund", spec]);
 };
 installRuntime("pi", `${manifest.runtimes.pi.package}@${manifest.runtimes.pi.version}`);
+if (manifest.runtimes.agentBrowser) {
+  installRuntime(
+    "agent-browser",
+    `${manifest.runtimes.agentBrowser.package}@${manifest.runtimes.agentBrowser.version}`,
+  );
+}
 installRuntime("pnpm", `pnpm@${manifest.pnpm.version}`);
 if (process.platform !== "win32") {
-  for (const name of ["pi", "pnpm"]) mkdir(join(out, name, "bin"));
+  for (const name of ["pi", "pnpm", "agent-browser"]) mkdir(join(out, name, "bin"));
   const node = `$(CDPATH= cd -- "$(dirname -- "$0")/../../node/bin" && pwd)/node`;
   writeFileSync(
     join(out, "pi/bin/pi"),
     `#!/bin/sh\nexec "${node}" "$(dirname -- "$0")/../node_modules/${manifest.runtimes.pi.package}/${manifest.runtimes.pi.entrypoint}" "$@"\n`,
   );
+  if (manifest.runtimes.agentBrowser) {
+    writeFileSync(
+      join(out, "agent-browser/bin/agent-browser"),
+      `#!/bin/sh\nexec "${node}" "$(dirname -- "$0")/../node_modules/${manifest.runtimes.agentBrowser.package}/${manifest.runtimes.agentBrowser.entrypoint}" "$@"\n`,
+    );
+    run("chmod", ["+x", join(out, "agent-browser/bin/agent-browser")]);
+  }
   writeFileSync(
     join(out, "pnpm/bin/pnpm"),
     `#!/bin/sh\nexec "${node}" "$(dirname -- "$0")/../node_modules/pnpm/bin/pnpm.cjs" "$@"\n`,
   );
-  run("chmod", [
-    "+x",
-    join(out, "pi/bin/pi"),
-    join(out, "pnpm/bin/pnpm"),
-  ]);
+  run("chmod", ["+x", join(out, "pi/bin/pi"), join(out, "pnpm/bin/pnpm")]);
 } else {
-  for (const [name, pkg, entry] of [
-    ["pi", manifest.runtimes.pi.package, manifest.runtimes.pi.entrypoint],
-  ]) {
+  const runtimeBins = [["pi", manifest.runtimes.pi.package, manifest.runtimes.pi.entrypoint]];
+  if (manifest.runtimes.agentBrowser) {
+    runtimeBins.push([
+      "agent-browser",
+      manifest.runtimes.agentBrowser.package,
+      manifest.runtimes.agentBrowser.entrypoint,
+    ]);
+  }
+  for (const [name, pkg, entry] of runtimeBins) {
     mkdir(join(out, name, "bin"));
     writeFileSync(
       join(out, `${name}/bin/${name}.cmd`),

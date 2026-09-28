@@ -21,6 +21,8 @@ pub struct Version {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Runtimes {
     pub pi: Package,
+    #[serde(default, rename = "agentBrowser")]
+    pub agent_browser: Option<Package>,
 }
 #[derive(Debug, Clone, Deserialize)]
 pub struct Package {
@@ -35,6 +37,7 @@ pub struct RuntimePaths {
     pub node: PathBuf,
     pub pi: PathBuf,
     pub pnpm: PathBuf,
+    pub agent_browser: PathBuf,
 }
 
 /// Directories that may hold the app-pinned Pi extension packages, i.e. the
@@ -123,9 +126,29 @@ pub fn bundled() -> Result<RuntimePaths, String> {
         }),
         pi: bin("pi"),
         pnpm: bin("pnpm"),
+        agent_browser: bin("agent-browser"),
         root,
         manifest,
     })
+}
+pub fn resolve_agent_browser() -> Result<String, String> {
+    if let Ok(paths) = bundled() {
+        let p = &paths.agent_browser;
+        if p.is_file() {
+            return Ok(p.to_string_lossy().into());
+        }
+    }
+    for node_modules in extension_node_modules_dirs() {
+        let candidate = node_modules.join(".bin").join(if cfg!(windows) {
+            "agent-browser.cmd"
+        } else {
+            "agent-browser"
+        });
+        if candidate.is_file() {
+            return Ok(candidate.to_string_lossy().into());
+        }
+    }
+    Err("RuntimeClosureInvalid: missing agent-browser".to_string())
 }
 pub fn resolve_pi() -> Result<String, String> {
     let p = bundled()?.pi;

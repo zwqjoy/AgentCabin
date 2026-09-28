@@ -54,7 +54,7 @@ function findRuntimeRoot() {
       requirePackaged
         ? "Build the packaged Electron app first ('npm run package' or 'npm run electron:package:dir')."
         : "Run 'npm run prepare:runtimes' first."
-    }`
+    }`,
   );
 }
 
@@ -62,7 +62,9 @@ const runtimeRoot = findRuntimeRoot();
 console.log(`\n=== 1. Validating Runtime Closure at: ${runtimeRoot} ===`);
 
 const manifest = JSON.parse(readFileSync(join(runtimeRoot, "runtime-manifest.json"), "utf8"));
-console.log(`Manifest: Pi ${manifest.runtimes.pi.version}, Node ${manifest.node.version}, pnpm ${manifest.pnpm.version}`);
+console.log(
+  `Manifest: Pi ${manifest.runtimes.pi.version}, Node ${manifest.node.version}, pnpm ${manifest.pnpm.version}`,
+);
 
 const isWin = process.platform === "win32";
 const nodeBin = resolve(runtimeRoot, isWin ? "node/node.exe" : "node/bin/node");
@@ -73,15 +75,26 @@ const npmCli = resolve(
   runtimeRoot,
   existsSync(join(runtimeRoot, "node/lib/node_modules/npm/bin/npm-cli.js"))
     ? "node/lib/node_modules/npm/bin/npm-cli.js"
-    : "node/node_modules/npm/bin/npm-cli.js"
+    : "node/node_modules/npm/bin/npm-cli.js",
 );
 
-for (const [name, path] of [
+const agentBrowserBin = resolve(
+  runtimeRoot,
+  isWin ? "agent-browser/bin/agent-browser.cmd" : "agent-browser/bin/agent-browser",
+);
+
+const requiredBinaries = [
   ["node", nodeBin],
   ["npm-cli", npmCli],
   ["pnpm", pnpmBin],
   ["pi", piBin],
-]) {
+];
+
+if (manifest.runtimes?.agentBrowser) {
+  requiredBinaries.push(["agent-browser", agentBrowserBin]);
+}
+
+for (const [name, path] of requiredBinaries) {
   if (!existsSync(path)) {
     throw new Error(`Missing required binary/script: ${name} at ${path}`);
   }
@@ -90,7 +103,9 @@ console.log("✓ All bundled binaries and scripts present");
 
 // Assert no DSH runtime was accidentally packaged
 if (existsSync(join(runtimeRoot, "dsh"))) {
-  throw new Error("RuntimeClosureInvalid: DSH runtime directory found in packaged closure — DSH must not be bundled");
+  throw new Error(
+    "RuntimeClosureInvalid: DSH runtime directory found in packaged closure — DSH must not be bundled",
+  );
 }
 console.log("✓ No DSH runtime present in packaged closure (expected)");
 
@@ -99,6 +114,7 @@ const bundledBinDirs = [
   resolve(runtimeRoot, isWin ? "node" : "node/bin"),
   resolve(runtimeRoot, isWin ? "pnpm/bin" : "pnpm/bin"),
   resolve(runtimeRoot, isWin ? "pi/bin" : "pi/bin"),
+  resolve(runtimeRoot, isWin ? "agent-browser/bin" : "agent-browser/bin"),
 ];
 const augmentedPath = `${bundledBinDirs.join(isWin ? ";" : ":")}${isWin ? ";" : ":"}${process.env.PATH || ""}`;
 
@@ -125,7 +141,7 @@ function runSync(cmd, args, options = {}) {
   if (res.error) throw res.error;
   if (res.status !== 0) {
     throw new Error(
-      `Command failed (${cmd} ${args.join(" ")}): exit ${res.status}\nStdout: ${res.stdout}\nStderr: ${res.stderr}`
+      `Command failed (${cmd} ${args.join(" ")}): exit ${res.status}\nStdout: ${res.stdout}\nStderr: ${res.stderr}`,
     );
   }
   return res;
@@ -199,7 +215,9 @@ async function runPiRpcSmoke(label, extraArgs = [], extraEnv = {}) {
       if (closed) {
         res();
       } else {
-        rej(new Error(`Pi RPC (${label}) exited without valid get_state response. Output: ${output}`));
+        rej(
+          new Error(`Pi RPC (${label}) exited without valid get_state response. Output: ${output}`),
+        );
       }
     });
   });
@@ -241,8 +259,42 @@ async function testPiExtensionInstall() {
   console.log("✓ Pi extension removed successfully");
 }
 
+async function testAgentBrowserSmoke() {
+  console.log("\n=== 4. Testing agent-browser Presence & Version Validation ===");
+  if (!existsSync(agentBrowserBin)) {
+    throw new Error(`agent-browser binary not found at ${agentBrowserBin}`);
+  }
+
+  // 1. Run agent-browser --version via PATH
+  console.log("Checking agent-browser --version via augmented PATH...");
+  const res = runSync(agentBrowserBin, ["--version"]);
+  const versionOutput = res.stdout.trim();
+  console.log(`agent-browser output: ${versionOutput}`);
+
+  const expectedVersion = manifest.runtimes?.agentBrowser?.version || "0.37.0";
+  if (!versionOutput.includes(expectedVersion)) {
+    throw new Error(
+      `agent-browser version mismatch: expected ${expectedVersion}, got ${versionOutput}`,
+    );
+  }
+  console.log(`✓ agent-browser version verified (${expectedVersion})`);
+
+  // 2. Validate pi-agent-browser-native extension pinning (0.6.12)
+  const extPackageJson = resolve(root, "src-tauri/runtime/extensions/package.json");
+  if (existsSync(extPackageJson)) {
+    const extPkg = JSON.parse(readFileSync(extPackageJson, "utf8"));
+    const nativeVersion = extPkg.dependencies?.["pi-agent-browser-native"];
+    if (nativeVersion !== "0.6.12") {
+      throw new Error(
+        `pi-agent-browser-native version in extensions/package.json mismatch: expected exact 0.6.12, got ${nativeVersion}`,
+      );
+    }
+    console.log(`✓ pi-agent-browser-native pinned to exact ${nativeVersion}`);
+  }
+}
+
 async function verifyNoOrphans() {
-  console.log("\n=== 4. Verifying Zero Orphan Processes ===");
+  console.log("\n=== 5. Verifying Zero Orphan Processes ===");
   for (let i = 0; i < 20; i++) {
     let alive = 0;
     for (const pid of trackedPids) {
@@ -281,6 +333,7 @@ async function main() {
       "--no-context-files",
     ]);
     await testPiExtensionInstall();
+    await testAgentBrowserSmoke();
     await verifyNoOrphans();
 
     console.log("\n🎉 ALL PACKAGED RUNTIME CLOSURE SMOKE CHECKS PASSED SUCCESSFULLY!\n");

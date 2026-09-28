@@ -155,11 +155,8 @@ export interface BrowserTraceEntry {
   timestamp: string;
 }
 
-export interface BrowserSession {
-  sessionId: string;
+export interface BrowserActivityView {
   runId: string;
-  mode: string;
-  surface?: "embedded";
   status: BrowserSessionStatus;
   currentUrl?: string | null;
   pageTitle?: string | null;
@@ -167,37 +164,7 @@ export interface BrowserSession {
   lastScreenshot?: string | null;
   traces: BrowserTraceEntry[];
   lastError?: string | null;
-  isTakingOver: boolean;
-  createdAt: string;
   updatedAt: string;
-}
-
-export type BrowserEventType =
-  | "session_started"
-  | "navigation_started"
-  | "navigation_finished"
-  | "read_started"
-  | "read_finished"
-  | "action_requested"
-  | "approval_required"
-  | "action_started"
-  | "action_succeeded"
-  | "action_failed"
-  | "screenshot_created"
-  | "takeover_started"
-  | "takeover_finished"
-  | "session_paused"
-  | "session_resumed"
-  | "session_stopped"
-  | "session_closed";
-
-export interface BrowserEvent {
-  eventType: BrowserEventType;
-  sessionId: string;
-  runId: string;
-  mode: string;
-  payload: Record<string, unknown>;
-  timestamp: string;
 }
 
 export interface WorkResourceSummary {

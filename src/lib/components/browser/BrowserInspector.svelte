@@ -1,16 +1,14 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import { getBrowserSession, getBrowserTraces } from "$lib/api/work";
-  import { getTransport } from "$lib/transport";
+  import { onDestroy } from "svelte";
   import { platform } from "$lib/platform";
-  import { withTimeout } from "$lib/utils/async-utils";
+  import { browserActivityStore } from "$lib/stores/browser-activity-store.svelte";
   import {
     formatBrowserAction,
     formatBrowserStatus,
     filterBrowserTraces,
     sanitizeTraceText,
   } from "$lib/utils/work-browser";
-  import type { BrowserEvent, BrowserSession, BrowserTraceEntry } from "$lib/types/work";
+  import type { BrowserTraceEntry } from "$lib/types/work";
 
   interface Props {
     runId: string;
@@ -30,30 +28,18 @@
     onClose,
   }: Props = $props();
 
-  let session = $state<BrowserSession | null>(null);
-  let traces = $state<BrowserTraceEntry[]>([]);
+  const effectiveRunId = $derived(runId?.trim() || "default-browser");
+  const activity = $derived(browserActivityStore.getActivity(effectiveRunId));
+  const traces = $derived<BrowserTraceEntry[]>(activity?.traces || []);
+
   let loading = $state(true);
   let searchQuery = $state("");
   let previewImageModal = $state<string | null>(null);
   let copiedUrl = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
-  let pollInterval: ReturnType<typeof setInterval> | null = null;
-  let unlistenBrowserEvent: (() => void) | null = null;
-  let stateRequestInFlight = false;
-  let pendingStateRefresh = false;
-  let stateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastLoadedUpdatedAt = "";
-  const BROWSER_STATE_TIMEOUT_MS = 5_000;
-
-  function isTerminalStatus(status: string | undefined): boolean {
-    return status === "completed" || status === "failed" || status === "closed";
-  }
-
   const isTerminal = $derived(readOnly || isTaskCompleted);
-  const effectiveRunId = $derived(runId?.trim() || "default-browser");
-
-  const statusMeta = $derived(formatBrowserStatus(session?.status ?? "idle"));
+  const statusMeta = $derived(formatBrowserStatus(activity?.status ?? "idle"));
 
   const displayStatusMeta = $derived.by(() => {
     if (isTerminal) {
@@ -68,6 +54,18 @@
   });
 
   const filteredTraces = $derived(filterBrowserTraces(traces, searchQuery));
+
+  $effect(() => {
+    const id = effectiveRunId;
+    if (!id) {
+      loading = false;
+      return;
+    }
+    loading = !activity;
+    void browserActivityStore.loadActivity(id).finally(() => {
+      loading = false;
+    });
+  });
 
   function traceStatusMeta(status: string): { label: string; className: string } {
     switch (status) {
@@ -99,69 +97,10 @@
     }
   }
 
-  function stopPolling() {
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      pollInterval = null;
-    }
-  }
-
-  function scheduleStateRefresh() {
-    if (stateRefreshTimer) clearTimeout(stateRefreshTimer);
-    stateRefreshTimer = setTimeout(() => {
-      stateRefreshTimer = null;
-      void loadState();
-    }, 80);
-  }
-
-  async function loadState() {
-    const id = effectiveRunId;
-    if (!id) {
-      loading = false;
-      return;
-    }
-    if (stateRequestInFlight) {
-      pendingStateRefresh = true;
-      return;
-    }
-    stateRequestInFlight = true;
-    try {
-      const sess = await withTimeout(
-        getBrowserSession(id),
-        BROWSER_STATE_TIMEOUT_MS,
-        "受控浏览器状态读取超时",
-      );
-      if (sess) {
-        if (sess.updatedAt !== lastLoadedUpdatedAt) {
-          lastLoadedUpdatedAt = sess.updatedAt;
-          session = sess;
-          traces = sess.traces || [];
-        }
-        if (isTerminalStatus(sess.status)) stopPolling();
-      } else {
-        const traceList = await withTimeout(
-          getBrowserTraces(id),
-          BROWSER_STATE_TIMEOUT_MS,
-          "浏览器操作记录读取超时",
-        );
-        traces = traceList;
-      }
-    } catch {
-      // ignore
-    } finally {
-      stateRequestInFlight = false;
-      loading = false;
-      if (pendingStateRefresh) {
-        pendingStateRefresh = false;
-        scheduleStateRefresh();
-      }
-    }
-  }
-
   async function copyCurrentUrl() {
-    if (!session?.currentUrl) return;
+    if (!activity?.currentUrl) return;
     try {
-      await navigator.clipboard.writeText(session.currentUrl);
+      await navigator.clipboard.writeText(activity.currentUrl);
       copiedUrl = true;
       if (copyTimer) clearTimeout(copyTimer);
       copyTimer = setTimeout(() => {
@@ -173,48 +112,16 @@
   }
 
   async function openInExternalBrowser() {
-    if (!session?.currentUrl) return;
+    if (!activity?.currentUrl) return;
     try {
-      await platform.shell.openExternal(session.currentUrl);
+      await platform.shell.openExternal(activity.currentUrl);
     } catch (e) {
       console.warn("Failed to open external browser:", e);
     }
   }
 
-  onMount(() => {
-    const transport = getTransport();
-    let destroyed = false;
-    const id = effectiveRunId;
-    transport.subscribeRun(id);
-    void transport
-      .listen<BrowserEvent>("browser-event", (event) => {
-        if (event.runId === effectiveRunId) scheduleStateRefresh();
-      })
-      .then((unlisten) => {
-        if (destroyed) {
-          unlisten();
-        } else {
-          unlistenBrowserEvent = unlisten;
-        }
-      });
-    pollInterval = setInterval(() => {
-      void loadState();
-    }, 15000);
-    void loadState();
-
-    return () => {
-      destroyed = true;
-      transport.unsubscribeRun(id);
-    };
-  });
-
   onDestroy(() => {
-    stopPolling();
-    if (stateRefreshTimer) clearTimeout(stateRefreshTimer);
-    stateRefreshTimer = null;
     if (copyTimer) clearTimeout(copyTimer);
-    unlistenBrowserEvent?.();
-    unlistenBrowserEvent = null;
   });
 </script>
 
@@ -230,16 +137,16 @@
       </div>
 
       <!-- Current URL display with external actions -->
-      {#if session?.currentUrl}
+      {#if activity?.currentUrl}
         <div
           class="flex items-center gap-1.5 min-w-0 flex-1 bg-muted/40 border border-border/70 rounded-md px-2 py-1"
         >
           <span class="text-muted-foreground text-[11px] shrink-0">🔒</span>
           <span
             class="font-mono text-[11px] text-foreground truncate select-all flex-1"
-            title={session.currentUrl}
+            title={activity.currentUrl}
           >
-            {session.currentUrl}
+            {activity.currentUrl}
           </span>
           <button
             type="button"
@@ -298,14 +205,14 @@
   </div>
 
   <!-- Agent Active Action Banner -->
-  {#if session?.currentAction && session.status === "running"}
+  {#if activity?.currentAction && activity.status === "running"}
     <div
       class="flex shrink-0 items-center gap-2 border-b border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs"
     >
       <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-blue-500"></span>
       <span class="font-medium text-blue-700 dark:text-blue-300">Agent 正在操作</span>
       <span class="min-w-0 truncate text-foreground"
-        >{sanitizeTraceText(session.currentAction)}</span
+        >{sanitizeTraceText(activity.currentAction)}</span
       >
     </div>
   {/if}
@@ -314,23 +221,23 @@
   <div
     class="relative min-h-0 flex-1 overflow-hidden bg-white dark:bg-zinc-900 flex flex-col items-center justify-center p-4"
   >
-    {#if loading && !session}
+    {#if loading && !activity}
       <div
         class="flex flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"
       >
         <span class="text-2xl animate-pulse">🌐</span>
         <span>正在读取浏览器状态…</span>
       </div>
-    {:else if session?.lastScreenshot}
+    {:else if activity?.lastScreenshot}
       <div class="relative flex h-full w-full items-center justify-center overflow-auto group">
         <button
           type="button"
           class="relative flex h-full w-full items-center justify-center cursor-zoom-in"
-          onclick={() => (previewImageModal = session?.lastScreenshot ?? null)}
+          onclick={() => (previewImageModal = activity?.lastScreenshot ?? null)}
           aria-label="点击放大查看页面快照"
         >
           <img
-            src={session.lastScreenshot}
+            src={activity.lastScreenshot}
             alt="受控浏览器最新截图"
             class="max-h-full max-w-full rounded-md object-contain shadow-sm border border-border/40"
           />
@@ -350,7 +257,7 @@
         <p class="text-xs leading-relaxed text-muted-foreground">
           由 Pi 浏览器扩展负责自动化操作。页面快照与操作轨迹将在此实时更新。
         </p>
-        {#if session?.status === "running"}
+        {#if activity?.status === "running"}
           <span
             class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
           >
