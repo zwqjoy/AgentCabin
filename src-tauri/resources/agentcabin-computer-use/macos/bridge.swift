@@ -59,6 +59,14 @@ final class AXRefStore {
 		defer { lock.unlock() }
 		return snapshots[ref]
 	}
+
+	func advanceSnapshotWithinBatch(for ref: String, to snapshot: AXElementIdentitySnapshot) -> Bool {
+		lock.lock()
+		defer { lock.unlock() }
+		guard let previous = snapshots[ref], previous.canAdvanceWithinBatch(to: snapshot) else { return false }
+		snapshots[ref] = snapshot
+		return true
+	}
 }
 
 private struct CGWindowCandidate {
@@ -1906,7 +1914,7 @@ final class Bridge {
 		return payloadNode(element: element, record: record)
 	}
 
-	private func act(_ request: [String: Any]) throws -> [String: Any] {
+	private func act(_ request: [String: Any], allowBatchIdentityRefresh: Bool = false) throws -> [String: Any] {
 		let lookId = try stringArg(request, "lookId")
 		guard let record = lookRecord(for: lookId) else {
 			throw BridgeFailure(message: "Look id '\(lookId)' is no longer available", code: "stale_look")
@@ -1941,6 +1949,18 @@ final class Bridge {
 		let beforeValue: String?
 		let beforeSelected: String?
 		func finish(_ response: [String: Any]) -> [String: Any] {
+			if allowBatchIdentityRefresh,
+				(response["outcome"] as? String) == "worked",
+				let ref = target["ref"] as? String,
+				let element,
+				currentProcessIdentity(pid: pid) == record.processIdentity,
+				let window = windowElement(pid: pid, windowId: record.windowId),
+				pidForElement(element) == pid,
+				isElement(element, descendantOf: window),
+				let refreshed = liveElementIdentitySnapshot(element, pid: pid, processIdentity: record.processIdentity, windowId: record.windowId)
+			{
+				_ = refStore.advanceSnapshotWithinBatch(for: ref, to: refreshed)
+			}
 			if deferRootDelta { return response }
 			return attachRootDelta(to: response, before: beforeRootSnapshot, beforeFrontmostPid: beforeFrontmostPid, pid: pid, eventsLive: eventsLive, eventCursor: eventCursor, beforeCgSignature: beforeCgSignature)
 		}
@@ -2271,7 +2291,7 @@ final class Bridge {
 			var deferred = action
 			deferred["deferRootDelta"] = true
 			do {
-				let step = try act(deferred)
+				let step = try act(deferred, allowBatchIdentityRefresh: true)
 				steps.append(step)
 				if (step["outcome"] as? String) == "didnt" { stoppedAt = index; break }
 			} catch let failure as BridgeFailure {

@@ -36,6 +36,21 @@ final class AXElementIdentityTests: XCTestCase {
 		XCTAssertFalse(observed.matchesCachedElement(stillReadableButChanged))
 	}
 
+	func testSuccessfulBatchMutationCanAdvanceValueWithoutChangingControlIdentity() {
+		let before = evidence(role: "AXTextField", semantic: "textfield ", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let after = evidence(role: "AXTextField", semantic: "textfield hello", traits: ["setValue", "focus"], parent: "AXGroup form")
+		XCTAssertFalse(before.matchesCachedElement(after))
+		XCTAssertTrue(before.canAdvanceWithinBatch(to: after))
+	}
+
+	func testBatchIdentityCannotAdvanceAcrossWindowOrTopologyChange() {
+		let before = evidence(role: "AXTextField", semantic: "textfield ", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let movedWindow = evidence(windowId: 8, role: "AXTextField", semantic: "textfield hello", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let changedParent = evidence(role: "AXTextField", semantic: "textfield hello", traits: ["setValue", "focus"], parent: "AXGroup other")
+		XCTAssertFalse(before.canAdvanceWithinBatch(to: movedWindow))
+		XCTAssertFalse(before.canAdvanceWithinBatch(to: changedParent))
+	}
+
 	func testUniqueStrongIdentifierAllowsSafeRefind() {
 		let observed = evidence(identifier: "delete-file-a")
 		let candidates = [

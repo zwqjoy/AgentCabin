@@ -22,6 +22,15 @@ struct AXElementIdentitySnapshot {
 			&& parentSemanticFingerprint == current.parentSemanticFingerprint
 	}
 
+	func canAdvanceWithinBatch(to current: AXElementIdentitySnapshot) -> Bool {
+		contextMatches(current)
+			&& role == current.role
+			&& subrole == current.subrole
+			&& identifier == current.identifier
+			&& actionableTraits == current.actionableTraits
+			&& parentSemanticFingerprint == current.parentSemanticFingerprint
+	}
+
 	func matchesRefindCandidate(_ candidate: AXElementIdentitySnapshot) -> Bool {
 		guard contextMatches(candidate), role == candidate.role, subrole == candidate.subrole else { return false }
 		if !identifier.isEmpty {
