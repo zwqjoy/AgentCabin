@@ -20,6 +20,14 @@ export function isInteractiveBrowserToolName(toolName: string | null | undefined
     .some((name) => /(?:^|_)browser_[a-z0-9]+(?:_[a-z0-9]+)*$/.test(name));
 }
 
+/** Resolve the run identity shared by Browser relay registration and execution. */
+export function getWorkBrowserRunId(
+  workRunId: string | null | undefined,
+  sessionRunId: string | null | undefined,
+): string {
+  return workRunId?.trim() || sessionRunId?.trim() || "";
+}
+
 export function getWorkBrowserInspectorAutoOpen(
   runId: string,
   activityHint: string,

@@ -23,7 +23,7 @@
   import WorkAutomationCenter from "$lib/components/work/WorkAutomationCenter.svelte";
   import WorkMaterialsCenter from "$lib/components/work/WorkMaterialsCenter.svelte";
   import ArchivedChatsView from "$lib/components/ArchivedChatsView.svelte";
-  import { getWorkBrowserInspectorAutoOpen } from "$lib/utils/work-browser";
+  import { getWorkBrowserInspectorAutoOpen, getWorkBrowserRunId } from "$lib/utils/work-browser";
   import type { SessionInfoData } from "$lib/types";
   import type {
     InboxItem,
@@ -72,7 +72,7 @@
   // Artifacts shown next to an active conversation belong to that conversation's
   // run. A brand-new conversation has no run yet, so it starts with none.
   let conversationRunId = $derived(selectedRunId || sessionInfo?.runId || "");
-  let inspectorRunId = $derived(sessionInfo?.runId ?? progressView?.workRunId ?? "");
+  let inspectorRunId = $derived(getWorkBrowserRunId(progressView?.workRunId, sessionInfo?.runId));
   let browserActivitySeen = $derived(
     Boolean(inspectorRunId && browserActivityRunId === inspectorRunId),
   );

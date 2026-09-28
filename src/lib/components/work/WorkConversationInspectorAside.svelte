@@ -14,7 +14,7 @@
   import FilePreviewPane from "$lib/components/FilePreviewPane.svelte";
   import BrowserInspector from "$lib/components/browser/BrowserInspector.svelte";
   import { resolveWorkPreviewPath } from "$lib/api/work";
-  import { isInteractiveBrowserToolName } from "$lib/utils/work-browser";
+  import { getWorkBrowserRunId, isInteractiveBrowserToolName } from "$lib/utils/work-browser";
 
   type WorkAsideTab = "tasks" | "browser" | "files";
 
@@ -84,7 +84,7 @@
   // the parent Pi/session run. Bind the visible WebContentsView to the same ID
   // used by ToolPipeline or the agent can control one page while this panel
   // attaches a blank surface for the parent session.
-  const browserRunId = $derived(progressView?.workRunId ?? sessionInfo?.runId ?? "");
+  const browserRunId = $derived(getWorkBrowserRunId(progressView?.workRunId, sessionInfo?.runId));
   let autoOpenedBrowserRunId = $state("");
   let resolvedFilePath = $state("");
   let filePreviewError = $state("");

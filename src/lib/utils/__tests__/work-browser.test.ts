@@ -3,6 +3,7 @@ import {
   filterBrowserTraces,
   formatBrowserAction,
   formatBrowserStatus,
+  getWorkBrowserRunId,
   getWorkBrowserInspectorAutoOpen,
   isInteractiveBrowserToolName,
   isBrowserToolName,
@@ -64,6 +65,12 @@ describe("work-browser utility", () => {
       tab: "browser",
       shouldOpen: true,
     });
+  });
+
+  it("uses the WorkRun identity before the parent session identity", () => {
+    expect(getWorkBrowserRunId("work-run-2", "session-1")).toBe("work-run-2");
+    expect(getWorkBrowserRunId("  ", "session-1")).toBe("session-1");
+    expect(getWorkBrowserRunId(undefined, undefined)).toBe("");
   });
 
   it("does not auto-open the inspector again for the same run", () => {
