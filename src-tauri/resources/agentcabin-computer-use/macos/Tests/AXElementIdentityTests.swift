@@ -12,6 +12,7 @@ final class AXElementIdentityTests: XCTestCase {
 		subrole: String = "",
 		identifier: String = "",
 		semantic: String = "button delete",
+		stableSemantic: String? = nil,
 		traits: Set<String> = ["AXPress"],
 		parent: String = "AXRow file a",
 		x: CGFloat = 10
@@ -24,6 +25,7 @@ final class AXElementIdentityTests: XCTestCase {
 			subrole: subrole,
 			identifier: identifier,
 			semanticFingerprint: semantic,
+			stableSemanticFingerprint: stableSemantic ?? semantic,
 			actionableTraits: traits,
 			parentSemanticFingerprint: parent,
 			rect: CGRect(x: x, y: 20, width: 30, height: 20)
@@ -37,18 +39,35 @@ final class AXElementIdentityTests: XCTestCase {
 	}
 
 	func testSuccessfulBatchMutationCanAdvanceValueWithoutChangingControlIdentity() {
-		let before = evidence(role: "AXTextField", semantic: "textfield ", traits: ["setValue", "focus"], parent: "AXGroup form")
-		let after = evidence(role: "AXTextField", semantic: "textfield hello", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let before = evidence(role: "AXTextField", semantic: "textfield ", stableSemantic: "textfield email", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let after = evidence(role: "AXTextField", semantic: "textfield hello", stableSemantic: "textfield email", traits: ["setValue", "focus"], parent: "AXGroup form")
 		XCTAssertFalse(before.matchesCachedElement(after))
-		XCTAssertTrue(before.canAdvanceWithinBatch(to: after))
+		XCTAssertTrue(before.canAdvanceWithinBatch(to: after, afterAction: "setText"))
+	}
+
+	func testClickCannotAdvanceAButtonFromDeleteToUndo() {
+		let before = evidence(semantic: "button delete", stableSemantic: "button delete")
+		let after = evidence(semantic: "button undo", stableSemantic: "button undo")
+		XCTAssertFalse(before.matchesCachedElement(after))
+		XCTAssertFalse(before.canAdvanceWithinBatch(to: after, afterAction: "click"))
+
+		let fieldBefore = evidence(role: "AXTextField", semantic: "textfield old value", stableSemantic: "textfield email", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let fieldAfter = evidence(role: "AXTextField", semantic: "textfield new value", stableSemantic: "textfield email", traits: ["setValue", "focus"], parent: "AXGroup form")
+		XCTAssertFalse(fieldBefore.canAdvanceWithinBatch(to: fieldAfter, afterAction: "click"))
+	}
+
+	func testSetTextCannotAdvanceWhenStableControlSemanticsChange() {
+		let before = evidence(role: "AXTextField", semantic: "textfield name", stableSemantic: "textfield name", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let after = evidence(role: "AXTextField", semantic: "textfield changed", stableSemantic: "textfield changed", traits: ["setValue", "focus"], parent: "AXGroup form")
+		XCTAssertFalse(before.canAdvanceWithinBatch(to: after, afterAction: "setText"))
 	}
 
 	func testBatchIdentityCannotAdvanceAcrossWindowOrTopologyChange() {
-		let before = evidence(role: "AXTextField", semantic: "textfield ", traits: ["setValue", "focus"], parent: "AXGroup form")
-		let movedWindow = evidence(windowId: 8, role: "AXTextField", semantic: "textfield hello", traits: ["setValue", "focus"], parent: "AXGroup form")
-		let changedParent = evidence(role: "AXTextField", semantic: "textfield hello", traits: ["setValue", "focus"], parent: "AXGroup other")
-		XCTAssertFalse(before.canAdvanceWithinBatch(to: movedWindow))
-		XCTAssertFalse(before.canAdvanceWithinBatch(to: changedParent))
+		let before = evidence(role: "AXTextField", semantic: "textfield ", stableSemantic: "textfield email", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let movedWindow = evidence(windowId: 8, role: "AXTextField", semantic: "textfield hello", stableSemantic: "textfield email", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let changedParent = evidence(role: "AXTextField", semantic: "textfield hello", stableSemantic: "textfield email", traits: ["setValue", "focus"], parent: "AXGroup other")
+		XCTAssertFalse(before.canAdvanceWithinBatch(to: movedWindow, afterAction: "setText"))
+		XCTAssertFalse(before.canAdvanceWithinBatch(to: changedParent, afterAction: "setText"))
 	}
 
 	func testUniqueStrongIdentifierAllowsSafeRefind() {

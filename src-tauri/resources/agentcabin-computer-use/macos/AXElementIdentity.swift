@@ -8,6 +8,7 @@ struct AXElementIdentitySnapshot {
 	let subrole: String
 	let identifier: String
 	let semanticFingerprint: String
+	let stableSemanticFingerprint: String
 	let actionableTraits: Set<String>
 	let parentSemanticFingerprint: String
 	let rect: CGRect
@@ -22,8 +23,9 @@ struct AXElementIdentitySnapshot {
 			&& parentSemanticFingerprint == current.parentSemanticFingerprint
 	}
 
-	func canAdvanceWithinBatch(to current: AXElementIdentitySnapshot) -> Bool {
-		contextMatches(current)
+	func canAdvanceWithinBatch(to current: AXElementIdentitySnapshot, afterAction action: String) -> Bool {
+		guard action == "setText", stableSemanticFingerprint == current.stableSemanticFingerprint else { return false }
+		return contextMatches(current)
 			&& role == current.role
 			&& subrole == current.subrole
 			&& identifier == current.identifier

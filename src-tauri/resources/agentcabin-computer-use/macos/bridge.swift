@@ -60,10 +60,10 @@ final class AXRefStore {
 		return snapshots[ref]
 	}
 
-	func advanceSnapshotWithinBatch(for ref: String, to snapshot: AXElementIdentitySnapshot) -> Bool {
+	func advanceSnapshotWithinBatch(for ref: String, to snapshot: AXElementIdentitySnapshot, afterAction action: String) -> Bool {
 		lock.lock()
 		defer { lock.unlock() }
-		guard let previous = snapshots[ref], previous.canAdvanceWithinBatch(to: snapshot) else { return false }
+		guard let previous = snapshots[ref], previous.canAdvanceWithinBatch(to: snapshot, afterAction: action) else { return false }
 		snapshots[ref] = snapshot
 		return true
 	}
@@ -1959,7 +1959,7 @@ final class Bridge {
 				isElement(element, descendantOf: window),
 				let refreshed = liveElementIdentitySnapshot(element, pid: pid, processIdentity: record.processIdentity, windowId: record.windowId)
 			{
-				_ = refStore.advanceSnapshotWithinBatch(for: ref, to: refreshed)
+				_ = refStore.advanceSnapshotWithinBatch(for: ref, to: refreshed, afterAction: action)
 			}
 			if deferRootDelta { return response }
 			return attachRootDelta(to: response, before: beforeRootSnapshot, beforeFrontmostPid: beforeFrontmostPid, pid: pid, eventsLive: eventsLive, eventCursor: eventCursor, beforeCgSignature: beforeCgSignature)
@@ -2740,6 +2740,7 @@ final class Bridge {
 		if canSetValue { traits.insert("setValue") }
 		if canFocus { traits.insert("focus") }
 		let semantic = normalizedLabel([role, subrole, title, description, value].joined(separator: " "))
+		let stableSemantic = normalizedLabel([role, subrole, title, description].joined(separator: " "))
 		return AXElementIdentitySnapshot(
 			pid: pid,
 			processIdentity: processIdentity,
@@ -2748,6 +2749,7 @@ final class Bridge {
 			subrole: subrole,
 			identifier: stringAttribute(element, attribute: "AXIdentifier" as CFString) ?? "",
 			semanticFingerprint: semantic,
+			stableSemanticFingerprint: stableSemantic,
 			actionableTraits: traits,
 			parentSemanticFingerprint: parentSemanticFingerprint(element),
 			rect: rect
