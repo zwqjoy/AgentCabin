@@ -334,6 +334,9 @@ test("action observations refresh Browser refs, revision, worker, document, and 
     const select = tools.get("browser_select_option");
     const pressKey = tools.get("browser_press_key");
     await snapshot.execute("snapshot-A", {});
+    await click.execute("click-unknown-ref", { ref: "not-in-latest-snapshot" });
+    assert.equal(calls.at(-1).args.targetIdentity, undefined);
+    assert.equal(calls.at(-1).args.locator, undefined);
 
     await click.execute("click-to-B", { ref: "e1" });
     await click.execute("click-in-B", { ref: "e2" });
@@ -348,7 +351,10 @@ test("action observations refresh Browser refs, revision, worker, document, and 
     await click.execute("click-added", { ref: "e4" });
     assert.deepEqual(calls.at(-1).args.locator, { role: "status", name: "Added" });
     await click.execute("click-removed", { ref: "e3" });
-    assert.equal(calls.at(-1).args.locator, undefined);
+    assert.deepEqual(calls.at(-1).args.targetIdentity, {
+      workerInstanceId: "worker-1", documentId: "document-B", revision: 2, targetId: "tab-1",
+    });
+    assert.deepEqual(calls.at(-1).args.locator, { role: "button", name: "Remove me" });
 
     await select.execute("select-unchanged", { ref: "e2", value: "yes" });
     await click.execute("click-after-unchanged", { ref: "e2" });
@@ -360,16 +366,20 @@ test("action observations refresh Browser refs, revision, worker, document, and 
     await pressKey.execute("press-key-worker-change", { key: "Enter" });
     await click.execute("click-old-worker-ref", { ref: "e2" });
     assert.deepEqual(calls.at(-1).args.targetIdentity, {
-      workerInstanceId: "worker-2", documentId: "document-B", revision: 1, targetId: "tab-1",
+      workerInstanceId: "worker-1", documentId: "document-B", revision: 4, targetId: "tab-1",
     });
-    assert.equal(calls.at(-1).args.locator, undefined);
+    assert.deepEqual(calls.at(-1).args.locator, { role: "button", name: "Updated after delta" });
 
     await click.execute("click-to-tab-2", { ref: "e5" });
     await click.execute("click-old-tab-ref", { ref: "e5" });
     assert.deepEqual(calls.at(-1).args.targetIdentity, {
+      workerInstanceId: "worker-2", documentId: "document-B", revision: 1, targetId: "tab-1",
+    });
+    assert.deepEqual(calls.at(-1).args.locator, { role: "button", name: "Worker 2" });
+    await click.execute("click-new-tab-ref", { ref: "e6" });
+    assert.deepEqual(calls.at(-1).args.targetIdentity, {
       workerInstanceId: "worker-2", documentId: "document-B", revision: 1, targetId: "tab-2",
     });
-    assert.equal(calls.at(-1).args.locator, undefined);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

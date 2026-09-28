@@ -1,4 +1,5 @@
 import { semanticRole } from "./semantic_role.mjs";
+import { createRefIdentityHelpers } from "./ref_identity.mjs";
 
 /**
  * Browser Worker semantic snapshots. Refs remain attached to their DOM node;
@@ -57,8 +58,12 @@ export async function generatePageSnapshot(page, options = {}) {
   const url = page.url();
 
   const snapshotData = await page
-    .evaluate((roleSource) => {
+    .evaluate(({ roleSource, refIdentitySource, workerId }) => {
       const inferRole = new Function(`return (${roleSource});`)();
+      const refIdentity = new Function(`return (${refIdentitySource})();`)();
+      const documentNonce = window.__agentCabinWorkDocumentNonce ||= crypto.randomUUID();
+      const refNamespace = refIdentity.namespace(workerId, documentNonce);
+      const refNodes = window.__agentCabinWorkRefNodes ||= new WeakMap();
       let idCounter = Number.isSafeInteger(Number(window.__agentCabinWorkRefCounter)) && Number(window.__agentCabinWorkRefCounter) > 0
         ? Number(window.__agentCabinWorkRefCounter)
         : 1;
@@ -69,8 +74,9 @@ export async function generatePageSnapshot(page, options = {}) {
         "button", "link", "textbox", "searchbox", "checkbox", "radio", "combobox", "tab", "menuitem", "switch", "slider",
       ]);
       function nextRef() {
-        while (document.querySelector(`[data-work-ref="e${idCounter}"]`)) idCounter++;
-        return `e${idCounter++}`;
+        let ref = refIdentity.makeRef(refNamespace, idCounter++);
+        while (document.querySelector(`[data-work-ref="${ref}"]`)) ref = refIdentity.makeRef(refNamespace, idCounter++);
+        return ref;
       }
 
       function isElementVisible(el) {
@@ -107,9 +113,12 @@ export async function generatePageSnapshot(page, options = {}) {
           const isInteractive = interactiveTags.has(tag) || interactiveRoles.has(role) || el.hasAttribute("onclick") || el.getAttribute("tabindex") === "0" || el.isContentEditable;
           if (isInteractive && isElementVisible(el)) {
             const taggedRef = el.getAttribute("data-work-ref");
-            const existingRef = /^e\d+$/.test(taggedRef || "") ? taggedRef : "";
+            const existingRef = refIdentity.isInNamespace(taggedRef, refNamespace) && refNodes.get(el) === taggedRef
+              ? taggedRef
+              : "";
             const refId = existingRef || nextRef();
             if (!existingRef) el.setAttribute("data-work-ref", refId);
+            refNodes.set(el, refId);
             const label = getElementLabel(el);
             const value = el.value !== undefined ? String(el.value) : undefined;
             const finalRole = inferRole(tag, el.type, role);
@@ -146,7 +155,11 @@ export async function generatePageSnapshot(page, options = {}) {
       traverse(document.body, 0);
       window.__agentCabinWorkRefCounter = idCounter;
       return { tree: lines.join("\n"), refs, documentKey: String(performance.timeOrigin) };
-    }, semanticRole.toString())
+    }, {
+      roleSource: semanticRole.toString(),
+      refIdentitySource: createRefIdentityHelpers.toString(),
+      workerId: workerInstanceId,
+    })
     .catch((err) => ({ tree: `(Failed to capture DOM snapshot: ${err?.message})`, refs: {}, documentKey: "unavailable" }));
 
   let pageState = snapshotsByPage.get(page);

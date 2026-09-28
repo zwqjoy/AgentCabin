@@ -190,6 +190,10 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   const waitForApproval = options.waitForWorkInboxResolution;
   const callRuntime = options.callBrowserRuntime || callBrowserRuntime;
   let latestSnapshot;
+  const refProvenance = new Map();
+  const sameTargetIdentity = (left, right) => left?.workerInstanceId === right?.workerInstanceId
+    && left?.documentId === right?.documentId
+    && left?.targetId === right?.targetId;
   const ingestSnapshotObservation = (observation) => {
     if (!observation?.workerInstanceId || !observation?.documentId || observation.revision === undefined) return;
     const sameIdentity = latestSnapshot?.workerInstanceId === observation.workerInstanceId
@@ -214,6 +218,18 @@ export function registerBrowserOperatorTools(pi, options = {}) {
     }
 
     latestSnapshot = { ...(sameIdentity ? latestSnapshot : {}), ...observation, refs };
+    const identity = {
+      workerInstanceId: observation.workerInstanceId,
+      documentId: observation.documentId,
+      revision: observation.revision,
+      ...(observation.targetId ? { targetId: observation.targetId } : {}),
+    };
+    for (const [ref, item] of Object.entries(refs)) {
+      const previous = refProvenance.get(ref);
+      if (!previous || sameTargetIdentity(previous.identity, identity)) {
+        refProvenance.set(ref, { identity, item });
+      }
+    }
   };
   const ingestActionObservation = (parsed) => {
     if (parsed?.observation && typeof parsed.observation === "object") {
@@ -223,18 +239,22 @@ export function registerBrowserOperatorTools(pi, options = {}) {
   const carrySnapshotIdentity = (params = {}) => {
     if (!latestSnapshot?.workerInstanceId) return params;
     const ref = String(params.ref || "").replace(/^@/, "");
-    const item = latestSnapshot.refs?.[ref];
-    const locator = params.locator || (item ? { ...(item.role ? { role: item.role } : {}), ...(item.name ? { name: item.name } : {}) } : undefined);
-    const identity = params.targetIdentity || {
+    const provenance = ref ? refProvenance.get(ref) : undefined;
+    // A ref unknown to the observed snapshot must never acquire its identity
+    // merely because a newer snapshot is available.
+    if (ref && !params.targetIdentity && !provenance) return params;
+    const latestIdentity = {
       workerInstanceId: latestSnapshot.workerInstanceId,
       documentId: latestSnapshot.documentId,
       revision: latestSnapshot.revision,
       ...(latestSnapshot.targetId ? { targetId: latestSnapshot.targetId } : {}),
     };
-    const identityMatchesSnapshot = identity.workerInstanceId === latestSnapshot.workerInstanceId
-      && identity.documentId === latestSnapshot.documentId
-      && (!identity.targetId || identity.targetId === latestSnapshot.targetId);
-    return { ...params, targetIdentity: identity, ...(locator && identityMatchesSnapshot ? { locator } : {}) };
+    const identity = params.targetIdentity || provenance?.identity || latestIdentity;
+    const matchesProvenance = provenance && sameTargetIdentity(identity, provenance.identity);
+    const matchesLatest = sameTargetIdentity(identity, latestIdentity);
+    const item = matchesProvenance ? provenance.item : matchesLatest ? latestSnapshot.refs?.[ref] : undefined;
+    const locator = params.locator || (item ? { ...(item.role ? { role: item.role } : {}), ...(item.name ? { name: item.name } : {}) } : undefined);
+    return { ...params, targetIdentity: identity, ...(locator ? { locator } : {}) };
   };
 
   if (typeof callPipeline !== "function" && typeof callRuntime !== "function") {

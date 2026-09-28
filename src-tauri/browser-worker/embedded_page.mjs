@@ -1,4 +1,5 @@
 import { semanticRole } from "./semantic_role.mjs";
+import { createRefIdentityHelpers } from "./ref_identity.mjs";
 
 /**
  * Page adapter backed by the raw embedded CDP client.
@@ -55,6 +56,10 @@ export function createEmbeddedPage({ client }) {
       const ref = ${JSON.stringify(String(ref || "").replace(/[^a-zA-Z0-9_-]/g, ""))};
       const locator = ${JSON.stringify(locator || {})};
       const selector = ${JSON.stringify(String(selector || ""))};
+      const refIdentity = (${createRefIdentityHelpers.toString()})();
+      const documentNonce = window.__agentCabinWorkDocumentNonce ||= crypto.randomUUID();
+      const refNamespace = refIdentity.namespace(${JSON.stringify(page.workerInstanceId || "legacy")}, documentNonce);
+      const refNodes = window.__agentCabinWorkRefNodes ||= new WeakMap();
       const visible = (el) => {
         if (!el?.isConnected) return false;
         const style = getComputedStyle(el);
@@ -65,21 +70,22 @@ export function createEmbeddedPage({ client }) {
       const nameOf = (el) => el.getAttribute("aria-label") || (el.getAttribute("aria-labelledby") || "").split(/\\s+/).map((id) => document.getElementById(id)?.innerText || "").join(" ").trim() || el.labels?.[0]?.innerText?.trim() || el.getAttribute("placeholder") || el.getAttribute("title") || el.innerText?.trim() || el.textContent?.trim() || "";
       const describe = (el) => {
         let ref = el.getAttribute("data-work-ref");
-        if (!/^e\\d+$/.test(ref || "")) {
+        if (!refIdentity.isInNamespace(ref, refNamespace) || refNodes.get(el) !== ref) {
           let next = Number.isSafeInteger(Number(window.__agentCabinWorkRefCounter)) && Number(window.__agentCabinWorkRefCounter) > 0
             ? Number(window.__agentCabinWorkRefCounter)
             : 1;
-          while (document.querySelector('[data-work-ref="e' + next + '"]')) next++;
-          ref = 'e' + next;
+          ref = refIdentity.makeRef(refNamespace, next);
+          while (document.querySelector('[data-work-ref="' + ref + '"]')) ref = refIdentity.makeRef(refNamespace, ++next);
           window.__agentCabinWorkRefCounter = next + 1;
           el.setAttribute("data-work-ref", ref);
         }
+        refNodes.set(el, ref);
         const rect = el.getBoundingClientRect();
         return { ref, role: roleOf(el), name: nameOf(el).slice(0, 80), disabled: Boolean(el.disabled), readOnly: Boolean(el.readOnly), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
       };
-      if (ref) {
+      if (ref && refIdentity.isInNamespace(ref, refNamespace)) {
         const el = document.querySelector('[data-work-ref="' + ref + '"]');
-        if (el) {
+        if (el && refNodes.get(el) === ref) {
           if (!visible(el)) return { error: { code: 'target_not_visible', message: 'The referenced element is no longer visible.' } };
           if (el.disabled) return { error: { code: 'target_disabled', message: 'The referenced element is disabled.' } };
           return { element: describe(el), source: 'ref' };
@@ -176,8 +182,13 @@ export function createEmbeddedPage({ client }) {
     async clearRef(ref) {
       const safeRef = String(ref).replace(/[^a-zA-Z0-9_-]/g, "");
       const cleared = await evaluateValue(`
+        const refIdentity = (${createRefIdentityHelpers.toString()})();
+        const documentNonce = window.__agentCabinWorkDocumentNonce ||= crypto.randomUUID();
+        const refNamespace = refIdentity.namespace(${JSON.stringify(page.workerInstanceId || "legacy")}, documentNonce);
+        const refNodes = window.__agentCabinWorkRefNodes ||= new WeakMap();
+        if (!refIdentity.isInNamespace(${JSON.stringify(safeRef)}, refNamespace)) return false;
         const el = document.querySelector('[data-work-ref="${safeRef}"]');
-        if (!el) return false;
+        if (!el || refNodes.get(el) !== ${JSON.stringify(safeRef)}) return false;
         if (el.readOnly || el.disabled) return false;
         const prototype = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
