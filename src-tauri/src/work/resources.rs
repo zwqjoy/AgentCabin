@@ -63,6 +63,8 @@ const WORK_CDP_COMPUTER_USE_BACKEND_FILENAME: &str = "cdp_computer_use_backend.m
 const WORK_CDP_COMPUTER_USE_BACKEND_SOURCE: &str = include_str!("cdp_computer_use_backend.mjs");
 const WORK_VISUAL_GROUNDING_BACKEND_FILENAME: &str = "visual_grounding_backend.mjs";
 const WORK_VISUAL_GROUNDING_BACKEND_SOURCE: &str = include_str!("visual_grounding_backend.mjs");
+const WORK_COMPUTER_USE_TOOL_PIPELINE_FILENAME: &str = "computer_use_tool_pipeline.mjs";
+const WORK_COMPUTER_USE_TOOL_PIPELINE_SOURCE: &str = include_str!("computer_use_tool_pipeline.mjs");
 
 const RESOURCE_DIRECTORIES: &[(&str, WorkResourceKind)] = &[
     ("skills", WorkResourceKind::Skill),
@@ -658,6 +660,13 @@ fn ensure_work_computer_use_v2_modules(paths: &WorkPaths) -> Result<PathBuf, Str
             browser_operator_path.display()
         )
     })?;
+    let pipeline_path = dir.join(WORK_COMPUTER_USE_TOOL_PIPELINE_FILENAME);
+    fs::write(&pipeline_path, WORK_COMPUTER_USE_TOOL_PIPELINE_SOURCE).map_err(|error| {
+        format!(
+            "failed to prepare Work Computer Use tool pipeline {}: {error}",
+            pipeline_path.display()
+        )
+    })?;
     let adapter_path = dir.join(WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_FILENAME);
     fs::write(
         &adapter_path,
@@ -734,6 +743,13 @@ pub fn ensure_code_desktop_operator_adapter(paths: &WorkPaths) -> Result<PathBuf
         format!(
             "failed to prepare shared Code Browser operator adapter {}: {error}",
             browser_operator_path.display()
+        )
+    })?;
+    let pipeline_path = dir.join(WORK_COMPUTER_USE_TOOL_PIPELINE_FILENAME);
+    fs::write(&pipeline_path, WORK_COMPUTER_USE_TOOL_PIPELINE_SOURCE).map_err(|error| {
+        format!(
+            "failed to prepare shared Code Computer Use tool pipeline {}: {error}",
+            pipeline_path.display()
         )
     })?;
     let path = dir.join(WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_FILENAME);
