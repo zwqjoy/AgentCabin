@@ -44,6 +44,18 @@ fn browser_action_outcome(
     }
 }
 
+fn preserve_browser_target_identity(
+    arguments: &serde_json::Value,
+    mut params: serde_json::Value,
+) -> serde_json::Value {
+    if let (Some(target_identity), Some(params)) =
+        (arguments.get("targetIdentity"), params.as_object_mut())
+    {
+        params.insert("targetIdentity".to_string(), target_identity.clone());
+    }
+    params
+}
+
 pub(crate) fn validate_and_resolve_context_target(
     paths: &WorkPaths,
     workspace_id: &str,
@@ -3173,14 +3185,17 @@ impl ToolPipeline {
                     .execute(
                         &intent.work_run_id,
                         "browser_click",
-                        serde_json::json!({
-                            "ref": ref_id,
-                            "selector": selector,
-                            "target_label": target_label,
-                            "locator": locator,
-                            "button": button,
-                            "double_click": double_click,
-                        }),
+                        preserve_browser_target_identity(
+                            &intent.arguments,
+                            serde_json::json!({
+                                "ref": ref_id,
+                                "selector": selector,
+                                "target_label": target_label,
+                                "locator": locator,
+                                "button": button,
+                                "double_click": double_click,
+                            }),
+                        ),
                     )
                     .await
                 {
@@ -3236,15 +3251,18 @@ impl ToolPipeline {
                     .execute(
                         &intent.work_run_id,
                         "browser_type",
-                        serde_json::json!({
-                            "ref": ref_id,
-                            "text": text,
-                            "selector": selector,
-                            "target_label": target_label,
-                            "locator": locator,
-                            "clear": clear,
-                            "press_enter": press_enter,
-                        }),
+                        preserve_browser_target_identity(
+                            &intent.arguments,
+                            serde_json::json!({
+                                "ref": ref_id,
+                                "text": text,
+                                "selector": selector,
+                                "target_label": target_label,
+                                "locator": locator,
+                                "clear": clear,
+                                "press_enter": press_enter,
+                            }),
+                        ),
                     )
                     .await
                 {
@@ -3290,12 +3308,15 @@ impl ToolPipeline {
                     .execute(
                         &intent.work_run_id,
                         "browser_select_option",
-                        serde_json::json!({
-                            "ref": ref_id,
-                            "value": value,
-                            "selector": selector,
-                            "locator": locator,
-                        }),
+                        preserve_browser_target_identity(
+                            &intent.arguments,
+                            serde_json::json!({
+                                "ref": ref_id,
+                                "value": value,
+                                "selector": selector,
+                                "locator": locator,
+                            }),
+                        ),
                     )
                     .await
                 {
@@ -3324,12 +3345,12 @@ impl ToolPipeline {
                     .execute(
                         &intent.work_run_id,
                         "browser_press_key",
-                        serde_json::json!({
+                        preserve_browser_target_identity(&intent.arguments, serde_json::json!({
                             "key": intent.arguments.get("key").and_then(|value| value.as_str()).unwrap_or(""),
                             "ref": intent.arguments.get("ref"),
                             "selector": intent.arguments.get("selector"),
                             "locator": intent.arguments.get("locator"),
-                        }),
+                        })),
                     )
                     .await
                 {
