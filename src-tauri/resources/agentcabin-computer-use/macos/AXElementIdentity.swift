@@ -24,7 +24,7 @@ struct AXElementIdentitySnapshot {
 	}
 
 	func canAdvanceWithinBatch(to current: AXElementIdentitySnapshot, afterAction action: String) -> Bool {
-		guard action == "setText", stableSemanticFingerprint == current.stableSemanticFingerprint else { return false }
+		guard ["setText", "typeText"].contains(action), stableSemanticFingerprint == current.stableSemanticFingerprint else { return false }
 		return contextMatches(current)
 			&& role == current.role
 			&& subrole == current.subrole

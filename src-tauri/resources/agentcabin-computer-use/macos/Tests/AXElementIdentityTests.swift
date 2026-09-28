@@ -45,6 +45,13 @@ final class AXElementIdentityTests: XCTestCase {
 		XCTAssertTrue(before.canAdvanceWithinBatch(to: after, afterAction: "setText"))
 	}
 
+	func testTypeTextThenKeypressCanReuseSameBatchRefAfterValueChanges() {
+		let before = evidence(role: "AXTextField", semantic: "textfield ", stableSemantic: "textfield email", traits: ["setValue", "focus"], parent: "AXGroup form")
+		let afterTypeText = evidence(role: "AXTextField", semantic: "textfield hello", stableSemantic: "textfield email", traits: ["setValue", "focus"], parent: "AXGroup form")
+		XCTAssertTrue(before.canAdvanceWithinBatch(to: afterTypeText, afterAction: "typeText"))
+		XCTAssertTrue(afterTypeText.matchesCachedElement(afterTypeText), "The next same-ref batch step validates against the advanced evidence.")
+	}
+
 	func testClickCannotAdvanceAButtonFromDeleteToUndo() {
 		let before = evidence(semantic: "button delete", stableSemantic: "button delete")
 		let after = evidence(semantic: "button undo", stableSemantic: "button undo")
