@@ -166,4 +166,26 @@ test("Host Computer Use runtime awaitRunIdle waits until run has zero active con
   await promise;
 });
 
+test("Host Computer Use runtime awaitRunIdle throws when timeout is reached (fail-closed)", async () => {
+  const runtime = await createComputerUseHostRuntime();
+  const runId = "run-timeout-fail-closed";
+
+  const promise = runtime.executeTool(
+    runId,
+    "wait_for",
+    "call-timeout-fail",
+    { timeoutMs: 15000, condition: "none" }
+  );
+
+  // Without cancelling, awaitRunIdle with a very short timeout must throw
+  await assert.rejects(
+    () => runtime.awaitRunIdle(runId, 50),
+    /did not become idle within 50ms/
+  );
+
+  // Clean up by cancelling
+  runtime.cancelRun(runId);
+  await promise;
+});
+
 

@@ -148,6 +148,9 @@ export async function createComputerUseHostRuntime(options = {}) {
       if (!active) return;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
+    throw new Error(
+      `Computer Use run '${runId}' did not become idle within ${timeoutMs}ms`
+    );
   }
 
   async function executeTool(runId, toolName, toolCallId, params, signal, runOptions = {}) {
