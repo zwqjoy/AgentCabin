@@ -302,10 +302,17 @@ describe("browser-activity-store", () => {
   });
 
   describe("BrowserActivityStore instance", () => {
-    it("subscribes to live events via eventMiddleware and resolves file screenshots", async () => {
+    it("subscribes to live events via eventMiddleware and resolves file screenshots with run cwd", async () => {
       vi.mocked(api.readFileBase64).mockResolvedValueOnce(["samplebase64", "image/png"]);
       const store = new BrowserActivityStore();
       expect(eventState.handler).toBeDefined();
+
+      eventState.handler?.({
+        type: "session_init",
+        run_id: "run-sub-1",
+        cwd: "/Users/cengwenqi/workspace",
+        tools: [],
+      } as unknown as BusEvent);
 
       eventState.handler?.({
         type: "tool_start",
@@ -337,6 +344,79 @@ describe("browser-activity-store", () => {
         const updated = store.getActivity("run-sub-1");
         expect(updated?.lastScreenshot).toBe("data:image/png;base64,samplebase64");
       });
+
+      expect(api.readFileBase64).toHaveBeenCalledWith(
+        "/tmp/screenshots/hn.png",
+        "/Users/cengwenqi/workspace",
+      );
+
+      store.destroy();
+    });
+
+    it("prefers artifact absolutePath and artifact.cwd when resolving screenshots", async () => {
+      vi.mocked(api.readFileBase64).mockResolvedValueOnce(["artifactbase64", "image/png"]);
+      const store = new BrowserActivityStore();
+
+      eventState.handler?.({
+        type: "tool_start",
+        run_id: "run-art-1",
+        tool_use_id: "tu-art",
+        tool_name: "agent_browser",
+        input: { args: ["screenshot"] },
+      } as BusEvent);
+
+      eventState.handler?.({
+        type: "tool_end",
+        run_id: "run-art-1",
+        tool_use_id: "tu-art",
+        tool_name: "agent_browser",
+        status: "completed",
+        output: {
+          details: {
+            artifacts: [
+              {
+                kind: "screenshot",
+                path: "relative.png",
+                absolutePath: "/custom/artifacts/screen.png",
+                cwd: "/custom/artifacts",
+              },
+            ],
+          },
+        },
+      } as BusEvent);
+
+      await vi.waitFor(() => {
+        const updated = store.getActivity("run-art-1");
+        expect(updated?.lastScreenshot).toBe("data:image/png;base64,artifactbase64");
+      });
+
+      expect(api.readFileBase64).toHaveBeenCalledWith(
+        "/custom/artifacts/screen.png",
+        "/custom/artifacts",
+      );
+
+      store.destroy();
+    });
+
+    it("does not call readFileBase64 with empty cwd if run cwd is missing", async () => {
+      vi.mocked(api.getBusEvents).mockResolvedValueOnce([]);
+      const store = new BrowserActivityStore();
+
+      eventState.handler?.({
+        type: "tool_end",
+        run_id: "run-no-cwd",
+        tool_use_id: "tu-none",
+        tool_name: "agent_browser",
+        status: "completed",
+        output: {
+          details: {
+            imagePath: "/tmp/screenshots/nocwd.png",
+          },
+        },
+      } as BusEvent);
+
+      await new Promise((r) => setTimeout(r, 50));
+      expect(api.readFileBase64).not.toHaveBeenCalledWith("/tmp/screenshots/nocwd.png", "");
 
       store.destroy();
     });

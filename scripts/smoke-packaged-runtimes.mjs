@@ -271,32 +271,63 @@ async function testAgentBrowserSmoke() {
     throw new Error(`agent-browser binary not found at ${agentBrowserBin}`);
   }
 
-  // 1. Run agent-browser --version via PATH
-  console.log("Checking agent-browser --version via augmented PATH...");
+  const expectedVersion = manifest.runtimes?.agentBrowser?.version || "0.37.0";
+
+  // 1. Run agent-browser binary directly
+  console.log("Checking agent-browser binary directly...");
   const res = runSync(agentBrowserBin, ["--version"]);
   const versionOutput = res.stdout.trim();
-  console.log(`agent-browser output: ${versionOutput}`);
-
-  const expectedVersion = manifest.runtimes?.agentBrowser?.version || "0.37.0";
+  console.log(`agent-browser output (direct): ${versionOutput}`);
   if (!versionOutput.includes(expectedVersion)) {
     throw new Error(
       `agent-browser version mismatch: expected ${expectedVersion}, got ${versionOutput}`,
     );
   }
-  console.log(`✓ agent-browser version verified (${expectedVersion})`);
+  console.log(`✓ agent-browser direct binary verified (${expectedVersion})`);
 
-  // 2. Validate pi-agent-browser-native extension pinning (0.8.2)
-  const extPackageJson = resolve(root, "src-tauri/runtime/extensions/package.json");
-  if (existsSync(extPackageJson)) {
-    const extPkg = JSON.parse(readFileSync(extPackageJson, "utf8"));
-    const nativeVersion = extPkg.dependencies?.["pi-agent-browser-native"];
-    if (nativeVersion !== "0.8.2") {
-      throw new Error(
-        `pi-agent-browser-native version in extensions/package.json mismatch: expected exact 0.8.2, got ${nativeVersion}`,
-      );
-    }
-    console.log(`✓ pi-agent-browser-native pinned to exact ${nativeVersion}`);
+  // 2. Run agent-browser via augmented PATH discovery
+  console.log("Checking agent-browser discovery via augmented PATH...");
+  const resPath = runSync("agent-browser", ["--version"]);
+  const pathVersionOutput = resPath.stdout.trim();
+  console.log(`agent-browser output (via PATH): ${pathVersionOutput}`);
+  if (!pathVersionOutput.includes(expectedVersion)) {
+    throw new Error(
+      `agent-browser via PATH lookup failed: expected ${expectedVersion}, got ${pathVersionOutput}`,
+    );
   }
+  console.log(`✓ agent-browser verified via PATH lookup (${expectedVersion})`);
+
+  // 3. Validate packaged pi-agent-browser-native extension pinning (0.8.2)
+  const isPackagedClosure = !runtimeRoot.endsWith("runtime-build");
+  const packagedExtPkgJson = resolve(
+    runtimeRoot,
+    "../runtime/extensions/node_modules/pi-agent-browser-native/package.json",
+  );
+  const devExtPkgJson = resolve(
+    root,
+    "src-tauri/runtime/extensions/node_modules/pi-agent-browser-native/package.json",
+  );
+
+  const targetExtPkgJson =
+    isPackagedClosure && existsSync(packagedExtPkgJson)
+      ? packagedExtPkgJson
+      : existsSync(packagedExtPkgJson)
+        ? packagedExtPkgJson
+        : devExtPkgJson;
+
+  if (!existsSync(targetExtPkgJson)) {
+    throw new Error(
+      `pi-agent-browser-native package.json not found in packaged resources or dev extensions (checked ${targetExtPkgJson})`,
+    );
+  }
+
+  const extPkg = JSON.parse(readFileSync(targetExtPkgJson, "utf8"));
+  if (extPkg.version !== "0.8.2") {
+    throw new Error(
+      `pi-agent-browser-native version in ${targetExtPkgJson} mismatch: expected exact 0.8.2, got ${extPkg.version}`,
+    );
+  }
+  console.log(`✓ pi-agent-browser-native installed package verified exact ${extPkg.version} (${targetExtPkgJson})`);
 }
 
 async function verifyNoOrphans() {

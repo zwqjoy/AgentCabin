@@ -83,9 +83,14 @@ function formatSemanticActionDescription(semanticAction: Record<string, unknown>
   return { actionType, description: desc, selector };
 }
 
-function extractScreenshotFromOutput(
+export interface ScreenshotLocation {
+  path: string;
+  cwd?: string | null;
+}
+
+export function extractScreenshotInfoFromOutput(
   output: Record<string, unknown> | null | undefined,
-): string | null {
+): ScreenshotLocation | null {
   if (!output) return null;
 
   // 1. Check content array (Pi ToolContent format: [{ type: "image", data: "...", mimeType: "image/png" }])
@@ -99,10 +104,10 @@ function extractScreenshotFromOutput(
           itemObj.data.length > 0
         ) {
           const mime = String(itemObj.mimeType ?? itemObj.mime_type ?? "image/png");
-          if (itemObj.data.startsWith("data:image/")) {
-            return itemObj.data;
-          }
-          return `data:${mime};base64,${itemObj.data}`;
+          const data = itemObj.data.startsWith("data:image/")
+            ? itemObj.data
+            : `data:${mime};base64,${itemObj.data}`;
+          return { path: data };
         }
       }
     }
@@ -110,21 +115,12 @@ function extractScreenshotFromOutput(
 
   // 2. Check details / tool_use_result
   const details = (output.details ?? output) as Record<string, unknown>;
+  const baseCwd = typeof details.cwd === "string" && details.cwd.length > 0 ? details.cwd : null;
+
   if (Array.isArray(details.screenshots) && details.screenshots.length > 0) {
     const last = details.screenshots[details.screenshots.length - 1];
     if (typeof last === "string" && last.length > 0) {
-      return last;
-    }
-  }
-
-  if (typeof details.imagePath === "string" && details.imagePath.length > 0) {
-    return details.imagePath;
-  }
-
-  if (Array.isArray(details.imagePaths) && details.imagePaths.length > 0) {
-    const last = details.imagePaths[details.imagePaths.length - 1];
-    if (typeof last === "string" && last.length > 0) {
-      return last;
+      return { path: last, cwd: baseCwd };
     }
   }
 
@@ -133,19 +129,45 @@ function extractScreenshotFromOutput(
       if (art && typeof art === "object") {
         const artObj = art as Record<string, unknown>;
         if (
-          (artObj.kind === "screenshot" ||
-            artObj.kind === "image" ||
-            artObj.mediaType === "image/png") &&
-          typeof artObj.path === "string" &&
-          artObj.path.length > 0
+          artObj.kind === "screenshot" ||
+          artObj.kind === "image" ||
+          artObj.mediaType === "image/png"
         ) {
-          return artObj.path;
+          const artPath =
+            typeof artObj.absolutePath === "string" && artObj.absolutePath.length > 0
+              ? artObj.absolutePath
+              : typeof artObj.path === "string" && artObj.path.length > 0
+                ? artObj.path
+                : null;
+          if (artPath) {
+            const artCwd =
+              typeof artObj.cwd === "string" && artObj.cwd.length > 0 ? artObj.cwd : baseCwd;
+            return { path: artPath, cwd: artCwd };
+          }
         }
       }
     }
   }
 
+  if (typeof details.imagePath === "string" && details.imagePath.length > 0) {
+    return { path: details.imagePath, cwd: baseCwd };
+  }
+
+  if (Array.isArray(details.imagePaths) && details.imagePaths.length > 0) {
+    const last = details.imagePaths[details.imagePaths.length - 1];
+    if (typeof last === "string" && last.length > 0) {
+      return { path: last, cwd: baseCwd };
+    }
+  }
+
   return null;
+}
+
+function extractScreenshotFromOutput(
+  output: Record<string, unknown> | null | undefined,
+): string | null {
+  const info = extractScreenshotInfoFromOutput(output);
+  return info?.path ?? null;
 }
 
 /**
@@ -438,6 +460,8 @@ export class BrowserActivityStore {
   activityByRunId = $state<Record<string, BrowserActivityView>>({});
   private loadedRuns = new Set<string>();
   private inFlightLoads = new Map<string, Promise<BrowserActivityView | null>>();
+  private cwdByRunId = new Map<string, string>();
+  private inFlightCwdResolutions = new Map<string, Promise<string>>();
   private unsubscribeMiddleware: (() => void) | null = null;
 
   constructor() {
@@ -456,9 +480,45 @@ export class BrowserActivityStore {
     return this.activityByRunId[runId] ?? null;
   }
 
+  async getRunCwd(runId: string): Promise<string> {
+    const existing = this.cwdByRunId.get(runId);
+    if (existing) return existing;
+
+    const inFlight = this.inFlightCwdResolutions.get(runId);
+    if (inFlight) return inFlight;
+
+    const promise = (async () => {
+      try {
+        const events = await api.getBusEvents(runId);
+        for (const ev of events) {
+          if (
+            ev.type === "session_init" &&
+            typeof (ev as { cwd?: string }).cwd === "string" &&
+            (ev as { cwd?: string }).cwd!.length > 0
+          ) {
+            const cwd = (ev as { cwd: string }).cwd;
+            this.cwdByRunId.set(runId, cwd);
+            return cwd;
+          }
+        }
+      } catch (err) {
+        console.warn(`[BrowserActivityStore] Failed to resolve cwd for run ${runId}:`, err);
+      }
+      return "";
+    })();
+
+    this.inFlightCwdResolutions.set(runId, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inFlightCwdResolutions.delete(runId);
+    }
+  }
+
   private async resolveScreenshot(
     runId: string,
     filePath: string,
+    artifactCwd?: string | null,
     toolUseId?: string,
   ): Promise<void> {
     if (
@@ -470,7 +530,17 @@ export class BrowserActivityStore {
       return;
     }
     try {
-      const [base64, mime] = await api.readFileBase64(filePath, "");
+      let cwd = artifactCwd || this.cwdByRunId.get(runId);
+      if (!cwd) {
+        cwd = await this.getRunCwd(runId);
+      }
+      if (!cwd) {
+        console.warn(
+          `[BrowserActivityStore] Skipping screenshot resolution for ${filePath}: missing cwd for run ${runId}`,
+        );
+        return;
+      }
+      const [base64, mime] = await api.readFileBase64(filePath, cwd);
       if (!base64) return;
       const dataUrl = `data:${mime || "image/png"};base64,${base64}`;
       const current = this.activityByRunId[runId];
@@ -504,6 +574,13 @@ export class BrowserActivityStore {
 
   handleBusEvent(event: BusEvent): void {
     if (!event.run_id) return;
+    if (
+      event.type === "session_init" &&
+      typeof (event as { cwd?: string }).cwd === "string" &&
+      (event as { cwd?: string }).cwd!.length > 0
+    ) {
+      this.cwdByRunId.set(event.run_id, (event as { cwd: string }).cwd);
+    }
     if (event.type === "tool_start" || event.type === "tool_end" || event.type === "run_state") {
       const prev = this.activityByRunId[event.run_id] ?? null;
       const next = projectAgentBrowserActivity(prev, event);
@@ -518,7 +595,19 @@ export class BrowserActivityStore {
         !next.lastScreenshot.startsWith("data:") &&
         !next.lastScreenshot.startsWith("http")
       ) {
-        void this.resolveScreenshot(event.run_id, next.lastScreenshot, event.tool_use_id);
+        const out = (event.output ?? {}) as Record<string, unknown>;
+        const info =
+          extractScreenshotInfoFromOutput(out) ??
+          extractScreenshotInfoFromOutput(event.tool_use_result);
+        if (info?.cwd) {
+          this.cwdByRunId.set(event.run_id, info.cwd);
+        }
+        void this.resolveScreenshot(
+          event.run_id,
+          next.lastScreenshot,
+          info?.cwd,
+          event.tool_use_id,
+        );
       }
     }
   }
@@ -535,8 +624,27 @@ export class BrowserActivityStore {
       try {
         const events = await api.getBusEvents(runId);
         let projection: BrowserActivityView | null = null;
+        let lastCwd: string | undefined;
         for (const ev of events) {
+          if (
+            ev.type === "session_init" &&
+            typeof (ev as { cwd?: string }).cwd === "string" &&
+            (ev as { cwd?: string }).cwd!.length > 0
+          ) {
+            this.cwdByRunId.set(runId, (ev as { cwd: string }).cwd);
+            lastCwd = (ev as { cwd: string }).cwd;
+          }
           projection = projectAgentBrowserActivity(projection, ev);
+          if (ev.type === "tool_end") {
+            const out = (ev.output ?? {}) as Record<string, unknown>;
+            const info =
+              extractScreenshotInfoFromOutput(out) ??
+              extractScreenshotInfoFromOutput(ev.tool_use_result);
+            if (info?.cwd) {
+              this.cwdByRunId.set(runId, info.cwd);
+              lastCwd = info.cwd;
+            }
+          }
         }
         if (projection) {
           if (
@@ -544,7 +652,7 @@ export class BrowserActivityStore {
             !projection.lastScreenshot.startsWith("data:") &&
             !projection.lastScreenshot.startsWith("http")
           ) {
-            void this.resolveScreenshot(runId, projection.lastScreenshot);
+            void this.resolveScreenshot(runId, projection.lastScreenshot, lastCwd);
           }
           this.activityByRunId = {
             ...this.activityByRunId,

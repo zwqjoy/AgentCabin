@@ -276,10 +276,21 @@ impl DesktopOperatorManager {
         let req_id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = tokio::sync::oneshot::channel();
 
-        let tool_call_id = args
-            .get("toolCallId")
-            .and_then(Value::as_str)
-            .map(str::to_string);
+        let tool_call_id = if method == "execute" {
+            let id = args
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("cu-call-{}", uuid::Uuid::new_v4()));
+            if let Value::Object(ref mut map) = args {
+                map.insert("toolCallId".to_string(), json!(&id));
+            }
+            Some(id)
+        } else {
+            args.get("toolCallId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        };
 
         let mut guard = self.upstream_worker.lock().await;
         let worker = guard
