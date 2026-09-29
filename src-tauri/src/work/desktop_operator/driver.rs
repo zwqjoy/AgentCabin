@@ -155,6 +155,19 @@ impl DesktopOperatorManager {
             crate::agent::runtime_locator::resolve_node().unwrap_or_else(|_| "node".to_string());
         let runtime_script = Self::resolve_upstream_runtime_script()?;
 
+        // 1. Ensure AgentCabin native helper is running and verified on macOS
+        if cfg!(target_os = "macos") {
+            if !self.helper_available() {
+                return Err(format!(
+                    "agentcabin-computer-use macOS bridge is missing: {}",
+                    self.helper_path.display()
+                ));
+            }
+            self.ensure_started()
+                .await
+                .map_err(|e| format!("Failed to start AgentCabin native helper: {e}"))?;
+        }
+
         let ext_dir = crate::agent::runtime_locator::extension_node_modules_dirs()
             .into_iter()
             .find(|d| d.join("@injaneity/pi-computer-use").is_dir())
@@ -179,6 +192,9 @@ impl DesktopOperatorManager {
         if let Some(ext) = ext_dir {
             cmd.env("AGENTCABIN_PI_EXTENSIONS_DIR", ext);
         }
+
+        // 2. Inject AgentCabin native helper socket path so upstream never installs/launches com.injaneity.pi-computer-use
+        cmd.env("PI_CU_SOCKET_PATH", &self.socket_path);
 
         let mut child = cmd
             .spawn()
@@ -238,10 +254,32 @@ impl DesktopOperatorManager {
         Ok(())
     }
 
+    pub async fn cancel_upstream_execution(&self, tool_call_id: &str) -> Result<(), String> {
+        let mut guard = self.upstream_worker.lock().await;
+        if let Some(worker) = guard.as_mut() {
+            let req_id = self.request_id.fetch_add(1, Ordering::SeqCst);
+            let payload = json!({
+                "id": req_id,
+                "method": "cancel",
+                "toolCallId": tool_call_id,
+            });
+            let mut line = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
+            line.push(b'\n');
+            let _ = worker.stdin.write_all(&line).await;
+            let _ = worker.stdin.flush().await;
+        }
+        Ok(())
+    }
+
     async fn send_upstream_request(&self, method: &str, mut args: Value) -> Result<Value, String> {
         self.ensure_upstream_worker().await?;
         let req_id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let tool_call_id = args
+            .get("toolCallId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
 
         let mut guard = self.upstream_worker.lock().await;
         let worker = guard
@@ -280,6 +318,9 @@ impl DesktopOperatorManager {
                     if let Some(worker) = guard.as_ref() {
                         worker.pending.lock().unwrap().remove(&req_id);
                     }
+                }
+                if let Some(ref call_id) = tool_call_id {
+                    let _ = self.cancel_upstream_execution(call_id).await;
                 }
                 Err(format!("Upstream request '{method}' timed out after 60s"))
             }
@@ -1631,6 +1672,7 @@ mod tests {
                     err.contains("Accessibility")
                         || err.contains("Screen Recording")
                         || err.contains("interactive")
+                        || err.contains("helper")
                 );
             }
         }
