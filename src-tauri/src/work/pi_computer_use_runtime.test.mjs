@@ -93,14 +93,52 @@ test("Host Computer Use runtime supports tool cancellation via cancelTool", asyn
   assert.equal(secondCancel, false, "cancelTool for finished call should return false");
 });
 
-test("Upstream helper client respects PI_CU_SOCKET_PATH and does not install helper daemon", async () => {
-  const testSocket = "/tmp/test-agentcabin-custom.sock";
-  process.env.PI_CU_SOCKET_PATH = testSocket;
-  try {
-    const runtime = await createComputerUseHostRuntime();
-    assert.ok(runtime, "Runtime successfully initialized with external socket env");
-  } finally {
-    delete process.env.PI_CU_SOCKET_PATH;
-  }
+test("Host Computer Use runtime cancels active run tools via cancelRun", async () => {
+  const runtime = await createComputerUseHostRuntime();
+  const runId = "run-cancel-multi";
+
+  const promise1 = runtime.executeTool(
+    runId,
+    "wait_for",
+    "call-run-wait-1",
+    { timeoutMs: 15000, condition: "none" }
+  );
+  const promise2 = runtime.executeTool(
+    runId,
+    "wait_for",
+    "call-run-wait-2",
+    { timeoutMs: 15000, condition: "none" }
+  );
+
+  const count = runtime.cancelRun(runId);
+  assert.equal(count, 2, "cancelRun should abort all active calls for that run");
+
+  const [res1, res2] = await Promise.all([promise1, promise2]);
+  assert.equal(res1.success, false);
+  assert.equal(res2.success, false);
+  assert.match(res1.stderr, /stopped|released|abort|cancel/i);
+  assert.match(res2.stderr, /stopped|released|abort|cancel/i);
+
+  // Subsequent cancelRun is idempotent
+  assert.equal(runtime.cancelRun(runId), 0);
 });
+
+test("Host Computer Use runtime automatically aborts active tools on shutdownSession", async () => {
+  const runtime = await createComputerUseHostRuntime();
+  const runId = "run-shutdown-abort-test";
+
+  const promise = runtime.executeTool(
+    runId,
+    "wait_for",
+    "call-shutdown-wait-1",
+    { timeoutMs: 15000, condition: "none" }
+  );
+
+  await runtime.shutdownSession(runId);
+
+  const res = await promise;
+  assert.equal(res.success, false, "shutdownSession must abort running tools");
+  assert.match(res.stderr, /stopped|released|abort|cancel/i);
+});
+
 

@@ -106,17 +106,33 @@ export async function createComputerUseHostRuntime(options = {}) {
     };
   }
 
+  // Track active controllers: toolCallId -> { runId, controller }
   const activeControllers = new Map();
 
   function cancelTool(toolCallId) {
     if (!toolCallId) return false;
-    const controller = activeControllers.get(toolCallId);
-    if (controller) {
-      controller.abort();
+    const entry = activeControllers.get(toolCallId);
+    if (entry) {
+      entry.controller.abort();
       activeControllers.delete(toolCallId);
       return true;
     }
     return false;
+  }
+
+  function cancelRun(runId) {
+    if (!runId) return 0;
+    let count = 0;
+    for (const [toolCallId, entry] of activeControllers.entries()) {
+      if (entry.runId === runId) {
+        try {
+          entry.controller.abort(new Error(`Run '${runId}' stopped or released`));
+        } catch {}
+        activeControllers.delete(toolCallId);
+        count++;
+      }
+    }
+    return count;
   }
 
   async function executeTool(runId, toolName, toolCallId, params, signal, runOptions = {}) {
@@ -135,7 +151,7 @@ export async function createComputerUseHostRuntime(options = {}) {
         signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
       }
     }
-    activeControllers.set(effectiveCallId, controller);
+    activeControllers.set(effectiveCallId, { runId, controller });
     const effectiveSignal = controller.signal;
 
     try {
@@ -171,6 +187,7 @@ export async function createComputerUseHostRuntime(options = {}) {
   }
 
   async function shutdownSession(runId) {
+    cancelRun(runId);
     const handlers = eventHandlers.get("session_shutdown") || [];
     for (const handler of handlers) {
       try {
@@ -263,6 +280,7 @@ export async function createComputerUseHostRuntime(options = {}) {
     getToolDefinitions,
     executeTool,
     cancelTool,
+    cancelRun,
     shutdownSession,
     getStatus,
     requestPermissions,
@@ -298,9 +316,24 @@ if (process.argv.includes("--serve")) {
             const result = await runtime.executeTool(runId, toolName, toolCallId, params);
             process.stdout.write(JSON.stringify({ id, ok: true, result }) + "\n");
           } else if (method === "cancel") {
-            const cancelled = runtime.cancelTool(toolCallId);
+            const effectiveCallId = toolCallId || req.params?.toolCallId;
+            const effectiveRunId = runId || req.params?.runId;
+            let cancelled = false;
+            if (effectiveCallId) {
+              cancelled = runtime.cancelTool(effectiveCallId);
+            }
+            if (effectiveRunId) {
+              const count = runtime.cancelRun(effectiveRunId);
+              cancelled = cancelled || count > 0;
+            }
             process.stdout.write(
               JSON.stringify({ id, ok: true, result: { cancelled } }) + "\n"
+            );
+          } else if (method === "cancel_run") {
+            const effectiveRunId = runId || req.params?.runId;
+            const count = runtime.cancelRun(effectiveRunId);
+            process.stdout.write(
+              JSON.stringify({ id, ok: true, result: { cancelled: count > 0, count } }) + "\n"
             );
           } else if (method === "release" || method === "shutdown") {
             await runtime.shutdownSession(runId);

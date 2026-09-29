@@ -271,6 +271,23 @@ impl DesktopOperatorManager {
         Ok(())
     }
 
+    pub async fn cancel_run_execution(&self, run_id: &str) -> Result<(), String> {
+        let mut guard = self.upstream_worker.lock().await;
+        if let Some(worker) = guard.as_mut() {
+            let req_id = self.request_id.fetch_add(1, Ordering::SeqCst);
+            let payload = json!({
+                "id": req_id,
+                "method": "cancel_run",
+                "runId": run_id,
+            });
+            let mut line = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
+            line.push(b'\n');
+            let _ = worker.stdin.write_all(&line).await;
+            let _ = worker.stdin.flush().await;
+        }
+        Ok(())
+    }
+
     async fn send_upstream_request(&self, method: &str, mut args: Value) -> Result<Value, String> {
         self.ensure_upstream_worker().await?;
         let req_id = self.request_id.fetch_add(1, Ordering::SeqCst);
@@ -1224,9 +1241,6 @@ impl DesktopOperatorManager {
         match tool_name {
             "desktop_release" => {
                 self.release_for_run(run_id).await;
-                let _ = self
-                    .send_upstream_request("release", json!({"runId": run_id}))
-                    .await;
                 Ok(Self::tool_result(
                     "Desktop control released",
                     json!({"backend": "upstream", "released": true}),
@@ -1424,6 +1438,7 @@ impl DesktopOperatorManager {
         }
         drop(lease);
         if Self::active_engine() != "legacy" {
+            let _ = self.cancel_run_execution(run_id).await;
             let _ = self
                 .send_upstream_request("release", json!({"runId": run_id}))
                 .await;
