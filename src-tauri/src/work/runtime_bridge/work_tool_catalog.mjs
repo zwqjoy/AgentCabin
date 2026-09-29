@@ -47,18 +47,25 @@ const BROWSER_TOOL_CATALOG = [
   ["web_cite", "Create stable citations from 网络访问 page passages in the current run ledger; use page_id plus exact passage_ids, or pass a list of passage_ids when citing multiple opened pages.", "read", true],
 ];
 
-const BROWSER_OPERATOR_TOOL_CATALOG = [
-  ["browser_navigate", "Navigate active browser page to a public URL or a generated file:// HTML under the current WorkRun output/ directory.", "read", true],
-  ["browser_snapshot", "Capture current page semantic accessibility tree with stable [ref=eX] identifiers.", "read", true],
-  ["browser_take_screenshot", "Capture screenshot of current browser page.", "read", true],
-  ["browser_wait_for", "Wait for a page condition such as URL, rendered text, visible selector, or absent selector. Use this after an action to verify the requested result.", "read", true],
-  ["browser_tabs", "Manage browser tabs (list, new, switch, close).", "read", true],
-  ["browser_close", "Close browser context for current WorkRun.", "read", true],
-  ["browser_click", "Click an interactive element using the ref and accessible target_label from the latest snapshot. A fresh semantic snapshot and screenshot are returned; inspect them to verify the intended page result.", "local_write", true],
-  ["browser_type", "Type into an input using the ref and accessible target_label from the latest snapshot. A fresh semantic snapshot and screenshot are returned; inspect them to verify the intended page result.", "local_write", true],
-  ["browser_select_option", "Select option from dropdown by semantic ref.", "local_write", true],
-  ["browser_press_key", "Press a keyboard key on the embedded browser page.", "local_write", true],
-  ["browser_scroll", "Scroll page or container element.", "read", true],
+const BROWSER_NATIVE_TOOL_CATALOG = [
+  [
+    "agent_browser",
+    "Browse and interact through native agent-browser commands. One command in args; fixed sequences use batch --bail and JSON-array stdin. Use agent_browser_code for loops/branches and agent_browser_tools for advanced capabilities.",
+    "read",
+    true,
+  ],
+  [
+    "agent_browser_code",
+    "Execute custom automation code within the persistent browser context.",
+    "read",
+    true,
+  ],
+  [
+    "agent_browser_tools",
+    "Discover and dynamically enable advanced browser automation tools.",
+    "read",
+    true,
+  ],
 ];
 
 const DESKTOP_OPERATOR_TOOL_CATALOG = [
@@ -103,7 +110,7 @@ export function createWorkToolCatalog({
 } = {}) {
   return [
     ...materialize(BASE_TOOL_CATALOG),
-    ...(browserUseEnabled ? materialize(BROWSER_OPERATOR_TOOL_CATALOG) : []),
+    ...(browserUseEnabled ? materialize(BROWSER_NATIVE_TOOL_CATALOG) : []),
     ...(desktopUseEnabled ? materialize(DESKTOP_OPERATOR_TOOL_CATALOG) : []),
     ...(mcpEnabled ? materialize(MCP_TOOL_CATALOG) : []),
     ...(browserEnabled ? materialize(BROWSER_TOOL_CATALOG) : []),

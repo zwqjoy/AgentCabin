@@ -75,12 +75,12 @@ const DEFAULT_ACTIVE_TOOLS = new Set([
 function workPresetGuidance() {
   switch (String(process.env.AGENTCABIN_WORK_PRESET || "office").trim().toLowerCase()) {
     case "code":
-      return " 当前工作预设为 Code：优先进行代码阅读、修改、测试与可复现验证；把代码变更留在 Workspace 或已授权目录，把最终说明和必要的补丁/日志放入 output/ 作为成果。浏览器与 Web 工具仍使用公共 browser_*/web_* 协议。";
+      return " 当前工作预设为 Code：优先进行代码阅读、修改、测试与可复现验证；把代码变更留在 Workspace 或已授权目录，把最终说明和必要的补丁/日志放入 output/ 作为成果。浏览器自动化使用 agent_browser* 原生工具，网络访问使用公共 web_* 协议。";
     case "creative":
-      return " 当前工作预设为 Creative：优先进行文案、视觉创意、演示与其他创意产出；先在 scratch/ 迭代，使用预览/验证工具检查结果，最后把可交付文件写入 output/ 并登记 Artifact。浏览器与 Web 工具仍使用公共 browser_*/web_* 协议。";
+      return " 当前工作预设为 Creative：优先进行文案、视觉创意、演示与其他创意产出；先在 scratch/ 迭代，使用预览/验证工具检查结果，最后把可交付文件写入 output/ 并登记 Artifact。浏览器自动化使用 agent_browser* 原生工具，网络访问使用公共 web_* 协议。";
     case "office":
     default:
-      return " 当前工作预设为 Office：优先处理文档、表格、演示与资料整理；使用结构化 Office 能力、预览和验证流程，最后把可交付文件写入 output/ 并登记 Artifact。需要公式重算时优先使用 work_run_command 调用 soffice；Work 会自动使用无界面模式和独立配置目录。为生成文件提供 expected_outputs 并检查 Host 返回的 outputs，不要在没有命令 stderr、退出码和文件校验证据时声称办公引擎静默失败或直接修改 XLSX 内部缓存。浏览器与 Web 工具仍使用公共 browser_*/web_* 协议。";
+      return " 当前工作预设为 Office：优先处理文档、表格、演示与资料整理；使用结构化 Office 能力、预览和验证流程，最后把可交付文件写入 output/ 并登记 Artifact。需要公式重算时优先使用 work_run_command 调用 soffice；Work 会自动使用无界面模式和独立配置目录。为生成文件提供 expected_outputs 并检查 Host 返回的 outputs，不要在没有命令 stderr、退出码和文件校验证据时声称办公引擎静默失败或直接修改 XLSX 内部缓存。浏览器自动化使用 agent_browser* 原生工具，网络访问使用公共 web_* 协议。";
   }
 }
 
@@ -1476,9 +1476,17 @@ export default function agentCabinWorkExtension(pi) {
     );
   }
 
+  const originalSetActiveTools = typeof pi.setActiveTools === "function" ? pi.setActiveTools.bind(pi) : null;
+  pi.setActiveTools = (tools) => {
+    activeTools = new Set(tools);
+    return originalSetActiveTools ? originalSetActiveTools(tools) : undefined;
+  };
+
   function applyActiveTools() {
     try {
-      pi.setActiveTools([...activeTools]);
+      if (originalSetActiveTools) {
+        originalSetActiveTools([...activeTools]);
+      }
     } catch (error) {
       throw new Error(
         `AgentCabin Work could not establish the active-tool boundary: ${

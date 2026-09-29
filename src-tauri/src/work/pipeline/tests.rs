@@ -211,155 +211,6 @@ fn standing_rule_pattern_covers_capability_and_directory_scopes() {
 }
 
 #[test]
-fn browser_tab_creation_and_close_are_not_read_only_in_unattended_runs() {
-    let temp = TempDir::new().unwrap();
-    let pipeline = ToolPipeline::new(WorkPaths::new(temp.path().join("data")));
-    let base = |action: &str| ToolIntent {
-        task_id: "t".to_string(),
-        work_run_id: "r".to_string(),
-        session_id: None,
-        workspace_id: "ws".to_string(),
-        tool_call_id: format!("call-{action}"),
-        tool_name: "browser_tabs".to_string(),
-        action: action.to_string(),
-        arguments: serde_json::json!({"action": action}),
-        input_paths: Vec::new(),
-        expected_outputs: Vec::new(),
-        execution_context: crate::work::models::ExecutionContext::Unattended,
-        policy_revision: None,
-    };
-
-    assert_eq!(
-        pipeline.effective_risk_class(&base("list")),
-        ToolRiskClass::Read
-    );
-    assert_eq!(
-        pipeline.effective_risk_class(&base("switch")),
-        ToolRiskClass::Read
-    );
-    assert_eq!(
-        pipeline.effective_risk_class(&base("new")),
-        ToolRiskClass::WriteLocal
-    );
-    assert_eq!(
-        pipeline.effective_risk_class(&base("close")),
-        ToolRiskClass::WriteLocal
-    );
-}
-
-#[test]
-fn browser_interactive_writes_require_confirmation_without_an_opt_in_rule() {
-    let intent = |tool_name: &str, action: &str, arguments: serde_json::Value| ToolIntent {
-        task_id: "t".to_string(),
-        work_run_id: "r".to_string(),
-        session_id: None,
-        workspace_id: "ws".to_string(),
-        tool_call_id: format!("call-{tool_name}-{action}"),
-        tool_name: tool_name.to_string(),
-        action: action.to_string(),
-        arguments,
-        input_paths: Vec::new(),
-        expected_outputs: Vec::new(),
-        execution_context: crate::work::models::ExecutionContext::Attended,
-        policy_revision: None,
-    };
-
-    assert!(ToolPipeline::browser_interaction_requires_confirmation(
-        &intent("browser_click", "click", serde_json::json!({"ref": "e1"}),)
-    ));
-    assert!(ToolPipeline::browser_interaction_requires_confirmation(
-        &intent(
-            "browser_type",
-            "type",
-            serde_json::json!({"selector": "input[name='email']", "text": "user@example.com"}),
-        )
-    ));
-    assert!(ToolPipeline::browser_interaction_requires_confirmation(
-        &intent("browser_tabs", "new", serde_json::json!({"action": "new"}),)
-    ));
-    assert!(!ToolPipeline::browser_interaction_requires_confirmation(
-        &intent(
-            "browser_tabs",
-            "list",
-            serde_json::json!({"action": "list"}),
-        )
-    ));
-    assert!(!ToolPipeline::browser_interaction_requires_confirmation(
-        &intent("browser_snapshot", "snapshot", serde_json::json!({}),)
-    ));
-}
-
-#[test]
-fn browser_interactive_writes_auto_allowed_in_auto_mode_and_asked_in_direct_mode() {
-    use crate::work::models::{ExecutionContext, WorkExecutionMode, WorkPolicy};
-    use crate::work::policy::{PolicyEvaluator, WorkPolicyDecision};
-
-    let auto_policy = WorkPolicy {
-        execution_mode: WorkExecutionMode::Auto,
-        ..Default::default()
-    };
-    let direct_policy = WorkPolicy {
-        execution_mode: WorkExecutionMode::Direct,
-        ..Default::default()
-    };
-    let plan_policy = WorkPolicy {
-        execution_mode: WorkExecutionMode::PlanFirst,
-        ..Default::default()
-    };
-
-    // browser_click in attended Auto mode is allowed
-    assert_eq!(
-        PolicyEvaluator::evaluate_decision(
-            &auto_policy,
-            "browser_click",
-            "click",
-            ExecutionContext::Attended
-        ),
-        WorkPolicyDecision::Allow
-    );
-    // browser_type in attended Auto mode is allowed
-    assert_eq!(
-        PolicyEvaluator::evaluate_decision(
-            &auto_policy,
-            "browser_type",
-            "type",
-            ExecutionContext::Attended
-        ),
-        WorkPolicyDecision::Allow
-    );
-    // browser_click in Direct mode asks for confirmation
-    assert_eq!(
-        PolicyEvaluator::evaluate_decision(
-            &direct_policy,
-            "browser_click",
-            "click",
-            ExecutionContext::Attended
-        ),
-        WorkPolicyDecision::Ask
-    );
-    // browser_click in PlanFirst mode is denied (read-only)
-    assert_eq!(
-        PolicyEvaluator::evaluate_decision(
-            &plan_policy,
-            "browser_click",
-            "click",
-            ExecutionContext::Attended
-        ),
-        WorkPolicyDecision::Deny
-    );
-    // browser_click in Unattended mode asks for confirmation
-    assert_eq!(
-        PolicyEvaluator::evaluate_decision(
-            &auto_policy,
-            "browser_click",
-            "click",
-            ExecutionContext::Unattended
-        ),
-        WorkPolicyDecision::Ask
-    );
-}
-
-#[test]
 fn desktop_operator_tools_are_exclusive_and_follow_work_modes() {
     use crate::work::models::{ExecutionContext, WorkExecutionMode, WorkPolicy};
     use crate::work::policy::WorkPolicyDecision;
@@ -437,7 +288,7 @@ fn denial_reason_attributes_read_only_plan_denial_to_mode_not_target() {
         execution_mode: WorkExecutionMode::PlanFirst,
         ..Default::default()
     };
-    let reason = ToolPipeline::denial_reason(&read_only, &intent, ToolRiskClass::WriteLocal, true);
+    let reason = ToolPipeline::denial_reason(&read_only, &intent, ToolRiskClass::WriteLocal);
     assert!(
         reason.contains("read-only"),
         "denial must cite read-only mode, got: {reason}"
@@ -463,7 +314,6 @@ fn denial_reason_falls_back_to_generic_when_not_mode_based() {
         },
         &intent,
         ToolRiskClass::External,
-        true,
     );
     // External risk → connector-specific message
     assert!(reason.contains("external connector"), "got: {reason}");

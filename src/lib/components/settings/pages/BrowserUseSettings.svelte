@@ -18,7 +18,8 @@
       浏览器自动化 (Browser Use)
     </h2>
     <p class="mt-1 text-xs text-muted-foreground">
-      使用 Electron 内置的 Chromium 页面，通过受保护的原生 CDP 中继支持可视化页面操控与自动化测试。
+      由 Pi Browser Extension 负责浏览器自动化执行，AgentCabin 负责 capability、Host 集成和 UX
+      展示。
     </p>
   </div>
 

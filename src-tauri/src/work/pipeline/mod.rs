@@ -26,38 +26,6 @@ use crate::work::resources;
 mod types;
 pub use types::{ToolIntent, ToolResult};
 
-#[allow(dead_code)]
-fn browser_action_outcome(
-    result: &serde_json::Value,
-) -> (
-    WorkExecutionStatus,
-    Option<ExecutionFailureKind>,
-    Option<i32>,
-) {
-    if result.get("ok").and_then(serde_json::Value::as_bool) == Some(false) {
-        (
-            WorkExecutionStatus::Failed,
-            Some(ExecutionFailureKind::CapabilityFailure),
-            Some(1),
-        )
-    } else {
-        (WorkExecutionStatus::Success, None, Some(0))
-    }
-}
-
-#[allow(dead_code)]
-fn preserve_browser_target_identity(
-    arguments: &serde_json::Value,
-    mut params: serde_json::Value,
-) -> serde_json::Value {
-    if let (Some(target_identity), Some(params)) =
-        (arguments.get("targetIdentity"), params.as_object_mut())
-    {
-        params.insert("targetIdentity".to_string(), target_identity.clone());
-    }
-    params
-}
-
 pub(crate) fn validate_and_resolve_context_target(
     paths: &WorkPaths,
     workspace_id: &str,
@@ -164,25 +132,6 @@ impl ToolPipeline {
         }
     }
 
-    fn is_browser_operator_tool(tool_name: &str) -> bool {
-        matches!(
-            tool_name,
-            "browser_navigate"
-                | "browser_snapshot"
-                | "browser_take_screenshot"
-                | "browser_wait_for"
-                | "browser_tabs"
-                | "browser_close"
-                | "browser_click"
-                | "browser_type"
-                | "browser_select_option"
-                | "browser_press_key"
-                | "browser_scroll"
-                | "browser_cdp_observe"
-                | "browser_cdp_act"
-        )
-    }
-
     fn is_desktop_operator_tool(tool_name: &str) -> bool {
         matches!(
             tool_name,
@@ -229,30 +178,6 @@ impl ToolPipeline {
         )
     }
 
-    /// Browser interactive operations (click, type, select, tab create/close)
-    /// modify web page state and are classified as local writes. In attended
-    /// Auto and FullAccess modes, they execute automatically so that autonomous
-    /// web exploration does not stall on every click. In Direct mode or Unattended
-    /// execution, they require human approval.
-    fn browser_interaction_requires_confirmation(intent: &ToolIntent) -> bool {
-        match intent.tool_name.as_str() {
-            "browser_click"
-            | "browser_type"
-            | "browser_select_option"
-            | "browser_press_key"
-            | "browser_cdp_act" => true,
-            "browser_tabs" => matches!(
-                intent
-                    .arguments
-                    .get("action")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("list"),
-                "new" | "close"
-            ),
-            _ => false,
-        }
-    }
-
     /// Build a semantic denial reason so the model attributes the refusal to its actual
     /// cause (execution mode / connector policy) instead of guessing a bogus file-name or
     /// path policy. The target is included to identify which call was refused, but the
@@ -261,13 +186,8 @@ impl ToolPipeline {
         policy: &WorkPolicy,
         intent: &ToolIntent,
         effective_risk: ToolRiskClass,
-        browser_use_enabled: bool,
     ) -> String {
         let target = intent.target_string();
-        if Self::is_browser_operator_tool(&intent.tool_name) && !browser_use_enabled {
-            return "Browser Use 当前未启用。请在能力中心的“浏览器操作 / Browser Use”中全局开启后重试。"
-                .to_string();
-        }
         if Self::is_desktop_operator_tool(&intent.tool_name)
             && !crate::work::desktop_operator::is_enabled()
         {
@@ -295,24 +215,6 @@ impl ToolPipeline {
     fn effective_risk_class(&self, intent: &ToolIntent) -> ToolRiskClass {
         if intent.tool_name == "work_run_connector_cli" {
             return crate::work::connector_package_manager::cli_operation_risk(&intent.arguments);
-        }
-        if intent.tool_name == "browser_tabs" {
-            let action = intent
-                .arguments
-                .get("action")
-                .and_then(|value| value.as_str())
-                .unwrap_or("list");
-            return if matches!(action, "list" | "switch") {
-                ToolRiskClass::Read
-            } else {
-                ToolRiskClass::WriteLocal
-            };
-        }
-        if intent.tool_name == "browser_cdp_observe" {
-            return ToolRiskClass::Read;
-        }
-        if intent.tool_name == "browser_cdp_act" {
-            return ToolRiskClass::WriteLocal;
         }
         if intent.tool_name != "work_execute" {
             return PolicyEvaluator::classify_tool_risk(&intent.tool_name);
@@ -675,15 +577,6 @@ impl ToolPipeline {
             );
         }
 
-        if Self::browser_interaction_requires_confirmation(intent)
-            && !has_standing_rule
-            && policy.execution_mode != WorkExecutionMode::FullAccess
-            && policy.execution_mode != WorkExecutionMode::Auto
-            && decision == WorkPolicyDecision::Allow
-        {
-            decision = WorkPolicyDecision::Ask;
-        }
-
         if Self::desktop_interaction_requires_confirmation(intent)
             && !has_standing_rule
             && policy.execution_mode != WorkExecutionMode::FullAccess
@@ -691,16 +584,6 @@ impl ToolPipeline {
             && decision == WorkPolicyDecision::Allow
         {
             decision = WorkPolicyDecision::Ask;
-        }
-
-        // Keep the profile-level Browser Use switch authoritative even when a
-        // stale runtime still attempts to call a previously registered tool.
-        if Self::is_browser_operator_tool(&intent.tool_name)
-            && !crate::storage::profile_bindings::is_browser_use_enabled_with_root(
-                self.paths.data_root(),
-            )
-        {
-            decision = WorkPolicyDecision::Deny;
         }
 
         if Self::is_desktop_operator_tool(&intent.tool_name)
@@ -872,12 +755,7 @@ impl ToolPipeline {
         let mut force_host_execution = false;
         match decision {
             WorkPolicyDecision::Deny => {
-                let browser_use_enabled =
-                    crate::storage::profile_bindings::is_browser_use_enabled_with_root(
-                        self.paths.data_root(),
-                    );
-                let reason =
-                    Self::denial_reason(policy, intent, effective_risk, browser_use_enabled);
+                let reason = Self::denial_reason(policy, intent, effective_risk);
                 let result = ToolResult::denied(
                     &intent.tool_call_id,
                     &intent.tool_name,
@@ -1908,11 +1786,7 @@ impl ToolPipeline {
                         .or_insert_with(|| serde_json::json!(intent.tool_call_id));
                 }
                 let payload = crate::work::desktop_operator::desktop_operator_manager()
-                    .execute(
-                        &intent.work_run_id,
-                        &intent.tool_name,
-                        args,
-                    )
+                    .execute(&intent.work_run_id, &intent.tool_name, args)
                     .await?;
                 Ok(WorkExecutionResult {
                     execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
@@ -2882,11 +2756,7 @@ impl ToolPipeline {
                     finished_at: Utc::now().to_rfc3339(),
                 })
             }
-            t if Self::is_browser_operator_tool(t) => {
-                Err(format!(
-                    "Browser tool '{t}' is deprecated. Browser automation is now handled directly by the Pi Browser extension."
-                ))
-            }
+
             "work_run_command" => {
                 let command = intent
                     .arguments

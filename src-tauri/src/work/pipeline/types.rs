@@ -44,20 +44,6 @@ impl ToolIntent {
             target.to_string()
         } else if let Some(path) = self.arguments.get("path").and_then(|v| v.as_str()) {
             path.to_string()
-        } else if self.tool_name.starts_with("browser_") {
-            self.arguments
-                .get("url")
-                .or_else(|| self.arguments.get("selector"))
-                .or_else(|| self.arguments.get("ref"))
-                .and_then(|value| value.as_str())
-                .map(ToString::to_string)
-                .unwrap_or_else(|| {
-                    if !self.action.is_empty() {
-                        format!("{}.{}", self.tool_name, self.action)
-                    } else {
-                        self.tool_name.clone()
-                    }
-                })
         } else if self.tool_name.starts_with("desktop_") {
             self.arguments
                 .get("app")

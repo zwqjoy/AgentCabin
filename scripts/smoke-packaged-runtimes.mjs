@@ -63,10 +63,14 @@ console.log(`\n=== 1. Validating Runtime Closure at: ${runtimeRoot} ===`);
 
 const manifest = JSON.parse(readFileSync(join(runtimeRoot, "runtime-manifest.json"), "utf8"));
 if (manifest.runtimes?.pi?.version !== "0.87.1") {
-  throw new Error(`Pi runtime version mismatch in manifest: expected 0.87.1, got ${manifest.runtimes?.pi?.version}`);
+  throw new Error(
+    `Pi runtime version mismatch in manifest: expected 0.87.1, got ${manifest.runtimes?.pi?.version}`,
+  );
 }
 if (manifest.node?.version !== "24.21.0") {
-  throw new Error(`Node runtime version mismatch in manifest: expected 24.21.0, got ${manifest.node?.version}`);
+  throw new Error(
+    `Node runtime version mismatch in manifest: expected 24.21.0, got ${manifest.node?.version}`,
+  );
 }
 console.log(
   `Manifest: Pi ${manifest.runtimes.pi.version}, Node ${manifest.node.version}, pnpm ${manifest.pnpm.version}`,
@@ -308,9 +312,7 @@ async function testAgentBrowserSmoke() {
     "src-tauri/runtime/extensions/node_modules/pi-agent-browser-native/package.json",
   );
 
-  const targetExtPkgJson = isPackagedClosure
-    ? packagedExtPkgJson
-    : devExtPkgJson;
+  const targetExtPkgJson = isPackagedClosure ? packagedExtPkgJson : devExtPkgJson;
 
   if (!existsSync(targetExtPkgJson)) {
     throw new Error(
@@ -324,11 +326,118 @@ async function testAgentBrowserSmoke() {
       `pi-agent-browser-native version in ${targetExtPkgJson} mismatch: expected exact 0.8.2, got ${extPkg.version}`,
     );
   }
-  console.log(`✓ pi-agent-browser-native installed package verified exact ${extPkg.version} (${targetExtPkgJson})`);
+  console.log(
+    `✓ pi-agent-browser-native installed package verified exact ${extPkg.version} (${targetExtPkgJson})`,
+  );
+  return targetExtPkgJson;
+}
+
+async function testBrowserUseActiveToolsSmoke(targetExtPkgJson) {
+  console.log("\n=== 5. Testing Browser Use Active Tools (Code & Work Modes) ===");
+  const browserExtDir = resolve(targetExtPkgJson, "..");
+  const coreExtPath = resolve(root, "src-tauri/src/work/pi_core_extension.mjs");
+  const piSdkPath = resolve(
+    runtimeRoot,
+    "pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js",
+  );
+
+  const { createAgentSession, DefaultResourceLoader } = await import(piSdkPath);
+
+  // 1. Code Mode + Browser Use ON
+  console.log("Checking Code Mode + Browser Use ON active tools...");
+  const tempAgentDirCode = createTempDir("smoke-code-bu");
+  const resourceLoaderCode = new DefaultResourceLoader({
+    cwd: process.cwd(),
+    agentDir: tempAgentDirCode,
+    additionalExtensionPaths: [browserExtDir],
+  });
+  await resourceLoaderCode.reload();
+  const { session: codeSession } = await createAgentSession({
+    agentDir: tempAgentDirCode,
+    resourceLoader: resourceLoaderCode,
+  });
+  const codeTools = codeSession.getActiveToolNames();
+  if (!codeTools.includes("agent_browser")) {
+    throw new Error(`Code mode active tools missing 'agent_browser'. Got: ${codeTools.join(", ")}`);
+  }
+  if (!codeTools.includes("agent_browser_code")) {
+    throw new Error(
+      `Code mode active tools missing 'agent_browser_code'. Got: ${codeTools.join(", ")}`,
+    );
+  }
+  if (!codeTools.includes("agent_browser_tools")) {
+    throw new Error(
+      `Code mode active tools missing 'agent_browser_tools'. Got: ${codeTools.join(", ")}`,
+    );
+  }
+  console.log(
+    "✓ Code Mode + Browser Use ON: active tools contain agent_browser, agent_browser_code, agent_browser_tools",
+  );
+
+  // 2. Work Mode + Browser Use ON
+  console.log("Checking Work Mode + Browser Use ON active tools after session_start...");
+  const prevEnv = process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED;
+  process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED = "1";
+  try {
+    const tempAgentDirWork = createTempDir("smoke-work-bu");
+    const resourceLoaderWork = new DefaultResourceLoader({
+      cwd: process.cwd(),
+      agentDir: tempAgentDirWork,
+      additionalExtensionPaths: [coreExtPath, browserExtDir],
+    });
+    await resourceLoaderWork.reload();
+    const { session: workSession } = await createAgentSession({
+      agentDir: tempAgentDirWork,
+      resourceLoader: resourceLoaderWork,
+    });
+    await workSession.extensionRunner.emit({ type: "session_start" });
+    const workTools = workSession.getActiveToolNames();
+
+    // Must include agent_browser*
+    if (!workTools.includes("agent_browser")) {
+      throw new Error(
+        `Work mode active tools missing 'agent_browser'. Got: ${workTools.join(", ")}`,
+      );
+    }
+    if (!workTools.includes("agent_browser_code")) {
+      throw new Error(
+        `Work mode active tools missing 'agent_browser_code'. Got: ${workTools.join(", ")}`,
+      );
+    }
+    if (!workTools.includes("agent_browser_tools")) {
+      throw new Error(
+        `Work mode active tools missing 'agent_browser_tools'. Got: ${workTools.join(", ")}`,
+      );
+    }
+
+    // Must NOT include legacy browser_*
+    const forbiddenTools = [
+      "browser_navigate",
+      "browser_click",
+      "browser_type",
+      "browser_snapshot",
+    ];
+    for (const forbidden of forbiddenTools) {
+      if (workTools.includes(forbidden)) {
+        throw new Error(
+          `Work mode active tools must not include legacy '${forbidden}'. Got: ${workTools.join(", ")}`,
+        );
+      }
+    }
+    console.log(
+      "✓ Work Mode + Browser Use ON: active tools contain agent_browser* and no legacy browser_*",
+    );
+  } finally {
+    if (prevEnv === undefined) {
+      delete process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED;
+    } else {
+      process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED = prevEnv;
+    }
+  }
 }
 
 async function verifyNoOrphans() {
-  console.log("\n=== 5. Verifying Zero Orphan Processes ===");
+  console.log("\n=== 6. Verifying Zero Orphan Processes ===");
   for (let i = 0; i < 20; i++) {
     let alive = 0;
     for (const pid of trackedPids) {
@@ -367,7 +476,8 @@ async function main() {
       "--no-context-files",
     ]);
     await testPiExtensionInstall();
-    await testAgentBrowserSmoke();
+    const targetExtPkgJson = await testAgentBrowserSmoke();
+    await testBrowserUseActiveToolsSmoke(targetExtPkgJson);
     await verifyNoOrphans();
 
     console.log("\n🎉 ALL PACKAGED RUNTIME CLOSURE SMOKE CHECKS PASSED SUCCESSFULLY!\n");

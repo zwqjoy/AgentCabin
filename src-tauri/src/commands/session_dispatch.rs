@@ -194,12 +194,6 @@ pub(crate) async fn pi_launch_context(
     if browser_use_enabled {
         extra_env.insert("AGENTCABIN_BROWSER_ENABLED".to_string(), "1".to_string());
         extra_env.insert("AGENTCABIN_BROWSER_SESSION_ID".to_string(), run.id.clone());
-        if !browser_config.allowed_hosts.is_empty() {
-            extra_env.insert(
-                "AGENTCABIN_BROWSER_ALLOWED_HOSTS".to_string(),
-                browser_config.allowed_hosts.join(","),
-            );
-        }
     }
     if web_access_enabled {
         let browser_run_dir = storage::run_dir(&run.id).join("browser");
@@ -220,10 +214,9 @@ pub(crate) async fn pi_launch_context(
             browser_run_dir.to_string_lossy().into_owned(),
         );
         if !browser_config.allowed_hosts.is_empty() {
-            extra_env.insert(
-                "AGENTCABIN_WEB_ALLOWED_HOSTS".to_string(),
-                browser_config.allowed_hosts.join(","),
-            );
+            let hosts = browser_config.allowed_hosts.join(",");
+            extra_env.insert("AGENTCABIN_WEB_ALLOWED_HOSTS".to_string(), hosts.clone());
+            extra_env.insert("AGENTCABIN_BROWSER_ALLOWED_HOSTS".to_string(), hosts);
         }
         if let Some(api_key) = browser_api_key.as_ref() {
             extra_env.insert("AGENTCABIN_WEB_API_KEY".to_string(), api_key.clone());
