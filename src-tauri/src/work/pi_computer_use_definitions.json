@@ -1,29 +1,5 @@
 [
   {
-    "name": "launch_app",
-    "label": "Launch Native App",
-    "description": "Launch a native application and immediately return its observed UI state.",
-    "promptSnippet": "Use to launch or focus a native macOS desktop application before interacting with it.",
-    "promptGuidelines": [],
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Application name (e.g. Notes, Calculator, TextEdit, Finder)"
-        },
-        "bundleId": {
-          "type": "string",
-          "description": "Exact bundle id (e.g. com.apple.Notes)"
-        },
-        "createsNewApplicationInstance": {
-          "type": "boolean",
-          "description": "Whether to launch a new application instance"
-        }
-      }
-    }
-  },
-  {
     "name": "find_roots",
     "label": "Find Roots",
     "description": "Find a bounded, ranked set of controllable UI roots with refs, geometry, and focus state.",

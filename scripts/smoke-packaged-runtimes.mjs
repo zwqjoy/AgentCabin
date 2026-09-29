@@ -308,16 +308,13 @@ async function testAgentBrowserSmoke() {
     "src-tauri/runtime/extensions/node_modules/pi-agent-browser-native/package.json",
   );
 
-  const targetExtPkgJson =
-    isPackagedClosure && existsSync(packagedExtPkgJson)
-      ? packagedExtPkgJson
-      : existsSync(packagedExtPkgJson)
-        ? packagedExtPkgJson
-        : devExtPkgJson;
+  const targetExtPkgJson = isPackagedClosure
+    ? packagedExtPkgJson
+    : devExtPkgJson;
 
   if (!existsSync(targetExtPkgJson)) {
     throw new Error(
-      `pi-agent-browser-native package.json not found in packaged resources or dev extensions (checked ${targetExtPkgJson})`,
+      `pi-agent-browser-native package.json not found in ${isPackagedClosure ? "packaged resources" : "dev extensions"} (checked ${targetExtPkgJson})`,
     );
   }
 
