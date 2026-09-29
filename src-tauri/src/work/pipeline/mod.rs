@@ -1902,11 +1902,16 @@ impl ToolPipeline {
         let full_access = policy.execution_mode == WorkExecutionMode::FullAccess;
         match intent.tool_name.as_str() {
             tool if Self::is_desktop_operator_tool(tool) => {
+                let mut args = intent.arguments.clone();
+                if let serde_json::Value::Object(ref mut map) = args {
+                    map.entry("toolCallId".to_string())
+                        .or_insert_with(|| serde_json::json!(intent.tool_call_id));
+                }
                 let payload = crate::work::desktop_operator::desktop_operator_manager()
                     .execute(
                         &intent.work_run_id,
                         &intent.tool_name,
-                        intent.arguments.clone(),
+                        args,
                     )
                     .await?;
                 Ok(WorkExecutionResult {

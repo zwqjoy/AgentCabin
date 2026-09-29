@@ -376,11 +376,7 @@ impl DesktopOperatorManager {
     }
 
     pub fn helper_available(&self) -> bool {
-        if Self::active_engine() == "legacy" {
-            cfg!(target_os = "macos") && self.helper_path.is_file()
-        } else {
-            cfg!(target_os = "macos")
-        }
+        cfg!(target_os = "macos") && self.helper_path.is_file()
     }
 
     #[cfg(unix)]
@@ -877,8 +873,17 @@ impl DesktopOperatorManager {
         } else {
             bundle_id
         };
+        let new_instance = args
+            .get("createsNewApplicationInstance")
+            .or_else(|| args.get("creates_new_application_instance"))
+            .or_else(|| args.get("new_instance"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         self.claim(run_id).await?;
         let mut command = Command::new("/usr/bin/open");
+        if new_instance {
+            command.arg("-n");
+        }
         if !bundle_id.is_empty() {
             command.arg("-b").arg(bundle_id);
         } else {
@@ -1220,6 +1225,12 @@ impl DesktopOperatorManager {
             "find_roots" | "observe_ui" | "search_ui" | "expand_ui" | "inspect_ui" | "act_ui"
             | "read_text" | "wait_for" | "launch_browser" | "navigate_browser"
             | "evaluate_browser" => {
+                let tool_call_id = arguments
+                    .get("toolCallId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("cu-call-{}", uuid::Uuid::new_v4()));
+
                 self.claim(run_id).await?;
                 let res = self
                     .send_upstream_request(
@@ -1227,6 +1238,7 @@ impl DesktopOperatorManager {
                         json!({
                             "runId": run_id,
                             "toolName": tool_name,
+                            "toolCallId": tool_call_id,
                             "params": arguments,
                         }),
                     )
@@ -1249,9 +1261,92 @@ impl DesktopOperatorManager {
                     Err(err_msg.to_string())
                 }
             }
-            "desktop_list_apps" | "desktop_open_app" | "desktop_observe" | "desktop_screenshot"
-            | "desktop_click" | "desktop_type" | "desktop_key" | "desktop_scroll"
-            | "desktop_act_batch" | "launch_app" => {
+            "launch_app" | "desktop_open_app" => {
+                let launch_res = self.launch(run_id, &arguments).await?;
+                let app_name = launch_res
+                    .get("app_name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let bundle_id = arguments
+                    .get("bundle_id")
+                    .or_else(|| arguments.get("bundleId"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let query_param = if !app_name.is_empty() {
+                    json!({ "app": app_name })
+                } else if !bundle_id.is_empty() {
+                    json!({ "bundleId": bundle_id })
+                } else {
+                    json!({})
+                };
+
+                let mut observation = Value::Null;
+                if let Ok(roots_val) = self
+                    .send_upstream_request(
+                        "execute",
+                        json!({
+                            "runId": run_id,
+                            "toolName": "find_roots",
+                            "params": query_param,
+                        }),
+                    )
+                    .await
+                {
+                    let target_root = roots_val
+                        .pointer("/result/details/windows")
+                        .and_then(Value::as_array)
+                        .and_then(|w| w.first())
+                        .or_else(|| {
+                            roots_val
+                                .pointer("/result/windows")
+                                .and_then(Value::as_array)
+                                .and_then(|w| w.first())
+                        });
+
+                    if let Some(w) = target_root {
+                        if let Some(r_ref) = w
+                            .get("windowRef")
+                            .or_else(|| w.get("root"))
+                            .and_then(Value::as_str)
+                        {
+                            if let Ok(obs_val) = self
+                                .send_upstream_request(
+                                    "execute",
+                                    json!({
+                                        "runId": run_id,
+                                        "toolName": "observe_ui",
+                                        "params": { "root": r_ref },
+                                    }),
+                                )
+                                .await
+                            {
+                                if let Some(res) = obs_val.get("result") {
+                                    observation = res.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let text_summary = format!("Application '{}' launched successfully.", app_name);
+                let mut content = vec![json!({"type": "text", "text": text_summary})];
+                if let Some(obs_content) = observation.get("content").and_then(Value::as_array) {
+                    content.extend(obs_content.iter().cloned());
+                }
+
+                Ok(json!({
+                    "backend": "upstream",
+                    "tool": tool_name,
+                    "durationMs": 0,
+                    "result": {
+                        "content": content,
+                        "launch": launch_res,
+                        "observation": observation,
+                    },
+                }))
+            }
+            "desktop_list_apps" | "desktop_observe" | "desktop_screenshot" | "desktop_click"
+            | "desktop_type" | "desktop_key" | "desktop_scroll" | "desktop_act_batch" => {
                 self.legacy_execute(run_id, tool_name, arguments).await
             }
             other => Err(format!("Unknown desktop tool: {other}")),
@@ -1350,7 +1445,18 @@ impl DesktopOperatorManager {
             }
             return current;
         }
-        self.status().await
+        let current = self.status().await;
+        if (current.screen_recording != Some(true) || current.accessibility != Some(true))
+            && self.restart_for_permission_refresh().await.is_ok()
+        {
+            if let Ok(mut guard) = self.upstream_worker.try_lock() {
+                if let Some(mut worker) = guard.take() {
+                    let _ = worker.child.kill().await;
+                }
+            }
+            return self.status().await;
+        }
+        current
     }
 
     pub async fn open_permission_pane(&self, kind: &str) -> Result<(), String> {
@@ -1379,6 +1485,7 @@ impl DesktopOperatorManager {
         if Self::active_engine() == "legacy" {
             return self.legacy_status().await;
         }
+        let default_cmd = self.helper_path.to_string_lossy().into_owned();
         match self.send_upstream_request("status", json!({})).await {
             Ok(res) => {
                 let enabled = res.get("enabled").and_then(Value::as_bool).unwrap_or(true);
@@ -1386,7 +1493,7 @@ impl DesktopOperatorManager {
                 let command = res
                     .get("command")
                     .and_then(Value::as_str)
-                    .unwrap_or("pi-computer-use")
+                    .unwrap_or(&default_cmd)
                     .to_string();
                 let message = res
                     .get("message")
@@ -1409,8 +1516,8 @@ impl DesktopOperatorManager {
                 enabled: crate::work::desktop_operator::is_requested(),
                 ready: false,
                 owner_run_id: self.desktop_lease.lock().await.clone(),
-                command: "pi-computer-use".to_string(),
-                message: format!("Upstream status error: {e}"),
+                command: default_cmd,
+                message: format!("agentcabin-computer-use status error: {e}"),
                 accessibility: Some(false),
                 screen_recording: Some(false),
             },
@@ -1676,5 +1783,89 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn fail_closed_when_helper_missing() {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        let mut manager = DesktopOperatorManager::new();
+        manager.helper_path = PathBuf::from("/non/existent/path/to/agentcabin-computer-use");
+        let result = manager.ensure_upstream_worker().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("agentcabin-computer-use macOS bridge is missing"),
+            "Expected missing bridge error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn protocol_mismatch_fails_closed() {
+        let bad_proto = json!({
+            "protocolVersion": 5,
+            "architectureVersion": ARCHITECTURE_VERSION,
+            "invariants": REQUIRED_INVARIANTS,
+        });
+        let err = DesktopOperatorManager::validate_diagnostics(&bad_proto).unwrap_err();
+        assert!(err.contains("protocol mismatch: expected 6, got 5"));
+    }
+
+    #[test]
+    fn architecture_mismatch_fails_closed() {
+        let bad_arch = json!({
+            "protocolVersion": PROTOCOL_VERSION,
+            "architectureVersion": 2,
+            "invariants": REQUIRED_INVARIANTS,
+        });
+        let err = DesktopOperatorManager::validate_diagnostics(&bad_arch).unwrap_err();
+        assert!(err.contains("architecture mismatch: expected 1, got 2"));
+    }
+
+    #[tokio::test]
+    async fn desktop_lease_mutual_exclusion_and_release() {
+        let manager = DesktopOperatorManager::new();
+        let bridge_state = crate::work::internal_bridge::bridge_state();
+        let token_a = format!("token-{}", uuid::Uuid::new_v4());
+        bridge_state.tokens.write().await.insert(
+            token_a.clone(),
+            crate::work::internal_bridge::ProcessBridgeTokenInfo {
+                token: token_a.clone(),
+                run_id: "run_A".to_string(),
+                task_id: Some("task_A".to_string()),
+                workspace_id: "ws_A".to_string(),
+                execution_context: crate::work::models::ExecutionContext::Attended,
+                proxy_url: None,
+            },
+        );
+
+        // Run A claims
+        assert!(manager.claim("run_A").await.is_ok());
+
+        // Run B claims -> denied while run A is active
+        let denied = manager.claim("run_B").await;
+        assert!(denied.is_err());
+        assert!(denied.unwrap_err().contains("belongs to session 'run_A'"));
+
+        // When run A becomes inactive, run B can take over
+        bridge_state.tokens.write().await.remove(&token_a);
+        assert!(manager.claim("run_B").await.is_ok());
+
+        // Release run B
+        manager.release_for_run("run_B").await;
+        assert!(manager.desktop_lease.lock().await.is_none());
+    }
+
+    #[test]
+    fn upstream_worker_uses_agentcabin_helper_socket() {
+        let manager = DesktopOperatorManager::new();
+        assert!(
+            manager
+                .socket_path
+                .to_string_lossy()
+                .contains("agentcabin-computer-use-"),
+            "Socket path must be agentcabin-owned"
+        );
     }
 }

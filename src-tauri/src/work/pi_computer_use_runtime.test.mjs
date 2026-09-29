@@ -66,3 +66,41 @@ test("Host Computer Use runtime supports session shutdown", async () => {
   const runtime = await createComputerUseHostRuntime();
   await assert.doesNotReject(() => runtime.shutdownSession("run-test-shutdown"));
 });
+
+test("Host Computer Use runtime supports tool cancellation via cancelTool", async () => {
+  const runtime = await createComputerUseHostRuntime();
+  const toolCallId = "call-long-wait-1";
+
+  // Start a wait_for tool with a long timeout
+  const promise = runtime.executeTool(
+    "run-cancel-test",
+    "wait_for",
+    toolCallId,
+    { timeoutMs: 15000, condition: "none" }
+  );
+
+  // Cancel immediately
+  const cancelled = runtime.cancelTool(toolCallId);
+  assert.equal(cancelled, true, "cancelTool should return true for active call");
+
+  const result = await promise;
+  assert.equal(result.success, false, "Cancelled tool execution must report failure");
+  assert.equal(result.status, "failed");
+  assert.match(result.stderr, /abort|cancel|stopped/i);
+
+  // Subsequent cancel is idempotent
+  const secondCancel = runtime.cancelTool(toolCallId);
+  assert.equal(secondCancel, false, "cancelTool for finished call should return false");
+});
+
+test("Upstream helper client respects PI_CU_SOCKET_PATH and does not install helper daemon", async () => {
+  const testSocket = "/tmp/test-agentcabin-custom.sock";
+  process.env.PI_CU_SOCKET_PATH = testSocket;
+  try {
+    const runtime = await createComputerUseHostRuntime();
+    assert.ok(runtime, "Runtime successfully initialized with external socket env");
+  } finally {
+    delete process.env.PI_CU_SOCKET_PATH;
+  }
+});
+

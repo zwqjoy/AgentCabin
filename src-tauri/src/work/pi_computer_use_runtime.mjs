@@ -127,15 +127,16 @@ export async function createComputerUseHostRuntime(options = {}) {
     const ctx = createContextForRun(runId, runOptions);
     const startTime = Date.now();
     const effectiveCallId = toolCallId || `call-${Date.now()}`;
-    let ownController = null;
-    let effectiveSignal = signal;
-    if (!effectiveSignal) {
-      ownController = new AbortController();
-      effectiveSignal = ownController.signal;
-      activeControllers.set(effectiveCallId, ownController);
-    } else {
-      activeControllers.set(effectiveCallId, { abort: () => {} });
+    const controller = new AbortController();
+    if (signal) {
+      if (signal.aborted) {
+        controller.abort(signal.reason);
+      } else {
+        signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
+      }
     }
+    activeControllers.set(effectiveCallId, controller);
+    const effectiveSignal = controller.signal;
 
     try {
       const result = await tool.execute(

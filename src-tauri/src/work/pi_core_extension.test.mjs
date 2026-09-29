@@ -1738,7 +1738,7 @@ test("Work core exposes Computer Use V2 tools only when the desktop gate is enab
       on() {},
     });
     assert.equal(tools.has("desktop_list_apps"), false);
-    assert.equal(tools.has("launch_app"), false);
+    assert.equal(tools.has("launch_app"), true);
     assert.equal(tools.has("find_roots"), true);
     assert.equal(tools.has("observe_ui"), true);
     assert.equal(tools.has("act_ui"), true);

@@ -208,3 +208,39 @@ test("Proxy releases desktop lease on session shutdown or agent end", async () =
   assert.equal(pipelineCalls.length, 2);
   assert.equal(pipelineCalls[1].toolName, "desktop_release");
 });
+
+test("Proxy registers launch_app compatibility tool and routes through ToolPipeline", async () => {
+  const registered = new Map();
+  const pipelineCalls = [];
+
+  const fakePi = {
+    registerTool: (tool) => {
+      registered.set(tool.name, tool);
+    },
+    on: () => {},
+  };
+
+  registerComputerUseProxy(fakePi, {
+    callToolPipeline: async (toolCallId, toolName, action, params) => {
+      pipelineCalls.push({ toolCallId, toolName, action, params });
+      return {
+        success: true,
+        result: {
+          content: [{ type: "text", text: "App launched" }],
+          details: { tool: "launch_app", pid: 12345 },
+        },
+      };
+    },
+  });
+
+  assert.ok(registered.has("launch_app"), "launch_app must be registered");
+  const launchApp = registered.get("launch_app");
+  const result = await launchApp.execute("call-launch-1", { name: "Calculator" });
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].toolCallId, "call-launch-1");
+  assert.equal(pipelineCalls[0].toolName, "launch_app");
+  assert.deepEqual(pipelineCalls[0].params, { name: "Calculator" });
+  assert.equal(result.details.pid, 12345);
+});
+
