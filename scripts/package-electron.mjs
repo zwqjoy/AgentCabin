@@ -82,7 +82,8 @@ if (debugCore) {
   ]);
 }
 
-// 4. Prepare and verify the immutable runtime closure before packaging.
+// 4. Prepare extensions, prepare runtimes, and verify the immutable runtime closure before packaging.
+runStep("Prepare bundled Pi extensions", "npm", ["run", "prepare:pi-extensions"]);
 runStep("Prepare bundled runtime closure", "npm", ["run", "prepare:runtimes"]);
 runStep("Verify bundled runtime closure", "npm", ["run", "verify:runtimes"]);
 // 5. Run electron-builder

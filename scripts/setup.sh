@@ -435,12 +435,12 @@ case "$OS" in
 esac
 
 # ---------------------------------------------------------------------------
-# Step 3: Node.js >= 22.19.0
+# Step 3: Node.js >= 24.21.0
 # ---------------------------------------------------------------------------
 
 header "Step 3: Node.js"
 
-NODE_MIN="22.19.0"
+NODE_MIN="24.21.0"
 
 if command -v node &>/dev/null; then
   node_ver=$(node --version | sed 's/^v//')
@@ -631,7 +631,7 @@ else
     require_or_exit "Node.js / npm (required to install Pi Agent CLI)"
   fi
 
-  if confirm "Prepare bundled Pi Agent runtime @earendil-works/pi-coding-agent@0.85.1? (npm run prepare:runtimes)"; then
+  if confirm "Prepare bundled Pi Agent runtime @earendil-works/pi-coding-agent@0.87.1? (npm run prepare:runtimes)"; then
     if $USE_MIRROR; then
       npm config set registry https://registry.npmmirror.com 2>/dev/null || true
     fi

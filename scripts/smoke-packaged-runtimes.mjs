@@ -62,6 +62,12 @@ const runtimeRoot = findRuntimeRoot();
 console.log(`\n=== 1. Validating Runtime Closure at: ${runtimeRoot} ===`);
 
 const manifest = JSON.parse(readFileSync(join(runtimeRoot, "runtime-manifest.json"), "utf8"));
+if (manifest.runtimes?.pi?.version !== "0.87.1") {
+  throw new Error(`Pi runtime version mismatch in manifest: expected 0.87.1, got ${manifest.runtimes?.pi?.version}`);
+}
+if (manifest.node?.version !== "24.21.0") {
+  throw new Error(`Node runtime version mismatch in manifest: expected 24.21.0, got ${manifest.node?.version}`);
+}
 console.log(
   `Manifest: Pi ${manifest.runtimes.pi.version}, Node ${manifest.node.version}, pnpm ${manifest.pnpm.version}`,
 );
@@ -279,14 +285,14 @@ async function testAgentBrowserSmoke() {
   }
   console.log(`✓ agent-browser version verified (${expectedVersion})`);
 
-  // 2. Validate pi-agent-browser-native extension pinning (0.6.12)
+  // 2. Validate pi-agent-browser-native extension pinning (0.8.2)
   const extPackageJson = resolve(root, "src-tauri/runtime/extensions/package.json");
   if (existsSync(extPackageJson)) {
     const extPkg = JSON.parse(readFileSync(extPackageJson, "utf8"));
     const nativeVersion = extPkg.dependencies?.["pi-agent-browser-native"];
-    if (nativeVersion !== "0.6.12") {
+    if (nativeVersion !== "0.8.2") {
       throw new Error(
-        `pi-agent-browser-native version in extensions/package.json mismatch: expected exact 0.6.12, got ${nativeVersion}`,
+        `pi-agent-browser-native version in extensions/package.json mismatch: expected exact 0.8.2, got ${nativeVersion}`,
       );
     }
     console.log(`✓ pi-agent-browser-native pinned to exact ${nativeVersion}`);

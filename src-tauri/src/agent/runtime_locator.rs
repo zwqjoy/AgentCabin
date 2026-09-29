@@ -2,7 +2,7 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-pub const PI_VERSION: &str = "0.85.1";
+pub const PI_VERSION: &str = "0.87.1";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RuntimeManifest {
@@ -222,7 +222,7 @@ mod tests {
     use super::*;
     #[test]
     fn pi_is_pinned() {
-        assert_eq!(PI_VERSION, "0.85.1");
+        assert_eq!(PI_VERSION, "0.87.1");
     }
 
     #[test]

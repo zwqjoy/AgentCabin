@@ -53,13 +53,13 @@ AgentCabin 是一个面向 Pi Coding Agent 的开源桌面应用，也可以理�
 | 类别 | 开源 AI 编程 Agent 桌面端 / 本地优先开发工作台 |
 | Agent 引擎 | Pi Coding Agent |
 | 模式 | Code：交互式开发；Work：持久任务、审批、恢复、产物和定时执行 |
-| 运行时闭包 | Node.js 22.19.0、Pi 0.85.1、pnpm 10.15.0 |
+| 运行时闭包 | Node.js 24.21.0、Pi 0.87.1、pnpm 10.15.0、agent-browser 0.37.0、pi-agent-browser-native 0.8.2 |
 | 技术栈 | Electron、Svelte 5、SvelteKit、Rust、TypeScript |
 | 许可证 | Apache License 2.0 |
 
 > **打包版本包含应用自有的运行时闭包。**
 >
-> 当前闭包固定 Node.js 22.19.0、Pi 0.85.1、pnpm 10.15.0，以及 Code/Work 所需的 Pi 扩展。开发构建也可以使用本地准备好的运行时目录。
+> 当前闭包固定 Node.js 24.21.0、Pi 0.87.1、pnpm 10.15.0、agent-browser 0.37.0、pi-agent-browser-native 0.8.2，以及 Code/Work 所需的 Pi 扩展。开发构建也可以使用本地准备好的运行时目录。
 >
 > 官方打包目标为 **macOS Apple Silicon**（`arm64`），最低 macOS 版本为 13.0。Windows 与 Linux 保留源码级兼容，作为社区构建目标。
 
@@ -130,7 +130,7 @@ npm run electron:dev
 
 **前置条件：**
 
-- [Node.js](https://nodejs.org/) >= 22.19.0
+- [Node.js](https://nodejs.org/) >= 24.21.0
 - [Rust](https://rustup.rs/) >= 1.75
 
 **macOS：**
@@ -199,8 +199,10 @@ Electron 宿主
     └── ~/.agentcabin/ 下的本地 JSON/文件存储
 
 托管运行时闭包
-├── Node.js 22.19.0 + pnpm 10.15.0
-├── Pi 0.85.1（RPC）
+├── Node.js 24.21.0 + pnpm 10.15.0
+├── Pi 0.87.1（RPC）
+├── agent-browser 0.37.0
+└── pi-agent-browser-native 0.8.2
 ```
 
 **技术栈：**

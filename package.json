@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "main": "electron/dist/main.cjs",
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=24.21.0 <25"
   },
   "scripts": {
     "dev": "node scripts/electron-dev.mjs",

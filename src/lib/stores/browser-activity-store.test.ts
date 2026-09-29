@@ -6,6 +6,7 @@ const eventState = vi.hoisted(() => ({
 
 vi.mock("$lib/api", () => ({
   getBusEvents: vi.fn(),
+  readFileBase64: vi.fn(),
 }));
 
 vi.mock("$lib/stores/event-middleware", () => ({
@@ -51,7 +52,7 @@ describe("browser-activity-store", () => {
       expect(activity.traces[0].targetUrl).toBe("https://example.com");
     });
 
-    it("projects tool_end with title, url and screenshot", () => {
+    it("projects tool_end with completed/success status, title, url and screenshot", () => {
       const startEv: BusEvent = {
         type: "tool_start",
         run_id: "run-test-1",
@@ -66,7 +67,7 @@ describe("browser-activity-store", () => {
         run_id: "run-test-1",
         tool_use_id: "tu-1",
         tool_name: "agent_browser",
-        status: "success",
+        status: "completed",
         duration_ms: 350,
         output: {
           content: [
@@ -118,7 +119,121 @@ describe("browser-activity-store", () => {
       expect(activity.traces[0].description).toContain("test input");
     });
 
-    it("projects tool_end on failure with error details", () => {
+    it("projects agent_browser_action direct payload", () => {
+      const event: BusEvent = {
+        type: "tool_start",
+        run_id: "run-test-1",
+        tool_use_id: "tu-action-1",
+        tool_name: "agent_browser_action",
+        input: {
+          action: "click",
+          selector: "#submit-btn",
+        },
+      };
+
+      const activity = projectAgentBrowserActivity(null, event);
+      expect(activity.status).toBe("running");
+      expect(activity.traces).toHaveLength(1);
+      expect(activity.traces[0].actionType).toBe("click");
+      expect(activity.traces[0].selector).toBe("#submit-btn");
+      expect(activity.traces[0].description).toBe("点击: #submit-btn");
+    });
+
+    it("projects agent_browser_code payload", () => {
+      const event: BusEvent = {
+        type: "tool_start",
+        run_id: "run-test-1",
+        tool_use_id: "tu-code-1",
+        tool_name: "agent_browser_code",
+        input: {
+          code: "await browser({ args: ['snapshot'] });",
+        },
+      };
+
+      const activity = projectAgentBrowserActivity(null, event);
+      expect(activity.status).toBe("running");
+      expect(activity.traces[0].actionType).toBe("custom");
+      expect(activity.traces[0].description).toBe("执行浏览器自动化脚本");
+    });
+
+    it("projects agent_browser_qa payload", () => {
+      const event: BusEvent = {
+        type: "tool_start",
+        run_id: "run-test-1",
+        tool_use_id: "tu-qa-1",
+        tool_name: "agent_browser_qa",
+        input: {
+          url: "https://example.com/checkout",
+        },
+      };
+
+      const activity = projectAgentBrowserActivity(null, event);
+      expect(activity.status).toBe("running");
+      expect(activity.traces[0].actionType).toBe("navigate");
+      expect(activity.traces[0].targetUrl).toBe("https://example.com/checkout");
+      expect(activity.traces[0].description).toBe("QA 页面校验: https://example.com/checkout");
+    });
+
+    it("projects agent_browser_electron and agent_browser_tools payloads", () => {
+      const elEv: BusEvent = {
+        type: "tool_start",
+        run_id: "run-test-1",
+        tool_use_id: "tu-el-1",
+        tool_name: "agent_browser_electron",
+        input: {
+          action: "probe",
+        },
+      };
+      const elActivity = projectAgentBrowserActivity(null, elEv);
+      expect(elActivity.traces[0].description).toBe("Electron: probe");
+
+      const toolsEv: BusEvent = {
+        type: "tool_start",
+        run_id: "run-test-1",
+        tool_use_id: "tu-tools-1",
+        tool_name: "agent_browser_tools",
+        input: {
+          enable: ["action", "qa"],
+        },
+      };
+      const toolsActivity = projectAgentBrowserActivity(null, toolsEv);
+      expect(toolsActivity.traces[0].description).toBe("启用浏览器工具: action, qa");
+    });
+
+    it("projects tool_end with pageChangeSummary and sessionTabTarget", () => {
+      const startEv: BusEvent = {
+        type: "tool_start",
+        run_id: "run-test-1",
+        tool_use_id: "tu-sum-1",
+        tool_name: "agent_browser",
+        input: { args: ["click", "@e5"] },
+      };
+      const afterStart = projectAgentBrowserActivity(null, startEv);
+
+      const endEv: BusEvent = {
+        type: "tool_end",
+        run_id: "run-test-1",
+        tool_use_id: "tu-sum-1",
+        tool_name: "agent_browser",
+        status: "completed",
+        output: {
+          details: {
+            pageChangeSummary: {
+              url: "https://github.com/trending",
+              title: "Trending Repositories",
+            },
+            imagePath: "/tmp/agent-browser-shots/trending.png",
+          },
+        },
+      };
+
+      const afterEnd = projectAgentBrowserActivity(afterStart, endEv);
+      expect(afterEnd.currentUrl).toBe("https://github.com/trending");
+      expect(afterEnd.pageTitle).toBe("Trending Repositories");
+      expect(afterEnd.lastScreenshot).toBe("/tmp/agent-browser-shots/trending.png");
+    });
+
+    it("projects tool_end on failure with 'failed' status and error details", () => {
       const startEv: BusEvent = {
         type: "tool_start",
         run_id: "run-test-1",
@@ -133,12 +248,13 @@ describe("browser-activity-store", () => {
         run_id: "run-test-1",
         tool_use_id: "tu-3",
         tool_name: "agent_browser",
-        status: "error",
+        status: "failed",
         duration_ms: 120,
         output: {
           details: {
             error: "Ref @e999 not found",
             failureCategory: "selector-not-found",
+            succeeded: false,
           },
         },
       };
@@ -167,6 +283,13 @@ describe("browser-activity-store", () => {
       });
       expect(completed.status).toBe("completed");
 
+      const successState = projectAgentBrowserActivity(base, {
+        type: "run_state",
+        run_id: "run-test-1",
+        state: "success",
+      });
+      expect(successState.status).toBe("completed");
+
       const failed = projectAgentBrowserActivity(base, {
         type: "run_state",
         run_id: "run-test-1",
@@ -179,7 +302,8 @@ describe("browser-activity-store", () => {
   });
 
   describe("BrowserActivityStore instance", () => {
-    it("subscribes to live events via eventMiddleware", () => {
+    it("subscribes to live events via eventMiddleware and resolves file screenshots", async () => {
+      vi.mocked(api.readFileBase64).mockResolvedValueOnce(["samplebase64", "image/png"]);
       const store = new BrowserActivityStore();
       expect(eventState.handler).toBeDefined();
 
@@ -195,6 +319,24 @@ describe("browser-activity-store", () => {
       expect(activity).not.toBeNull();
       expect(activity?.currentUrl).toBe("https://news.ycombinator.com");
       expect(activity?.status).toBe("running");
+
+      eventState.handler?.({
+        type: "tool_end",
+        run_id: "run-sub-1",
+        tool_use_id: "tu-1",
+        tool_name: "agent_browser",
+        status: "completed",
+        output: {
+          details: {
+            imagePath: "/tmp/screenshots/hn.png",
+          },
+        },
+      } as BusEvent);
+
+      await vi.waitFor(() => {
+        const updated = store.getActivity("run-sub-1");
+        expect(updated?.lastScreenshot).toBe("data:image/png;base64,samplebase64");
+      });
 
       store.destroy();
     });
@@ -213,7 +355,7 @@ describe("browser-activity-store", () => {
           run_id: "run-hist-1",
           tool_use_id: "tu-10",
           tool_name: "agent_browser",
-          status: "success",
+          status: "completed",
           duration_ms: 200,
           output: {
             details: {

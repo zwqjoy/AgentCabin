@@ -6,7 +6,7 @@ use serde_json::Value;
 use tokio::process::Command;
 
 const PI_CODEX_PROVIDER: &str = "openai-codex";
-const MINIMUM_PI_NODE_VERSION: &str = "22.19.0";
+const MINIMUM_PI_NODE_VERSION: &str = "24.21.0";
 
 /// Check whether the user has an active OAuth session or API key configured.
 #[tauri::command]
@@ -1077,12 +1077,12 @@ mod tests {
 
     #[test]
     fn test_node_version_satisfies() {
-        assert!(node_version_satisfies("v22.19.0", "22.19.0"));
-        assert!(node_version_satisfies("v22.19.1", "22.19.0"));
-        assert!(node_version_satisfies("v26.7.0", "22.19.0"));
-        assert!(!node_version_satisfies("v22.18.9", "22.19.0"));
-        assert!(!node_version_satisfies("v20.18.0", "22.19.0"));
-        assert!(!node_version_satisfies("invalid", "22.19.0"));
+        assert!(node_version_satisfies("v24.21.0", "24.21.0"));
+        assert!(node_version_satisfies("v24.21.1", "24.21.0"));
+        assert!(node_version_satisfies("v26.7.0", "24.21.0"));
+        assert!(!node_version_satisfies("v24.20.9", "24.21.0"));
+        assert!(!node_version_satisfies("v22.19.0", "24.21.0"));
+        assert!(!node_version_satisfies("invalid", "24.21.0"));
     }
 
     #[test]

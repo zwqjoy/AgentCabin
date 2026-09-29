@@ -1,12 +1,7 @@
 import * as api from "$lib/api";
 import { getEventMiddleware } from "$lib/stores/event-middleware";
 import type { BusEvent } from "$lib/types";
-import type {
-  BrowserActionType,
-  BrowserActivityView,
-  BrowserSessionStatus,
-  BrowserTraceEntry,
-} from "$lib/types/work";
+import type { BrowserActionType, BrowserActivityView, BrowserTraceEntry } from "$lib/types/work";
 import { isInteractiveBrowserToolName, sanitizeTraceText } from "$lib/utils/work-browser";
 
 interface ExtendedTraceEntry extends BrowserTraceEntry {
@@ -68,7 +63,7 @@ function formatSemanticActionDescription(semanticAction: Record<string, unknown>
   let actionType: BrowserActionType = "click";
   let desc = "点击目标元素";
 
-  if (action === "fill") {
+  if (action === "fill" || action === "type") {
     actionType = "type";
     const text = typeof semanticAction.text === "string" ? semanticAction.text : "";
     desc = `输入: "${sanitizeTraceText(text)}"`;
@@ -79,6 +74,10 @@ function formatSemanticActionDescription(semanticAction: Record<string, unknown>
   } else if (action === "check" || action === "click") {
     actionType = "click";
     desc = `点击: ${selector || "元素"}`;
+  } else if (action === "open" || action === "navigate" || action === "goto") {
+    actionType = "navigate";
+    const url = typeof semanticAction.url === "string" ? semanticAction.url : "";
+    desc = url ? `打开 ${url}` : "页面导航";
   }
 
   return { actionType, description: desc, selector };
@@ -118,13 +117,27 @@ function extractScreenshotFromOutput(
     }
   }
 
+  if (typeof details.imagePath === "string" && details.imagePath.length > 0) {
+    return details.imagePath;
+  }
+
+  if (Array.isArray(details.imagePaths) && details.imagePaths.length > 0) {
+    const last = details.imagePaths[details.imagePaths.length - 1];
+    if (typeof last === "string" && last.length > 0) {
+      return last;
+    }
+  }
+
   if (Array.isArray(details.artifacts)) {
     for (const art of details.artifacts) {
       if (art && typeof art === "object") {
         const artObj = art as Record<string, unknown>;
         if (
-          (artObj.kind === "screenshot" || artObj.mediaType === "image/png") &&
-          typeof artObj.path === "string"
+          (artObj.kind === "screenshot" ||
+            artObj.kind === "image" ||
+            artObj.mediaType === "image/png") &&
+          typeof artObj.path === "string" &&
+          artObj.path.length > 0
         ) {
           return artObj.path;
         }
@@ -155,7 +168,7 @@ export function projectAgentBrowserActivity(
   };
 
   if (event.type === "tool_start" && isInteractiveBrowserToolName(event.tool_name)) {
-    const input = event.input ?? {};
+    const input = (event.input ?? {}) as Record<string, unknown>;
     let actionType: BrowserActionType = "custom";
     let description = event.tool_name;
     let targetUrl: string | null = null;
@@ -201,19 +214,64 @@ export function projectAgentBrowserActivity(
       actionType = parsed.actionType;
       description = parsed.description;
       selector = parsed.selector;
-    } else if (input.qa && typeof input.qa === "object") {
-      const qa = input.qa as Record<string, unknown>;
+    } else if (
+      event.tool_name === "agent_browser_electron" ||
+      (input.electron && typeof input.electron === "object")
+    ) {
+      actionType = "custom";
+      const el = (
+        input.electron && typeof input.electron === "object" ? input.electron : input
+      ) as Record<string, unknown>;
+      description =
+        typeof el.action === "string" ? `Electron: ${el.action}` : "Electron 应用自动化";
+    } else if (event.tool_name === "agent_browser_tools" || Array.isArray(input.enable)) {
+      actionType = "custom";
+      const enable = Array.isArray(input.enable) ? input.enable.join(", ") : "";
+      description = enable ? `启用浏览器工具: ${enable}` : "查询浏览器工具列表";
+    } else if (
+      event.tool_name === "agent_browser_code" ||
+      typeof input.code === "string" ||
+      typeof input.script === "string"
+    ) {
+      actionType = "custom";
+      description = "执行浏览器自动化脚本";
+    } else if (
+      event.tool_name === "agent_browser_qa" ||
+      (input.qa && typeof input.qa === "object")
+    ) {
       actionType = "navigate";
+      const qa = (input.qa && typeof input.qa === "object" ? input.qa : input) as Record<
+        string,
+        unknown
+      >;
       targetUrl = typeof qa.url === "string" ? qa.url : null;
       description = targetUrl ? `QA 页面校验: ${targetUrl}` : "QA 页面校验";
+    } else if (typeof input.action === "string") {
+      const act = input.action.toLowerCase();
+      actionType = parseActionTypeFromArgs(act);
+      selector = typeof input.selector === "string" ? input.selector : null;
+      if (act === "fill" || act === "type") {
+        const text = typeof input.text === "string" ? sanitizeTraceText(input.text) : "";
+        description = selector ? `在 ${selector} 输入 "${text}"` : `输入 "${text}"`;
+      } else if (act === "click" || act === "check") {
+        actionType = "click";
+        description = selector ? `点击: ${selector}` : "点击元素";
+      } else if (act === "select") {
+        actionType = "select_option";
+        const val = input.value ?? input.values;
+        description = `选择: ${Array.isArray(val) ? val.join(", ") : String(val ?? "")}`;
+      } else if (act === "open" || act === "navigate" || act === "goto") {
+        actionType = "navigate";
+        targetUrl = typeof input.url === "string" ? input.url : null;
+        description = targetUrl ? `打开 ${targetUrl}` : "页面导航";
+      } else {
+        description = `${act} ${selector ?? ""}`.trim();
+      }
     } else if (input.job && typeof input.job === "object") {
       actionType = "custom";
       const jobObj = input.job as Record<string, unknown>;
       const steps = Array.isArray(jobObj.steps) ? jobObj.steps.length : 0;
       description = `批处理任务 (${steps} 步)`;
-    } else if (typeof input.script === "string") {
-      actionType = "custom";
-      description = "执行浏览器自动化脚本";
     }
 
     const newTrace: ExtendedTraceEntry = {
@@ -239,43 +297,61 @@ export function projectAgentBrowserActivity(
   }
 
   if (event.type === "tool_end" && isInteractiveBrowserToolName(event.tool_name)) {
-    const isError = event.status === "error";
-    const out = event.output ?? {};
+    const statusLower = String(event.status ?? "").toLowerCase();
+    const out = (event.output ?? {}) as Record<string, unknown>;
     const details =
       ((out.details ?? event.tool_use_result?.details ?? out) as Record<string, unknown>) ?? {};
 
+    const isError =
+      statusLower === "failed" || statusLower === "error" || details.succeeded === false;
+
     // Extract updated URL / Title
+    const pageChangeSummary = (
+      details.pageChangeSummary && typeof details.pageChangeSummary === "object"
+        ? details.pageChangeSummary
+        : null
+    ) as Record<string, unknown> | null;
+    const sessionTabTarget = (
+      details.sessionTabTarget && typeof details.sessionTabTarget === "object"
+        ? details.sessionTabTarget
+        : null
+    ) as Record<string, unknown> | null;
+    const refSnapshotPage = (
+      details.refSnapshot &&
+      typeof details.refSnapshot === "object" &&
+      (details.refSnapshot as Record<string, unknown>).page &&
+      typeof (details.refSnapshot as Record<string, unknown>).page === "object"
+        ? (details.refSnapshot as Record<string, unknown>).page
+        : null
+    ) as Record<string, unknown> | null;
+
     const newUrl =
-      typeof details.url === "string"
+      typeof details.url === "string" && details.url.length > 0
         ? details.url
-        : typeof details.targetUrl === "string"
-          ? details.targetUrl
-          : typeof details.pageUrl === "string"
-            ? details.pageUrl
-            : (details.refSnapshot as Record<string, unknown>)?.page &&
-                typeof (
-                  (details.refSnapshot as Record<string, unknown>).page as Record<string, unknown>
-                ).url === "string"
-              ? String(
-                  ((details.refSnapshot as Record<string, unknown>).page as Record<string, unknown>)
-                    .url,
-                )
-              : null;
+        : typeof pageChangeSummary?.url === "string" && pageChangeSummary.url.length > 0
+          ? pageChangeSummary.url
+          : typeof sessionTabTarget?.url === "string" && sessionTabTarget.url.length > 0
+            ? sessionTabTarget.url
+            : typeof details.targetUrl === "string" && details.targetUrl.length > 0
+              ? details.targetUrl
+              : typeof details.pageUrl === "string" && details.pageUrl.length > 0
+                ? details.pageUrl
+                : typeof refSnapshotPage?.url === "string" && refSnapshotPage.url.length > 0
+                  ? String(refSnapshotPage.url)
+                  : null;
 
     const newTitle =
-      typeof details.title === "string"
+      typeof details.title === "string" && details.title.length > 0
         ? details.title
-        : typeof details.pageTitle === "string"
-          ? details.pageTitle
-          : (details.refSnapshot as Record<string, unknown>)?.page &&
-              typeof (
-                (details.refSnapshot as Record<string, unknown>).page as Record<string, unknown>
-              ).title === "string"
-            ? String(
-                ((details.refSnapshot as Record<string, unknown>).page as Record<string, unknown>)
-                  .title,
-              )
-            : null;
+        : typeof pageChangeSummary?.title === "string" && pageChangeSummary.title.length > 0
+          ? pageChangeSummary.title
+          : typeof sessionTabTarget?.title === "string" && sessionTabTarget.title.length > 0
+            ? sessionTabTarget.title
+            : typeof details.pageTitle === "string" && details.pageTitle.length > 0
+              ? details.pageTitle
+              : typeof refSnapshotPage?.title === "string" && refSnapshotPage.title.length > 0
+                ? String(refSnapshotPage.title)
+                : null;
 
     // Extract screenshot
     const screenshot =
@@ -327,7 +403,8 @@ export function projectAgentBrowserActivity(
   }
 
   if (event.type === "run_state") {
-    if (event.state === "completed") {
+    const stateLower = String(event.state ?? "").toLowerCase();
+    if (stateLower === "completed" || stateLower === "success") {
       return {
         ...current,
         status: "completed",
@@ -335,7 +412,7 @@ export function projectAgentBrowserActivity(
         updatedAt: new Date().toISOString(),
       };
     }
-    if (event.state === "error" || event.state === "failed") {
+    if (stateLower === "error" || stateLower === "failed") {
       return {
         ...current,
         status: "failed",
@@ -344,7 +421,7 @@ export function projectAgentBrowserActivity(
         updatedAt: new Date().toISOString(),
       };
     }
-    if (event.state === "idle" && current.status === "running") {
+    if (stateLower === "idle" && current.status === "running") {
       return {
         ...current,
         status: "idle",
@@ -379,6 +456,52 @@ export class BrowserActivityStore {
     return this.activityByRunId[runId] ?? null;
   }
 
+  private async resolveScreenshot(
+    runId: string,
+    filePath: string,
+    toolUseId?: string,
+  ): Promise<void> {
+    if (
+      !filePath ||
+      filePath.startsWith("data:") ||
+      filePath.startsWith("http://") ||
+      filePath.startsWith("https://")
+    ) {
+      return;
+    }
+    try {
+      const [base64, mime] = await api.readFileBase64(filePath, "");
+      if (!base64) return;
+      const dataUrl = `data:${mime || "image/png"};base64,${base64}`;
+      const current = this.activityByRunId[runId];
+      if (!current) return;
+
+      const updatedTraces = current.traces.map((trace) => {
+        if (
+          (trace as ExtendedTraceEntry).toolUseId === toolUseId ||
+          trace.screenshotData === filePath
+        ) {
+          return { ...trace, screenshotData: dataUrl };
+        }
+        return trace;
+      });
+
+      this.activityByRunId = {
+        ...this.activityByRunId,
+        [runId]: {
+          ...current,
+          lastScreenshot: current.lastScreenshot === filePath ? dataUrl : current.lastScreenshot,
+          traces: updatedTraces,
+        },
+      };
+    } catch (err) {
+      console.warn(
+        `[BrowserActivityStore] Failed to resolve screenshot base64 for ${filePath}:`,
+        err,
+      );
+    }
+  }
+
   handleBusEvent(event: BusEvent): void {
     if (!event.run_id) return;
     if (event.type === "tool_start" || event.type === "tool_end" || event.type === "run_state") {
@@ -388,6 +511,15 @@ export class BrowserActivityStore {
         ...this.activityByRunId,
         [event.run_id]: next,
       };
+
+      if (
+        event.type === "tool_end" &&
+        next.lastScreenshot &&
+        !next.lastScreenshot.startsWith("data:") &&
+        !next.lastScreenshot.startsWith("http")
+      ) {
+        void this.resolveScreenshot(event.run_id, next.lastScreenshot, event.tool_use_id);
+      }
     }
   }
 
@@ -407,6 +539,13 @@ export class BrowserActivityStore {
           projection = projectAgentBrowserActivity(projection, ev);
         }
         if (projection) {
+          if (
+            projection.lastScreenshot &&
+            !projection.lastScreenshot.startsWith("data:") &&
+            !projection.lastScreenshot.startsWith("http")
+          ) {
+            void this.resolveScreenshot(runId, projection.lastScreenshot);
+          }
           this.activityByRunId = {
             ...this.activityByRunId,
             [runId]: projection,
