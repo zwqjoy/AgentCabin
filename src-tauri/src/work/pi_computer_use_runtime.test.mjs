@@ -141,4 +141,29 @@ test("Host Computer Use runtime automatically aborts active tools on shutdownSes
   assert.match(res.stderr, /stopped|released|abort|cancel/i);
 });
 
+test("Host Computer Use runtime awaitRunIdle waits until run has zero active controllers", async () => {
+  const runtime = await createComputerUseHostRuntime();
+  const runId = "run-idle-test";
+
+  let finished = false;
+  const promise = runtime.executeTool(
+    runId,
+    "wait_for",
+    "call-idle-1",
+    { timeoutMs: 15000, condition: "none" }
+  ).then((r) => {
+    finished = true;
+    return r;
+  });
+
+  // Cancel the run
+  runtime.cancelRun(runId);
+
+  // awaitRunIdle should resolve only after execution finishes
+  await runtime.awaitRunIdle(runId);
+  assert.equal(finished, true, "awaitRunIdle must only resolve once in-flight execution unwinds");
+
+  await promise;
+});
+
 

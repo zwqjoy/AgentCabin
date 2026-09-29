@@ -69,6 +69,7 @@ pub struct DesktopOperatorManager {
     startup_lock: Arc<Mutex<()>>,
     request_id: Arc<AtomicU64>,
     desktop_lease: Arc<Mutex<Option<String>>>,
+    releasing_run: Arc<Mutex<Option<String>>>,
     upstream_worker: Arc<Mutex<Option<UpstreamWorker>>>,
 }
 
@@ -90,6 +91,7 @@ impl DesktopOperatorManager {
             startup_lock: Arc::new(Mutex::new(())),
             request_id: Arc::new(AtomicU64::new(1)),
             desktop_lease: Arc::new(Mutex::new(None)),
+            releasing_run: Arc::new(Mutex::new(None)),
             upstream_worker: Arc::new(Mutex::new(None)),
         }
     }
@@ -644,11 +646,29 @@ impl DesktopOperatorManager {
     }
 
     async fn claim(&self, run_id: &str) -> Result<(), String> {
+        let releasing = self.releasing_run.lock().await;
+        if let Some(ref rel) = *releasing {
+            if rel != run_id {
+                return Err(format!(
+                    "Desktop control is being released by session '{rel}'. Wait for it to finish."
+                ));
+            }
+        }
+        drop(releasing);
+
         let mut lease = self.desktop_lease.lock().await;
         if let Some(owner) = lease.as_deref() {
             if owner == run_id {
                 return Ok(());
             }
+            let releasing = self.releasing_run.lock().await;
+            if releasing.as_deref() == Some(owner) {
+                return Err(format!(
+                    "Desktop control is being released by session '{owner}'. Wait for it to finish."
+                ));
+            }
+            drop(releasing);
+
             let is_active = crate::work::internal_bridge::is_run_active(owner).await
                 || crate::desktop_runtime::is_run_active(owner).await;
             if !is_active {
@@ -664,11 +684,29 @@ impl DesktopOperatorManager {
     }
 
     async fn require_owner(&self, run_id: &str) -> Result<(), String> {
+        let releasing = self.releasing_run.lock().await;
+        if let Some(ref rel) = *releasing {
+            if rel == run_id {
+                return Err(format!(
+                    "Desktop control for session '{run_id}' is being released and cannot execute actions."
+                ));
+            }
+        }
+        drop(releasing);
+
         let mut lease = self.desktop_lease.lock().await;
         if let Some(owner) = lease.as_deref() {
             if owner == run_id {
                 return Ok(());
             }
+            let releasing = self.releasing_run.lock().await;
+            if releasing.as_deref() == Some(owner) {
+                return Err(format!(
+                    "Desktop control is being released by session '{owner}'. Wait for it to finish."
+                ));
+            }
+            drop(releasing);
+
             let is_active = crate::work::internal_bridge::is_run_active(owner).await
                 || crate::desktop_runtime::is_run_active(owner).await;
             if !is_active {
@@ -1432,16 +1470,34 @@ impl DesktopOperatorManager {
     }
 
     pub async fn release_for_run(&self, run_id: &str) {
-        let mut lease = self.desktop_lease.lock().await;
-        if lease.as_deref() == Some(run_id) {
-            *lease = None;
+        // 1. Mark releasing_run so no new run can claim desktop while release/quiescence is in progress
+        {
+            let mut releasing = self.releasing_run.lock().await;
+            *releasing = Some(run_id.to_string());
         }
-        drop(lease);
+
+        // 2. In upstream mode, cancel active calls and wait for quiescence via upstream session release
         if Self::active_engine() != "legacy" {
             let _ = self.cancel_run_execution(run_id).await;
             let _ = self
                 .send_upstream_request("release", json!({"runId": run_id}))
                 .await;
+        }
+
+        // 3. Clear desktop_lease only after old run is quiescent
+        {
+            let mut lease = self.desktop_lease.lock().await;
+            if lease.as_deref() == Some(run_id) {
+                *lease = None;
+            }
+        }
+
+        // 4. Clear releasing_run so new runs can now claim desktop
+        {
+            let mut releasing = self.releasing_run.lock().await;
+            if releasing.as_deref() == Some(run_id) {
+                *releasing = None;
+            }
         }
     }
 
@@ -1874,13 +1930,28 @@ mod tests {
         assert!(denied.is_err());
         assert!(denied.unwrap_err().contains("belongs to session 'run_A'"));
 
-        // When run A becomes inactive, run B can take over
+        // While run A is being released, run B still cannot claim
+        {
+            *manager.releasing_run.lock().await = Some("run_A".to_string());
+        }
+        let denied_releasing = manager.claim("run_B").await;
+        assert!(denied_releasing.is_err());
+        assert!(denied_releasing
+            .unwrap_err()
+            .contains("is being released by session 'run_A'"));
+        {
+            *manager.releasing_run.lock().await = None;
+        }
+
+        // When run A becomes inactive and released, run B can take over
         bridge_state.tokens.write().await.remove(&token_a);
+        manager.release_for_run("run_A").await;
         assert!(manager.claim("run_B").await.is_ok());
 
         // Release run B
         manager.release_for_run("run_B").await;
         assert!(manager.desktop_lease.lock().await.is_none());
+        assert!(manager.releasing_run.lock().await.is_none());
     }
 
     #[test]

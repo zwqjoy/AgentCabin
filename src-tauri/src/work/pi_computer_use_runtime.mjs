@@ -123,16 +123,31 @@ export async function createComputerUseHostRuntime(options = {}) {
   function cancelRun(runId) {
     if (!runId) return 0;
     let count = 0;
-    for (const [toolCallId, entry] of activeControllers.entries()) {
+    for (const entry of activeControllers.values()) {
       if (entry.runId === runId) {
         try {
           entry.controller.abort(new Error(`Run '${runId}' stopped or released`));
         } catch {}
-        activeControllers.delete(toolCallId);
         count++;
       }
     }
     return count;
+  }
+
+  async function awaitRunIdle(runId, timeoutMs = 10000) {
+    if (!runId) return;
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      let active = false;
+      for (const entry of activeControllers.values()) {
+        if (entry.runId === runId) {
+          active = true;
+          break;
+        }
+      }
+      if (!active) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
   }
 
   async function executeTool(runId, toolName, toolCallId, params, signal, runOptions = {}) {
@@ -188,6 +203,7 @@ export async function createComputerUseHostRuntime(options = {}) {
 
   async function shutdownSession(runId) {
     cancelRun(runId);
+    await awaitRunIdle(runId);
     const handlers = eventHandlers.get("session_shutdown") || [];
     for (const handler of handlers) {
       try {
@@ -281,6 +297,7 @@ export async function createComputerUseHostRuntime(options = {}) {
     executeTool,
     cancelTool,
     cancelRun,
+    awaitRunIdle,
     shutdownSession,
     getStatus,
     requestPermissions,
