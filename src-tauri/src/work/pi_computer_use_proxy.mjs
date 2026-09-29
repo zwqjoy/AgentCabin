@@ -21,6 +21,31 @@ function loadToolDefinitions() {
   return [];
 }
 
+export const LAUNCH_APP_TOOL_DEFINITION = {
+  name: "launch_app",
+  label: "Launch Native App",
+  description: "Launch a native application and immediately return its observed UI state.",
+  promptSnippet: "Use to launch or focus a native macOS desktop application before interacting with it.",
+  promptGuidelines: [],
+  parameters: {
+    type: "object",
+    properties: {
+      name: {
+        type: "string",
+        description: "Application name (e.g. Notes, Calculator, TextEdit, Finder)",
+      },
+      bundleId: {
+        type: "string",
+        description: "Exact bundle id (e.g. com.apple.Notes)",
+      },
+      createsNewApplicationInstance: {
+        type: "boolean",
+        description: "Whether to launch a new application instance",
+      },
+    },
+  },
+};
+
 /**
  * Register thin Computer Use proxy tools with Pi.
  *
@@ -32,7 +57,11 @@ export function registerComputerUseProxy(pi, options = {}) {
   const registerTool =
     options.registerTool || options.registerWorkTool || ((tool) => pi.registerTool(tool));
   const invoker = createComputerUseToolPipelineInvoker(options);
-  const toolDefinitions = options.toolDefinitions || loadToolDefinitions();
+  const rawDefs = options.toolDefinitions || loadToolDefinitions();
+  const toolDefinitions = [...rawDefs];
+  if (!toolDefinitions.some((def) => def.name === "launch_app")) {
+    toolDefinitions.push(LAUNCH_APP_TOOL_DEFINITION);
+  }
 
   let desktopUsed = false;
   const releaseDesktop = async () => {
