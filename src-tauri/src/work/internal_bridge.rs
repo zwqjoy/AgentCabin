@@ -986,6 +986,13 @@ async fn internal_browser_host_command(
                     )
                     .map_err(invalid)?,
             };
+            if let Some(emitter) = crate::web_server::broadcaster::shared_emitter() {
+                emitter.emit_realtime(
+                    "work-inbox-changed",
+                    &json!({"runId": ctx.token_info.run_id}),
+                    Some(&ctx.token_info.run_id),
+                );
+            }
             return Ok(Json(
                 json!({"status": "waiting_approval", "inboxItemId": interaction.interaction_id}),
             ));

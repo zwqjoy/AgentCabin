@@ -2466,6 +2466,13 @@
     window.addEventListener("focus", handleVisibilityOrFocus);
 
     let screenshotUnlisten: (() => void) | undefined;
+    let inboxChangedUnlisten: (() => void) | undefined;
+    void getTransport()
+      .listen("work-inbox-changed", () => void inboxStore.fetch(false))
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else inboxChangedUnlisten = unlisten;
+      });
     void getTransport()
       .listen<ScreenshotPayload>("screenshot-taken", (payload) => {
         const { contentBase64, mediaType, filename } = payload;
@@ -2494,6 +2501,7 @@
 
     return () => {
       screenshotUnlisten?.();
+      inboxChangedUnlisten?.();
       window.removeEventListener(RUNS_CHANGED_EVENT, handleRunMutation);
       window.removeEventListener("agentcabin:work-new-chat", onWorkNewChat);
       window.removeEventListener("agentcabin:browser-session-stopped", handleBrowserSessionStopped);
