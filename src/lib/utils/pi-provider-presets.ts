@@ -51,7 +51,11 @@ export function normalizePiCliModel(
   const effectiveProvider = provider?.trim().toLowerCase() || providerFromModel;
   const modelId = value.includes("/") ? value.slice(value.indexOf("/") + 1) : value;
 
-  if (effectiveProvider === "openai-codex" && value && modelId === "glm-5.2") {
+  if (
+    (effectiveProvider === "openai-codex" || effectiveProvider === "openai") &&
+    value &&
+    modelId === "glm-5.2"
+  ) {
     return PI_CODEX_DEFAULT_MODEL;
   }
   return value;

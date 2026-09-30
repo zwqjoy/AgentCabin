@@ -64,7 +64,8 @@ const archive = join(
   out,
   `node-v${manifest.node.version}-${nodePlatform}-${nodeArch}.${nodeArchive}`,
 );
-const url = `https://nodejs.org/dist/v${manifest.node.version}/node-v${manifest.node.version}-${nodePlatform}-${nodeArch}.${nodeArchive}`;
+const nodeDist = process.env.NODE_MIRROR || "https://nodejs.org/dist";
+const url = `${nodeDist}/v${manifest.node.version}/node-v${manifest.node.version}-${nodePlatform}-${nodeArch}.${nodeArchive}`;
 run("curl", ["--fail", "--location", "--silent", "--show-error", "-o", archive, url]);
 mkdir(nodeDir);
 if (process.platform === "win32") {

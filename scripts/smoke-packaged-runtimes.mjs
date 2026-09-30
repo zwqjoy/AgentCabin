@@ -62,9 +62,9 @@ const runtimeRoot = findRuntimeRoot();
 console.log(`\n=== 1. Validating Runtime Closure at: ${runtimeRoot} ===`);
 
 const manifest = JSON.parse(readFileSync(join(runtimeRoot, "runtime-manifest.json"), "utf8"));
-if (manifest.runtimes?.pi?.version !== "0.87.1") {
+if (manifest.runtimes?.pi?.version !== "0.99.1") {
   throw new Error(
-    `Pi runtime version mismatch in manifest: expected 0.87.1, got ${manifest.runtimes?.pi?.version}`,
+    `Pi runtime version mismatch in manifest: expected 0.99.1, got ${manifest.runtimes?.pi?.version}`,
   );
 }
 if (manifest.node?.version !== "24.21.0") {

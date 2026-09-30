@@ -7,7 +7,7 @@ const runtime = resolve(process.env.AGENTCABIN_RUNTIME_OUTPUT || join(root, "run
 const mpath = join(runtime, "runtime-manifest.json");
 if (!existsSync(mpath)) throw new Error(`RuntimeClosureInvalid: missing ${mpath}`);
 const m = JSON.parse(readFileSync(mpath, "utf8"));
-if (m.runtimes?.pi?.version !== "0.87.1") throw new Error("RuntimeVersionMismatch: Pi must be 0.87.1");
+if (m.runtimes?.pi?.version !== "0.99.1") throw new Error("RuntimeVersionMismatch: Pi must be 0.99.1");
 if (m.node?.version !== "24.21.0") throw new Error("RuntimeVersionMismatch: Node must be 24.21.0");
 // Verify no DSH runtime was accidentally packaged
 if (existsSync(join(runtime, "dsh"))) throw new Error("RuntimeClosureInvalid: unexpected DSH runtime directory found in closure");

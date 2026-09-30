@@ -64,7 +64,7 @@
       );
       launchTimers.push(
         setTimeout(() => {
-          void api.ptyWrite(sessionId, "/login openai-codex\n");
+          void api.ptyWrite(sessionId, "/login openai\n");
         }, 3600),
       );
       await refreshAuthStatus();

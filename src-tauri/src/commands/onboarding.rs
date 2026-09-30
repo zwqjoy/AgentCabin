@@ -588,18 +588,24 @@ pub async fn check_pi_auth() -> Result<PiAuthResult, String> {
 
     let root: Value = serde_json::from_str(&raw)
         .map_err(|error| format!("Pi auth.json is invalid JSON: {}", error))?;
-    let credential = root.get(PI_CODEX_PROVIDER);
+    let (provider_name, credential) = if let Some(cred) = root.get("openai") {
+        ("openai", cred)
+    } else if let Some(cred) = root.get(PI_CODEX_PROVIDER) {
+        (PI_CODEX_PROVIDER, cred)
+    } else {
+        ("", &Value::Null)
+    };
     let auth_type = credential
-        .and_then(|entry| entry.get("type"))
+        .get("type")
         .and_then(Value::as_str)
         .map(str::to_string);
     let logged_in = auth_type.as_deref() == Some("oauth");
 
     Ok(PiAuthResult {
         logged_in,
-        provider: logged_in.then(|| PI_CODEX_PROVIDER.to_string()),
+        provider: logged_in.then(|| provider_name.to_string()),
         auth_type,
-        status_text: logged_in.then(|| "ChatGPT Plus/Pro (Codex)".to_string()),
+        status_text: logged_in.then(|| "ChatGPT Plus/Pro".to_string()),
     })
 }
 
@@ -623,7 +629,9 @@ pub async fn run_pi_logout() -> Result<bool, String> {
 
     let mut root: serde_json::Map<String, Value> = serde_json::from_str(&raw)
         .map_err(|error| format!("Pi auth.json is invalid JSON: {}", error))?;
-    if root.remove(PI_CODEX_PROVIDER).is_none() {
+    let removed_openai = root.remove("openai").is_some();
+    let removed_codex = root.remove(PI_CODEX_PROVIDER).is_some();
+    if !removed_openai && !removed_codex {
         return Ok(false);
     }
 
