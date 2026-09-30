@@ -22,6 +22,21 @@ const run = (cmd, args) =>
   });
 const mkdir = (dir) => mkdirSync(dir, { recursive: true });
 
+function patchAgentBrowserForReadOnlySandbox() {
+  const entrypoint = join(out, "agent-browser/node_modules/agent-browser/bin/agent-browser.js");
+  const source = readFileSync(entrypoint, "utf8");
+  const executableProbe = "  if (platform() !== 'win32') {\n    try {\n      accessSync(binaryPath";
+  if (source.split(executableProbe).length !== 2) {
+    throw new Error(
+      `agent-browser ${manifest.runtimes.agentBrowser.version} executable probe changed; review its sandbox compatibility before packaging`,
+    );
+  }
+
+  const sandboxAwareProbe =
+    "  if (platform() !== 'win32' && process.env.AGENTCABIN_WORK_READONLY_SANDBOX !== '1') {\n    try {\n      accessSync(binaryPath";
+  writeFileSync(entrypoint, source.replace(executableProbe, sandboxAwareProbe));
+}
+
 rmSync(out, { recursive: true, force: true });
 mkdir(out);
 const nodeArchive = nodePlatform === "win" ? "zip" : "tar.gz";
@@ -70,6 +85,7 @@ if (manifest.runtimes.agentBrowser) {
     "agent-browser",
     `${manifest.runtimes.agentBrowser.package}@${manifest.runtimes.agentBrowser.version}`,
   );
+  patchAgentBrowserForReadOnlySandbox();
 }
 installRuntime("pnpm", `pnpm@${manifest.pnpm.version}`);
 if (process.platform !== "win32") {

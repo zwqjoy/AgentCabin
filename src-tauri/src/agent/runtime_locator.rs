@@ -150,6 +150,33 @@ pub fn resolve_agent_browser() -> Result<String, String> {
     }
     Err("RuntimeClosureInvalid: missing agent-browser".to_string())
 }
+
+/// Chromium-family browser bundles agent-browser probes on macOS, mirroring
+/// its built-in lookup order. Only the first existing bundle is granted, and
+/// nothing is granted when no supported browser is installed, so the sandbox
+/// stays as narrow as the machine allows.
+#[cfg(target_os = "macos")]
+const MACOS_BROWSER_BUNDLES: [&str; 4] = [
+    "/Applications/Google Chrome.app",
+    "/Applications/Google Chrome Canary.app",
+    "/Applications/Chromium.app",
+    "/Applications/Brave Browser.app",
+];
+
+/// The browser bundle Work's native Browser extension will actually launch.
+#[cfg(target_os = "macos")]
+pub fn resolve_installed_browser_bundle() -> Option<PathBuf> {
+    MACOS_BROWSER_BUNDLES
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_dir())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn resolve_installed_browser_bundle() -> Option<PathBuf> {
+    None
+}
+
 pub fn resolve_pi() -> Result<String, String> {
     let p = bundled()?.pi;
     if p.is_file() {

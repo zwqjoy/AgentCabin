@@ -457,6 +457,15 @@ async fn spawn_actor_with_launch(
     for (key, value) in &extra_env {
         launch_env.push((key.clone(), value.clone()));
     }
+    if is_work && !is_work_full_access(settings) {
+        // Bundled agent-browser binaries already ship executable. Under the
+        // read-only Work Seatbelt, skip its optional chmod repair and let the
+        // sandboxed process launch determine whether execution is permitted.
+        launch_env.push((
+            "AGENTCABIN_WORK_READONLY_SANDBOX".to_string(),
+            "1".to_string(),
+        ));
+    }
     for (key, value) in &managed_provider_env {
         launch_env.push((key.clone(), value.clone()));
     }
@@ -503,6 +512,7 @@ async fn spawn_actor_with_launch(
                 "AGENTCABIN_WORK_RUN_DIR",
                 "AGENTCABIN_WORK_BROWSER_RUN_DIR",
                 "AGENTCABIN_MANAGED_STATE_DIR",
+                "PI_AGENT_BROWSER_SOCKET_DIR",
             ] {
                 if let Some(path) = extra_env.get(key).filter(|value| !value.trim().is_empty()) {
                     writable_roots.push(PathBuf::from(path));
@@ -518,6 +528,29 @@ async fn spawn_actor_with_launch(
                 if let Some(node_dir) = PathBuf::from(node_path).parent() {
                     read_only_roots.push(node_dir.to_path_buf());
                 }
+            }
+            // Work's native Browser extension invokes the app-pinned
+            // agent-browser CLI, whose wrapper then launches a platform
+            // binary from this runtime package. Work skips the wrapper's
+            // chmod probe, so grant the pinned package read-only access and
+            // process-exec permission for the actual spawn.
+            if let Ok(browser_path) = crate::agent::runtime_locator::resolve_agent_browser() {
+                if let Some(browser_runtime_dir) = PathBuf::from(browser_path)
+                    .parent()
+                    .and_then(|bin_dir| bin_dir.parent())
+                {
+                    read_only_roots.push(browser_runtime_dir.to_path_buf());
+                }
+            }
+            // The agent-browser CLI launches a Chromium-family browser from
+            // the standard macOS install locations. The bundle must be
+            // readable and process-executable — the browser binary and its
+            // helpers both live inside it — or the browser spawn fails with
+            // EPERM even though the CLI itself starts.
+            if let Some(browser_bundle) =
+                crate::agent::runtime_locator::resolve_installed_browser_bundle()
+            {
+                read_only_roots.push(browser_bundle);
             }
             // Pi's common system packages are managed outside the isolated
             // Work profile. Work receives read-only access to that dependency

@@ -77,6 +77,18 @@
     Boolean(inspectorRunId && browserActivityRunId === inspectorRunId),
   );
 
+  function handleBrowserActivity(runId: string) {
+    const resolvedRunId = getWorkBrowserRunId(progressView?.workRunId, runId);
+    if (!resolvedRunId) return;
+
+    browserActivityRunId = resolvedRunId;
+    if (browserAutoOpenedRunId === resolvedRunId) return;
+
+    browserAutoOpenedRunId = resolvedRunId;
+    conversationInspectorTab = "browser";
+    showConversationInspector = true;
+  }
+
   // Keep the first Browser activity at page level. The route can replace its
   // conversation/inspector subtree while adopting a newly started Run; opening
   // and selecting Browser locally would then lose the mounted host.
@@ -566,6 +578,7 @@
                     conversationInspectorTab = "tasks";
                     showConversationInspector = true;
                   }}
+                  onBrowserActivity={handleBrowserActivity}
                   inspectorOpen={showConversationInspector}
                 />
               {/key}
@@ -729,6 +742,7 @@
                       conversationInspectorTab = "tasks";
                       showConversationInspector = true;
                     }}
+                    onBrowserActivity={handleBrowserActivity}
                     inspectorOpen={showConversationInspector}
                     onExportArtifact={exportArtifact}
                   />
