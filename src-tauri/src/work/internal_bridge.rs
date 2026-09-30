@@ -13,7 +13,7 @@ use axum::Router;
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
@@ -45,7 +45,6 @@ pub struct ProcessBridgeTokenInfo {
 #[derive(Clone)]
 pub struct InternalBridgeState {
     pub tokens: Arc<RwLock<HashMap<String, ProcessBridgeTokenInfo>>>,
-    browser_host_grants: Arc<RwLock<HashSet<String>>>,
     pub effective_port: Arc<AtomicU16>,
     ready: Arc<Notify>,
 }
@@ -54,7 +53,6 @@ impl Default for InternalBridgeState {
     fn default() -> Self {
         Self {
             tokens: Arc::new(RwLock::new(HashMap::new())),
-            browser_host_grants: Arc::new(RwLock::new(HashSet::new())),
             effective_port: Arc::new(AtomicU16::new(0)),
             ready: Arc::new(Notify::new()),
         }
@@ -556,7 +554,6 @@ async fn internal_mcp_proxy(
 
 pub async fn revoke_session_token(token: &str) {
     let state = bridge_state();
-    state.browser_host_grants.write().await.remove(token);
     let removed = state.tokens.write().await.remove(token);
     if let Some(info) = removed {
         let has_active = state
@@ -575,19 +572,6 @@ pub async fn revoke_session_token(token: &str) {
 
 pub async fn revoke_run_tokens(run_id: &str) {
     let state = bridge_state();
-    let revoked: Vec<String> = state
-        .tokens
-        .read()
-        .await
-        .iter()
-        .filter(|(_, info)| info.run_id == run_id)
-        .map(|(token, _)| token.clone())
-        .collect();
-    state
-        .browser_host_grants
-        .write()
-        .await
-        .retain(|token| !revoked.contains(token));
     state
         .tokens
         .write()
@@ -602,15 +586,7 @@ pub async fn revoke_run_tokens(run_id: &str) {
 pub fn revoke_run_tokens_sync(run_id: &str) {
     let state = bridge_state();
     if let Ok(mut tokens) = state.tokens.try_write() {
-        let revoked: Vec<String> = tokens
-            .iter()
-            .filter(|(_, info)| info.run_id == run_id)
-            .map(|(token, _)| token.clone())
-            .collect();
         tokens.retain(|_, info| info.run_id != run_id);
-        if let Ok(mut grants) = state.browser_host_grants.try_write() {
-            grants.retain(|token| !revoked.contains(token));
-        }
     } else {
         let r_id = run_id.to_string();
         tokio::spawn(async move {
@@ -894,8 +870,6 @@ async fn internal_browser_host_command(
     headers: HeaderMap,
     Json(payload): Json<BrowserHostCommandPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    use crate::work::models::{ApprovalOutcome, PendingInteractionKind, WorkExecutionMode};
-
     let ctx = authenticate_work_context(&state, &headers).await?;
     let invalid = |message: String| (StatusCode::BAD_REQUEST, Json(json!({"error": message})));
     if payload.args.is_empty()
@@ -907,97 +881,15 @@ async fn internal_browser_host_command(
             "Invalid browser command arguments or input size".to_string(),
         ));
     }
-    let version_only = payload.args == ["--version"];
-    let (task_id, policy) = resolve_policy_for_context(&ctx);
     let paths = WorkPaths::app();
     let cwd = paths
         .resolve_command_cwd(
             &ctx.token_info.workspace_id,
             Some(&ctx.token_info.run_id),
             &payload.cwd,
-            policy.execution_mode == WorkExecutionMode::FullAccess,
+            true,
         )
         .map_err(invalid)?;
-
-    // One decision is scoped to this authenticated Pi process, not to a
-    // browser CLI argument. Browser actions may launch many short-lived CLIs.
-    if !version_only
-        && policy.execution_mode != WorkExecutionMode::FullAccess
-        && !state
-            .browser_host_grants
-            .read()
-            .await
-            .contains(&ctx.token_info.token)
-    {
-        let token_hash = format!("{:x}", Sha256::digest(ctx.token_info.token.as_bytes()));
-        let tool_call_id = format!("browser-host-{}", &token_hash[..16]);
-        let manager = crate::work::interaction::InteractionManager::new(paths.clone());
-        if let Some(grant) = manager
-            .find_matching_grant(
-                &task_id,
-                &ctx.token_info.run_id,
-                &tool_call_id,
-                "agent_browser_host",
-                "authorize",
-                &token_hash,
-                &ctx.token_info.workspace_id,
-            )
-            .map_err(invalid)?
-        {
-            if grant.outcome != ApprovalOutcome::AllowedOnce || grant.consumed {
-                return Err((
-                    StatusCode::FORBIDDEN,
-                    Json(json!({"error": "Browser host execution was denied"})),
-                ));
-            }
-            manager.consume_grant(&grant.grant_id).map_err(invalid)?;
-            state
-                .browser_host_grants
-                .write()
-                .await
-                .insert(ctx.token_info.token.clone());
-        } else {
-            let existing = manager
-                .list_pending(Some(&task_id), Some(&ctx.token_info.run_id))
-                .map_err(invalid)?
-                .into_iter()
-                .find(|item| item.tool_call_id.as_deref() == Some(&tool_call_id));
-            let interaction = match existing {
-                Some(item) => item,
-                None => manager
-                    .create_interaction(
-                        &task_id,
-                        &ctx.token_info.run_id,
-                        &ctx.token_info.workspace_id,
-                        None,
-                        None,
-                        Some(&tool_call_id),
-                        PendingInteractionKind::Permission,
-                        "允许当前 Work 任务使用浏览器",
-                        "浏览器将在主机进程中启动；此授权仅对当前 Work 浏览器会话有效。",
-                        json!({
-                            "toolName": "agent_browser_host",
-                            "action": "authorize",
-                            "argumentsHash": token_hash,
-                            "workspaceId": ctx.token_info.workspace_id,
-                            "executionLane": "browser_host",
-                            "parameters": {"command": "agent-browser"},
-                        }),
-                    )
-                    .map_err(invalid)?,
-            };
-            if let Some(emitter) = crate::web_server::broadcaster::shared_emitter() {
-                emitter.emit_realtime(
-                    "work-inbox-changed",
-                    &json!({"runId": ctx.token_info.run_id}),
-                    Some(&ctx.token_info.run_id),
-                );
-            }
-            return Ok(Json(
-                json!({"status": "waiting_approval", "inboxItemId": interaction.interaction_id}),
-            ));
-        }
-    }
 
     let executable = crate::agent::runtime_locator::bundled()
         .map_err(invalid)?

@@ -161,6 +161,41 @@ impl ToolPipeline {
         )
     }
 
+    fn is_browser_operator_tool(tool_name: &str) -> bool {
+        matches!(
+            tool_name,
+            "browser_navigate"
+                | "browser_snapshot"
+                | "browser_take_screenshot"
+                | "browser_wait_for"
+                | "browser_tabs"
+                | "browser_scroll"
+                | "browser_press_key"
+                | "browser_close"
+                | "browser_click"
+                | "browser_type"
+                | "browser_select_option"
+        )
+    }
+
+    fn apply_capability_execution_policy(
+        tool_name: &str,
+        desktop_enabled: bool,
+        decision: WorkPolicyDecision,
+    ) -> WorkPolicyDecision {
+        if Self::is_desktop_operator_tool(tool_name) {
+            if desktop_enabled {
+                WorkPolicyDecision::Allow
+            } else {
+                WorkPolicyDecision::Deny
+            }
+        } else if Self::is_browser_operator_tool(tool_name) {
+            WorkPolicyDecision::Allow
+        } else {
+            decision
+        }
+    }
+
     fn desktop_interaction_requires_confirmation(intent: &ToolIntent) -> bool {
         matches!(
             intent.tool_name.as_str(),
@@ -586,12 +621,6 @@ impl ToolPipeline {
             decision = WorkPolicyDecision::Ask;
         }
 
-        if Self::is_desktop_operator_tool(&intent.tool_name)
-            && !crate::work::desktop_operator::is_enabled()
-        {
-            decision = WorkPolicyDecision::Deny;
-        }
-
         // If tool is work_request_directory_access, validate external access root and evaluate access root existence
         if intent.tool_name == "work_request_directory_access" {
             let path_str = intent
@@ -751,6 +780,15 @@ impl ToolPipeline {
         {
             decision = WorkPolicyDecision::Ask;
         }
+
+        // Native browser and computer-use calls have dedicated, capability-scoped
+        // host bridges. Match Code's execution path for those tools only; regular
+        // Work commands, files, connectors, and approvals keep their policy.
+        decision = Self::apply_capability_execution_policy(
+            &intent.tool_name,
+            crate::work::desktop_operator::is_enabled(),
+            decision,
+        );
 
         let mut force_host_execution = false;
         match decision {

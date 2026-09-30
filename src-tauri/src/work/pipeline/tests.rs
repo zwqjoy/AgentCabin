@@ -211,7 +211,7 @@ fn standing_rule_pattern_covers_capability_and_directory_scopes() {
 }
 
 #[test]
-fn desktop_operator_tools_are_exclusive_and_follow_work_modes() {
+fn browser_and_computer_use_tools_match_code_execution_policy() {
     use crate::work::models::{ExecutionContext, WorkExecutionMode, WorkPolicy};
     use crate::work::policy::WorkPolicyDecision;
 
@@ -231,29 +231,59 @@ fn desktop_operator_tools_are_exclusive_and_follow_work_modes() {
         ),
         WorkPolicyDecision::Allow
     );
+    for mode in [WorkExecutionMode::Direct, WorkExecutionMode::PlanFirst] {
+        let policy = WorkPolicy {
+            execution_mode: mode,
+            ..Default::default()
+        };
+        for (tool, action) in [("desktop_click", "click"), ("browser_click", "click")] {
+            let policy_decision = PolicyEvaluator::evaluate_decision(
+                &policy,
+                tool,
+                action,
+                ExecutionContext::Attended,
+            );
+            assert_eq!(
+                policy_decision,
+                if mode == WorkExecutionMode::Direct {
+                    WorkPolicyDecision::Ask
+                } else {
+                    WorkPolicyDecision::Deny
+                }
+            );
+            assert_eq!(
+                ToolPipeline::apply_capability_execution_policy(tool, true, policy_decision),
+                WorkPolicyDecision::Allow,
+                "{tool} must use the Code-level capability path in {mode:?} mode"
+            );
+        }
+        assert_eq!(
+            ToolPipeline::apply_capability_execution_policy(
+                "browser_navigate",
+                true,
+                WorkPolicyDecision::Deny
+            ),
+            WorkPolicyDecision::Allow,
+            "browser navigation must use the Code-level capability path in {mode:?} mode"
+        );
+    }
     assert_eq!(
-        PolicyEvaluator::evaluate_decision(
-            &WorkPolicy {
-                execution_mode: WorkExecutionMode::Direct,
-                ..Default::default()
-            },
+        ToolPipeline::apply_capability_execution_policy(
             "desktop_click",
-            "click",
-            ExecutionContext::Attended,
+            false,
+            WorkPolicyDecision::Allow
         ),
-        WorkPolicyDecision::Ask
+        WorkPolicyDecision::Deny,
+        "Computer Use must remain disabled when the native capability is not enabled"
     );
     assert_eq!(
-        PolicyEvaluator::evaluate_decision(
-            &WorkPolicy {
-                execution_mode: WorkExecutionMode::PlanFirst,
-                ..Default::default()
-            },
-            "desktop_click",
-            "click",
-            ExecutionContext::Attended,
+        ToolPipeline::apply_capability_execution_policy(
+            "work_run_command",
+            true,
+            WorkPolicyDecision::Ask
         ),
-        WorkPolicyDecision::Deny
+        WorkPolicyDecision::Ask,
+        "regular Work command permissions must remain unchanged"
     );
 }
 
