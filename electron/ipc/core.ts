@@ -21,7 +21,7 @@ export function registerCoreIpc(
         const result = await handleDesktopIntercept(method, params, core, getWindow);
         return { ok: true, result };
       }
-      const result = await core.invoke(method, params);
+      const result = await core.invokeWhenReady(method, params);
       if (method === "update_user_settings") {
         try {
           const { petWindowManager } = await import("../pet-window");
