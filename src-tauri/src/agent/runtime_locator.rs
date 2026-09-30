@@ -151,10 +151,9 @@ pub fn resolve_agent_browser() -> Result<String, String> {
     Err("RuntimeClosureInvalid: missing agent-browser".to_string())
 }
 
-/// Chromium-family browser bundles agent-browser probes on macOS, mirroring
-/// its built-in lookup order. Only the first existing bundle is granted, and
-/// nothing is granted when no supported browser is installed, so the sandbox
-/// stays as narrow as the machine allows.
+/// Chromium-family browser bundles agent-browser may launch on macOS. Keep
+/// system Chrome-family apps and Playwright's Chrome for Testing bundles
+/// explicit so Work can grant process-exec without opening the whole cache.
 #[cfg(target_os = "macos")]
 const MACOS_BROWSER_BUNDLES: [&str; 4] = [
     "/Applications/Google Chrome.app",
@@ -163,9 +162,51 @@ const MACOS_BROWSER_BUNDLES: [&str; 4] = [
     "/Applications/Brave Browser.app",
 ];
 
-/// The browser bundle Work's native Browser extension will actually launch.
+/// Resolve the concrete Chrome bundle available to agent-browser. Prefer the
+/// newest Playwright-managed Chrome for Testing install because that is the
+/// browser agent-browser uses when it has been installed; fall back to a
+/// system Chrome-family app when no cached browser is present.
 #[cfg(target_os = "macos")]
 pub fn resolve_installed_browser_bundle() -> Option<PathBuf> {
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        let browser_cache = home.join("Library/Caches/ms-playwright");
+        if let Ok(entries) = std::fs::read_dir(browser_cache) {
+            let mut entries: Vec<_> = entries.flatten().collect();
+            entries.sort_by_key(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .strip_prefix("chromium-")
+                    .and_then(|version| version.parse::<u32>().ok())
+                    .unwrap_or_default()
+            });
+            entries.reverse();
+            for entry in entries {
+                let name = entry.file_name();
+                if !name.to_string_lossy().starts_with("chromium-") {
+                    continue;
+                }
+
+                for bundle in [
+                    entry
+                        .path()
+                        .join("chrome-mac-arm64/Google Chrome for Testing.app"),
+                    entry
+                        .path()
+                        .join("chrome-mac-x64/Google Chrome for Testing.app"),
+                    entry
+                        .path()
+                        .join("chrome-mac/Google Chrome for Testing.app"),
+                    entry.path().join("chrome-mac/Chromium.app"),
+                ] {
+                    if bundle.is_dir() {
+                        return Some(bundle);
+                    }
+                }
+            }
+        }
+    }
+
     MACOS_BROWSER_BUNDLES
         .iter()
         .map(PathBuf::from)
