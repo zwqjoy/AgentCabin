@@ -284,13 +284,14 @@
     }
   }
 
-  async function handlePiLoginStatus(status: { logged_in: boolean }) {
+  async function handlePiLoginStatus(status: { logged_in: boolean; provider?: string | null }) {
     if (!status.logged_in || piLoginCompleting) return;
     piLoginCompleting = true;
     try {
       setSavedRealm("pi");
       setSavedPiSubMode("code");
-      await updateAgentSettings("pi", { model: "openai-codex/gpt-5.5" });
+      const model = status.provider === "openai" ? "openai/gpt-5.5" : "openai-codex/gpt-5.5";
+      await updateAgentSettings("pi", { model });
       await updateUserSettings({ onboarding_completed: true });
       await completeOnboarding();
     } catch (e) {

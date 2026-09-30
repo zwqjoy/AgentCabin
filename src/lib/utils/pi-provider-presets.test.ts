@@ -4,6 +4,7 @@ import {
   getPiModelOptions,
   normalizePiCliModel,
   PI_CODEX_DEFAULT_MODEL,
+  PI_OPENAI_DEFAULT_MODEL,
   PI_THINKING_LEVELS,
   resolvePiStartupModel,
 } from "./pi-provider-presets";
@@ -138,12 +139,14 @@ describe("filterPiThinkingLevelsForUi", () => {
 });
 
 describe("normalizePiCliModel", () => {
-  it("migrates the legacy GLM placeholder after native Codex login", () => {
+  it("migrates the legacy GLM placeholder after native OpenAI or Codex login", () => {
+    expect(normalizePiCliModel("openai", "glm-5.2")).toBe(PI_OPENAI_DEFAULT_MODEL);
     expect(normalizePiCliModel("openai-codex", "glm-5.2")).toBe(PI_CODEX_DEFAULT_MODEL);
     expect(normalizePiCliModel("openai-codex", "")).toBe("");
   });
 
-  it("does not overwrite a valid Codex model or a custom provider model", () => {
+  it("does not overwrite a valid OpenAI / Codex model or a custom provider model", () => {
+    expect(normalizePiCliModel("openai", "openai/gpt-5.5")).toBe("openai/gpt-5.5");
     expect(normalizePiCliModel("openai-codex", "openai-codex/gpt-5.6-luna")).toBe(
       "openai-codex/gpt-5.6-luna",
     );
