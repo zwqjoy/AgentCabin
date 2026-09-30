@@ -457,15 +457,6 @@ async fn spawn_actor_with_launch(
     for (key, value) in &extra_env {
         launch_env.push((key.clone(), value.clone()));
     }
-    if is_work && !is_work_full_access(settings) {
-        // Bundled agent-browser binaries already ship executable. Under the
-        // read-only Work Seatbelt, skip its optional chmod repair and let the
-        // sandboxed process launch determine whether execution is permitted.
-        launch_env.push((
-            "AGENTCABIN_WORK_READONLY_SANDBOX".to_string(),
-            "1".to_string(),
-        ));
-    }
     for (key, value) in &managed_provider_env {
         launch_env.push((key.clone(), value.clone()));
     }

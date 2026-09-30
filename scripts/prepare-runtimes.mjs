@@ -25,16 +25,36 @@ const mkdir = (dir) => mkdirSync(dir, { recursive: true });
 function patchAgentBrowserForReadOnlySandbox() {
   const entrypoint = join(out, "agent-browser/node_modules/agent-browser/bin/agent-browser.js");
   const source = readFileSync(entrypoint, "utf8");
-  const executableProbe = "  if (platform() !== 'win32') {\n    try {\n      accessSync(binaryPath";
+  const executableProbe = [
+    "  if (platform() !== 'win32') {",
+    "    try {",
+    "      accessSync(binaryPath, constants.X_OK);",
+    "    } catch {",
+    "      // Binary exists but isn't executable - fix it",
+    "      try {",
+    "        chmodSync(binaryPath, 0o755);",
+    "      } catch (chmodErr) {",
+    "        console.error(`Error: Cannot make binary executable: ${chmodErr.message}`);",
+    "        console.error('Try running: chmod +x ' + binaryPath);",
+    "        process.exit(1);",
+    "      }",
+    "    }",
+    "  }",
+  ].join("\n");
   if (source.split(executableProbe).length !== 2) {
     throw new Error(
       `agent-browser ${manifest.runtimes.agentBrowser.version} executable probe changed; review its sandbox compatibility before packaging`,
     );
   }
 
-  const sandboxAwareProbe =
-    "  if (platform() !== 'win32' && process.env.AGENTCABIN_WORK_READONLY_SANDBOX !== '1') {\n    try {\n      accessSync(binaryPath";
-  writeFileSync(entrypoint, source.replace(executableProbe, sandboxAwareProbe));
+  // The bundled platform binary is made executable during npm's postinstall.
+  // Do not probe X_OK or chmod it at runtime: macOS Seatbelt can deny those
+  // metadata operations even when process-exec on the binary is allowed.
+  const patchedSource = source.replace(
+    executableProbe,
+    "  // AgentCabin prepares the bundled binary's executable bit at build time.",
+  );
+  writeFileSync(entrypoint, patchedSource);
 }
 
 rmSync(out, { recursive: true, force: true });
