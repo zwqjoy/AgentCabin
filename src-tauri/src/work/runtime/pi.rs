@@ -198,6 +198,15 @@ impl WorkRuntimeAdapter for PiWorkRuntimeAdapter {
         if launch.settings.pi_browser_native_extension.is_some() {
             #[cfg(unix)]
             {
+                extra_env.insert(
+                    "AGENTCABIN_WORK_BROWSER_HOST_PROXY".to_string(),
+                    "1".to_string(),
+                );
+                // The first browser call may wait for a human host approval.
+                extra_env.insert(
+                    "PI_AGENT_BROWSER_PROCESS_TIMEOUT_MS".to_string(),
+                    "360000".to_string(),
+                );
                 let socket_dir = prepare_agent_browser_socket_dir().map_err(|error| {
                     WorkRuntimeError::LaunchFailed(format!(
                         "Failed to prepare the Pi Browser socket directory: {error}"

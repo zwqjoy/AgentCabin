@@ -116,9 +116,13 @@ if (process.platform !== "win32") {
     `#!/bin/sh\nexec "${node}" "$(dirname -- "$0")/../node_modules/${manifest.runtimes.pi.package}/${manifest.runtimes.pi.entrypoint}" "$@"\n`,
   );
   if (manifest.runtimes.agentBrowser) {
+    cpSync(
+      join(root, "scripts/work-agent-browser-proxy.mjs"),
+      join(out, "agent-browser/work-agent-browser-proxy.mjs"),
+    );
     writeFileSync(
       join(out, "agent-browser/bin/agent-browser"),
-      `#!/bin/sh\nexec "${node}" "$(dirname -- "$0")/../node_modules/${manifest.runtimes.agentBrowser.package}/${manifest.runtimes.agentBrowser.entrypoint}" "$@"\n`,
+      `#!/bin/sh\nif [ "${'$'}AGENTCABIN_WORK_BROWSER_HOST_PROXY" = 1 ]; then\n  exec "${node}" "$(dirname -- "$0")/../work-agent-browser-proxy.mjs" "$@"\nfi\nexec "${node}" "$(dirname -- "$0")/../node_modules/${manifest.runtimes.agentBrowser.package}/${manifest.runtimes.agentBrowser.entrypoint}" "$@"\n`,
     );
     run("chmod", ["+x", join(out, "agent-browser/bin/agent-browser")]);
   }

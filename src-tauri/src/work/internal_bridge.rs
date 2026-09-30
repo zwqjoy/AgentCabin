@@ -13,7 +13,7 @@ use axum::Router;
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
@@ -45,6 +45,7 @@ pub struct ProcessBridgeTokenInfo {
 #[derive(Clone)]
 pub struct InternalBridgeState {
     pub tokens: Arc<RwLock<HashMap<String, ProcessBridgeTokenInfo>>>,
+    browser_host_grants: Arc<RwLock<HashSet<String>>>,
     pub effective_port: Arc<AtomicU16>,
     ready: Arc<Notify>,
 }
@@ -53,6 +54,7 @@ impl Default for InternalBridgeState {
     fn default() -> Self {
         Self {
             tokens: Arc::new(RwLock::new(HashMap::new())),
+            browser_host_grants: Arc::new(RwLock::new(HashSet::new())),
             effective_port: Arc::new(AtomicU16::new(0)),
             ready: Arc::new(Notify::new()),
         }
@@ -127,6 +129,10 @@ pub async fn start_internal_bridge() -> Result<u16, String> {
     let router = Router::new()
         .route("/internal/work/execute", post(internal_work_execute))
         .route("/internal/work/tool_pipeline", post(internal_tool_pipeline))
+        .route(
+            "/internal/work/browser_host_command",
+            post(internal_browser_host_command),
+        )
         .route(
             "/internal/work/task_state/update",
             post(internal_task_state_update),
@@ -550,6 +556,7 @@ async fn internal_mcp_proxy(
 
 pub async fn revoke_session_token(token: &str) {
     let state = bridge_state();
+    state.browser_host_grants.write().await.remove(token);
     let removed = state.tokens.write().await.remove(token);
     if let Some(info) = removed {
         let has_active = state
@@ -568,6 +575,19 @@ pub async fn revoke_session_token(token: &str) {
 
 pub async fn revoke_run_tokens(run_id: &str) {
     let state = bridge_state();
+    let revoked: Vec<String> = state
+        .tokens
+        .read()
+        .await
+        .iter()
+        .filter(|(_, info)| info.run_id == run_id)
+        .map(|(token, _)| token.clone())
+        .collect();
+    state
+        .browser_host_grants
+        .write()
+        .await
+        .retain(|token| !revoked.contains(token));
     state
         .tokens
         .write()
@@ -582,7 +602,15 @@ pub async fn revoke_run_tokens(run_id: &str) {
 pub fn revoke_run_tokens_sync(run_id: &str) {
     let state = bridge_state();
     if let Ok(mut tokens) = state.tokens.try_write() {
+        let revoked: Vec<String> = tokens
+            .iter()
+            .filter(|(_, info)| info.run_id == run_id)
+            .map(|(token, _)| token.clone())
+            .collect();
         tokens.retain(|_, info| info.run_id != run_id);
+        if let Ok(mut grants) = state.browser_host_grants.try_write() {
+            grants.retain(|token| !revoked.contains(token));
+        }
     } else {
         let r_id = run_id.to_string();
         tokio::spawn(async move {
@@ -847,6 +875,203 @@ async fn internal_inbox_status(
     Ok(Json(json!({
         "status": item.status,
         "response": item.response,
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserHostCommandPayload {
+    args: Vec<String>,
+    cwd: String,
+    #[serde(default)]
+    stdin: String,
+    #[serde(default)]
+    env: HashMap<String, String>,
+}
+
+async fn internal_browser_host_command(
+    State(state): State<InternalBridgeState>,
+    headers: HeaderMap,
+    Json(payload): Json<BrowserHostCommandPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    use crate::work::models::{ApprovalOutcome, PendingInteractionKind, WorkExecutionMode};
+
+    let ctx = authenticate_work_context(&state, &headers).await?;
+    let invalid = |message: String| (StatusCode::BAD_REQUEST, Json(json!({"error": message})));
+    if payload.args.is_empty()
+        || payload.args.len() > 64
+        || payload.args.iter().any(|arg| arg.len() > 8192)
+        || payload.stdin.len() > 1024 * 1024
+    {
+        return Err(invalid(
+            "Invalid browser command arguments or input size".to_string(),
+        ));
+    }
+    let version_only = payload.args == ["--version"];
+    let (task_id, policy) = resolve_policy_for_context(&ctx);
+    let paths = WorkPaths::app();
+    let cwd = paths
+        .resolve_command_cwd(
+            &ctx.token_info.workspace_id,
+            Some(&ctx.token_info.run_id),
+            &payload.cwd,
+            policy.execution_mode == WorkExecutionMode::FullAccess,
+        )
+        .map_err(invalid)?;
+
+    // One decision is scoped to this authenticated Pi process, not to a
+    // browser CLI argument. Browser actions may launch many short-lived CLIs.
+    if !version_only
+        && policy.execution_mode != WorkExecutionMode::FullAccess
+        && !state
+            .browser_host_grants
+            .read()
+            .await
+            .contains(&ctx.token_info.token)
+    {
+        let token_hash = format!("{:x}", Sha256::digest(ctx.token_info.token.as_bytes()));
+        let tool_call_id = format!("browser-host-{}", &token_hash[..16]);
+        let manager = crate::work::interaction::InteractionManager::new(paths.clone());
+        if let Some(grant) = manager
+            .find_matching_grant(
+                &task_id,
+                &ctx.token_info.run_id,
+                &tool_call_id,
+                "agent_browser_host",
+                "authorize",
+                &token_hash,
+                &ctx.token_info.workspace_id,
+            )
+            .map_err(invalid)?
+        {
+            if grant.outcome != ApprovalOutcome::AllowedOnce || grant.consumed {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({"error": "Browser host execution was denied"})),
+                ));
+            }
+            manager.consume_grant(&grant.grant_id).map_err(invalid)?;
+            state
+                .browser_host_grants
+                .write()
+                .await
+                .insert(ctx.token_info.token.clone());
+        } else {
+            let existing = manager
+                .list_pending(Some(&task_id), Some(&ctx.token_info.run_id))
+                .map_err(invalid)?
+                .into_iter()
+                .find(|item| item.tool_call_id.as_deref() == Some(&tool_call_id));
+            let interaction = match existing {
+                Some(item) => item,
+                None => manager
+                    .create_interaction(
+                        &task_id,
+                        &ctx.token_info.run_id,
+                        &ctx.token_info.workspace_id,
+                        None,
+                        None,
+                        Some(&tool_call_id),
+                        PendingInteractionKind::Permission,
+                        "允许当前 Work 任务使用浏览器",
+                        "浏览器将在主机进程中启动；此授权仅对当前 Work 浏览器会话有效。",
+                        json!({
+                            "toolName": "agent_browser_host",
+                            "action": "authorize",
+                            "argumentsHash": token_hash,
+                            "workspaceId": ctx.token_info.workspace_id,
+                            "executionLane": "browser_host",
+                            "parameters": {"command": "agent-browser"},
+                        }),
+                    )
+                    .map_err(invalid)?,
+            };
+            return Ok(Json(
+                json!({"status": "waiting_approval", "inboxItemId": interaction.interaction_id}),
+            ));
+        }
+    }
+
+    let executable = crate::agent::runtime_locator::bundled()
+        .map_err(invalid)?
+        .agent_browser;
+    if !executable.is_file() {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "Bundled agent-browser is unavailable"})),
+        ));
+    }
+    let mut command = tokio::process::Command::new(executable);
+    command
+        .args(&payload.args)
+        .current_dir(cwd)
+        .env_remove("AGENTCABIN_WORK_BROWSER_HOST_PROXY")
+        .env_remove("AGENTCABIN_WORK_BRIDGE_TOKEN")
+        .env_remove("AGENTCABIN_WORK_BRIDGE_PORT")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    for (key, value) in &payload.env {
+        if matches!(
+            key.as_str(),
+            "AGENT_BROWSER_NAMESPACE"
+                | "AGENT_BROWSER_DEFAULT_TIMEOUT"
+                | "AGENT_BROWSER_IDLE_TIMEOUT_MS"
+                | "AGENT_BROWSER_CONFIG"
+                | "AGENT_BROWSER_USER_AGENT"
+                | "AGENT_BROWSER_RESTORE"
+                | "AGENT_BROWSER_AUTOSAVE_INTERVAL_MS"
+        ) && value.len() <= 1024
+        {
+            command.env(key, value);
+        }
+    }
+    #[cfg(unix)]
+    {
+        let socket_dir =
+            crate::work::runtime::pi::prepare_agent_browser_socket_dir().map_err(invalid)?;
+        command
+            .env("PI_AGENT_BROWSER_SOCKET_DIR", &socket_dir)
+            .env("AGENT_BROWSER_SOCKET_DIR", socket_dir);
+    }
+    let mut child = command.spawn().map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("Failed to start host browser: {error}")})),
+        )
+    })?;
+    if let Some(mut pipe) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt;
+        pipe.write_all(payload.stdin.as_bytes())
+            .await
+            .map_err(|error| invalid(error.to_string()))?;
+    }
+    let output = tokio::time::timeout(Duration::from_secs(90), child.wait_with_output())
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                Json(json!({"error": "Host browser command timed out"})),
+            )
+        })?
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": error.to_string()})),
+            )
+        })?;
+    if output.stdout.len() > 8 * 1024 * 1024 || output.stderr.len() > 8 * 1024 * 1024 {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({"error": "Browser output exceeds 8 MiB"})),
+        ));
+    }
+    Ok(Json(json!({
+        "status": "completed",
+        "exitCode": output.status.code().unwrap_or(1),
+        "stdout": String::from_utf8_lossy(&output.stdout),
+        "stderr": String::from_utf8_lossy(&output.stderr),
     })))
 }
 
