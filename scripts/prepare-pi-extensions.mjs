@@ -9,6 +9,39 @@ const extensionsDir = join(root, "src-tauri/runtime/extensions");
 const npmCacheDir = join(root, ".agentcabin-build-cache/npm");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
+function patchWorkAgentBrowserHostBridge() {
+  const browserLibDir = join(
+    extensionsDir,
+    "node_modules/pi-agent-browser-native/dist/extensions/agent-browser/lib",
+  );
+  const processPath = join(browserLibDir, "process.js");
+  const bridgePath = join(browserLibDir, "work-host-bridge.js");
+  let source = readFileSync(processPath, "utf8");
+  const processEnvImport =
+    'import { getAgentBrowserProcessEnvironment } from "./process-environment.js";';
+  const childEnvLine = "    const childEnv = buildAgentBrowserProcessEnv(parentEnv, effectiveEnv);";
+  if (source.includes('from "./work-host-bridge.js"')) {
+    throw new Error(
+      "pi-agent-browser-native already contains an AgentCabin Work browser bridge patch",
+    );
+  }
+  if (source.split(processEnvImport).length !== 2 || source.split(childEnvLine).length !== 2) {
+    throw new Error(
+      "pi-agent-browser-native process.js changed; review the Work browser host bridge patch",
+    );
+  }
+  source = source.replace(
+    processEnvImport,
+    `${processEnvImport}\nimport { isWorkBrowserHostProxyEnabled, runWorkBrowserHostCommand } from "./work-host-bridge.js";`,
+  );
+  source = source.replace(
+    childEnvLine,
+    `${childEnvLine}\n    if (isWorkBrowserHostProxyEnabled(childEnv)) {\n        return await runWorkBrowserHostCommand({ args, cwd, env: childEnv, signal, stdin, timeoutMs });\n    }`,
+  );
+  writeFileSync(processPath, source);
+  writeFileSync(bridgePath, readFileSync(join(root, "scripts/work-agent-browser-host-bridge.mjs")));
+}
+
 execFileSync(
   npmCommand,
   ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps"],
@@ -19,6 +52,8 @@ execFileSync(
     shell: process.platform === "win32",
   },
 );
+
+patchWorkAgentBrowserHostBridge();
 
 const removedNativeDirectories = [];
 const nonDarwinPlatform = /(?:^|-)(?:win32|linux|android|freebsd|openbsd|sunos|aix)(?:-|$)/;
@@ -89,4 +124,3 @@ try {
 console.log(
   `Prepared ${Object.keys(manifest.dependencies).length} pinned Pi extensions (${Object.keys(files).length} files, ${removedNativeDirectories.length} non-arm64 native directories removed).`,
 );
-
