@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { smokeWorkNativeMcp } from './smoke-work-native-mcp.mjs';
 /**
  * Automated Packaged Runtimes Behavioral Smoke Test
  *
@@ -16,7 +17,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(fileURLToPath(import.meta.url), "../..");
 
@@ -267,7 +268,7 @@ async function testPiExtensionInstall() {
 
 async function testWorkActiveToolsSmoke() {
   const piSdkPath = resolve(runtimeRoot, "pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js");
-  const { createAgentSession, DefaultResourceLoader } = await import(piSdkPath);
+  const { createAgentSession, DefaultResourceLoader } = await import(pathToFileURL(piSdkPath).href);
   const agentDir = createTempDir("work-tools");
   const previous = process.env.AGENTCABIN_WORK_BROWSER_ENABLED;
   process.env.AGENTCABIN_WORK_BROWSER_ENABLED = "1";
@@ -336,6 +337,7 @@ async function main() {
     ]);
     await testPiExtensionInstall();
     await testWorkActiveToolsSmoke();
+    await smokeWorkNativeMcp(runtimeRoot);
     runSync(nodeBin, [join(root, "scripts/test-pi-rpc.mjs")], { env: { AGENTCABIN_RUNTIME_ROOT: runtimeRoot } });
     console.log("✓ Extended Pi RPC regression passed");
     await verifyNoOrphans();
