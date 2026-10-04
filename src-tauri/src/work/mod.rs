@@ -9,7 +9,6 @@ pub mod connector_package_manager;
 pub mod connectors;
 pub mod context;
 pub mod coordinator;
-pub mod desktop_operator;
 pub mod executor;
 pub mod files;
 pub mod goal;

@@ -118,55 +118,6 @@ export interface LibraryItemSummary {
   updatedAt: string;
 }
 
-export type BrowserActionType =
-  | "navigate"
-  | "snapshot"
-  | "screenshot"
-  | "click"
-  | "type"
-  | "select_option"
-  | "scroll"
-  | "wait_for"
-  | "tabs"
-  | "close"
-  | "takeover"
-  | "custom";
-
-export type BrowserSessionStatus =
-  | "idle"
-  | "running"
-  | "waiting_approval"
-  | "paused"
-  | "taking_over"
-  | "completed"
-  | "failed"
-  | "closed";
-
-export interface BrowserTraceEntry {
-  stepIndex: number;
-  actionType: BrowserActionType;
-  description: string;
-  targetUrl?: string | null;
-  selector?: string | null;
-  status: string;
-  screenshotData?: string | null;
-  durationMs: number;
-  error?: string | null;
-  timestamp: string;
-}
-
-export interface BrowserActivityView {
-  runId: string;
-  status: BrowserSessionStatus;
-  currentUrl?: string | null;
-  pageTitle?: string | null;
-  currentAction?: string | null;
-  lastScreenshot?: string | null;
-  traces: BrowserTraceEntry[];
-  lastError?: string | null;
-  updatedAt: string;
-}
-
 export interface WorkResourceSummary {
   id: string;
   name: string;
@@ -375,31 +326,6 @@ export interface WorkBrowserSummary {
   endpointUrl?: string;
   authKind?: string;
   allowedHosts?: string[];
-}
-
-export interface DesktopUseStatus {
-  enabled: boolean;
-  ready: boolean;
-  ownerRunId?: string | null;
-  command: string;
-  message: string;
-  accessibility?: boolean | null;
-  screenRecording?: boolean | null;
-}
-
-export type BrowserRuntimePreparationPhase = "initializing" | "verifying" | "completed" | "failed";
-
-export type BrowserRuntimePreparationStatus = "running" | "completed" | "failed";
-
-export interface BrowserRuntimePreparationProgress {
-  phase: BrowserRuntimePreparationPhase;
-  status: BrowserRuntimePreparationStatus;
-  progress: number;
-  message: string;
-  log?: string;
-  elapsedMs: number;
-  error?: string;
-  failedPhase?: BrowserRuntimePreparationPhase;
 }
 
 export type WorkBrowserHealthStatus = "disabled" | "unconfigured" | "healthy" | "failed";
@@ -822,7 +748,7 @@ export interface WorkRunRecovery {
 // Work Run Receipt（Ledger 投影的任务回执：成果 / 来源 / 输入 / 变更）
 // ============================================================================
 
-export type WorkReceiptSourceKind = "web_search" | "web_page" | "browser" | "library" | "other";
+export type WorkReceiptSourceKind = "web_search" | "web_page" | "library" | "other";
 
 export interface WorkReceiptSource {
   url: string;
@@ -1198,7 +1124,6 @@ export type WorkContextKind =
   | "connector"
   | "agent_plugin"
   | "web_access"
-  | "browser_use"
   | "library"
   | "artifact"
   | "memory"

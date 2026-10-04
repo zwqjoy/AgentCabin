@@ -1,7 +1,6 @@
 use super::{
-    add_code_desktop_use_env, cleanup_managed_directory, ensure_real_directory,
-    mcp_servers_toml_table, project_skills, write_managed_file, RuntimeProviderAdapter,
-    RuntimeSpawnConfig,
+    cleanup_managed_directory, ensure_real_directory, mcp_servers_toml_table, project_skills,
+    write_managed_file, RuntimeProviderAdapter, RuntimeSpawnConfig,
 };
 use crate::agent::capability_resolver::{EffectiveCapabilities, RuntimeProviderKind};
 use crate::agent::claude_stream;
@@ -39,10 +38,8 @@ impl RuntimeProviderAdapter for GrokRuntimeAdapter {
         // 3. Generate isolated GROK_HOME/config.toml with MCP servers
         let config_toml_path = grok_home.join("config.toml");
         let mut config = toml::value::Table::new();
-        let mut mcp_servers = caps.mcp_servers.clone();
-        if let Some(server) = super::code_desktop_mcp_server(caps)? {
-            mcp_servers.push(server);
-        }
+        let mcp_servers = caps.mcp_servers.clone();
+
         if !mcp_servers.is_empty() {
             config.insert(
                 "mcp_servers".into(),
@@ -66,7 +63,6 @@ impl RuntimeProviderAdapter for GrokRuntimeAdapter {
             "HOME".to_string(),
             runtime_home.to_string_lossy().to_string(),
         );
-        add_code_desktop_use_env(&mut env, caps.app_mode);
 
         let binary = resolve_grok_path();
         let args = vec![

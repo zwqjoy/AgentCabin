@@ -61,7 +61,7 @@
   import HarnessRuntimeProviderSection from "$lib/components/HarnessRuntimeProviderSection.svelte";
   import type { InstalledPlugin } from "$lib/types";
   import pkg from "../../../package.json";
-  import type { DesktopUseStatus, WorkBrowserHealth, WorkBrowserSummary } from "$lib/types/work";
+  import type { WorkBrowserHealth, WorkBrowserSummary } from "$lib/types/work";
 
   const PI_RUNTIME_THINKING_OPTIONS = [
     { val: "", labelKey: "settings_codexConfig_optInherit" },
@@ -90,7 +90,6 @@
   import DoctorSettings from "$lib/components/settings/pages/DoctorSettings.svelte";
   import RemoteAccessSettings from "$lib/components/settings/pages/RemoteAccessSettings.svelte";
   import WebAccessSettings from "$lib/components/settings/pages/WebAccessSettings.svelte";
-  import DesktopUseSettings from "$lib/components/settings/pages/DesktopUseSettings.svelte";
   import {
     resolveSettingsRoute,
     type SettingsTab,
@@ -147,8 +146,6 @@
         return "远程访问 (Remote Access)";
       case "web-access":
         return "网络访问 (Web Access)";
-      case "desktop-use":
-        return "电脑控制 (Desktop Use)";
       default:
         return "设置";
     }
@@ -182,8 +179,6 @@
         return "通过局域网或 HTTP 隧道，从浏览器访问 AgentCabin。";
       case "web-access":
         return "配置搜索供应商与网页抓取知识库连接能力。";
-      case "desktop-use":
-        return "管理系统辅助功能权限与原生屏幕自动化操控。";
       default:
         return "";
     }
@@ -236,29 +231,23 @@
   }
 
   let settings = $state<UserSettings | null>(null);
-  let desktopToolLoading = $state(true);
+  let webSettingsLoading = $state(true);
   let webAccessEnabled = $state(true);
   let webAccessConfig = $state<WorkBrowserSummary | null>(null);
-  let desktopUseStatus = $state<DesktopUseStatus | null>(null);
 
-  async function refreshDesktopToolSettings() {
-    desktopToolLoading = true;
+  async function refreshWebSettings() {
+    webSettingsLoading = true;
     try {
-      const [webEnabled, browserConfig, desktopStatus] = await Promise.allSettled([
+      const [webEnabled, browserConfig] = await Promise.allSettled([
         api.getWebAccessBinding(),
         api.getBrowserConfig(),
-        api.getDesktopUseStatus(),
       ]);
       if (webEnabled.status === "fulfilled") webAccessEnabled = webEnabled.value;
       if (browserConfig.status === "fulfilled") webAccessConfig = browserConfig.value;
-      if (desktopStatus.status === "fulfilled") desktopUseStatus = desktopStatus.value;
-      if (desktopStatus.status === "rejected") {
-        dbgWarn("settings", "desktop use status unavailable", desktopStatus.reason);
-      }
     } catch (cause) {
-      dbgWarn("settings", "desktop tool settings load failed", cause);
+      dbgWarn("settings", "web settings load failed", cause);
     } finally {
-      desktopToolLoading = false;
+      webSettingsLoading = false;
     }
   }
 
@@ -280,11 +269,6 @@
   async function toggleSettingsWebAccess(enabled: boolean) {
     await api.setWebAccessBinding(enabled);
     webAccessEnabled = enabled;
-  }
-
-  async function toggleSettingsDesktopUse(enabled: boolean) {
-    await api.setDesktopUseBinding(enabled);
-    desktopUseStatus = await api.getDesktopUseStatus();
   }
 
   let globalProviders = $state<GlobalProviderCredential[]>([]);
@@ -1614,7 +1598,7 @@
         anthropicBaseUrl = settings.anthropic_base_url ?? "";
       }
       void refreshRuntimeStatuses();
-      void refreshDesktopToolSettings();
+      void refreshWebSettings();
     } catch (e) {
       dbgWarn("settings", "error", e);
     }
@@ -1893,20 +1877,6 @@
           onTest={testSettingsWebAccess}
         />
       {/if}
-    {:else if activeTab === "desktop-use"}
-      <DesktopUseSettings
-        status={desktopUseStatus}
-        loading={desktopToolLoading}
-        onToggle={toggleSettingsDesktopUse}
-        onRefresh={async () => {
-          await refreshDesktopToolSettings();
-          desktopUseStatus = await api.refreshDesktopUseStatus();
-        }}
-        onRequestPermissions={async () => {
-          desktopUseStatus = await api.requestDesktopUsePermissions();
-        }}
-        onOpenPermissionPane={api.openDesktopPermissionPane}
-      />
     {/if}
   </SettingsShell>
 {/key}

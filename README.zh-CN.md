@@ -88,8 +88,6 @@ AgentCabin 是一个面向 Pi Coding Agent 的开源桌面应用，也可以理�
 | **Ralph 循环** | 自动迭代同一提示直到完成条件满足——免手动编码，支持自定义最大迭代次数 |
 | **系统诊断** | CLI、平台、SSH 和代理配置的系统健康检查 |
 | **Code 与 Work 模式** | Code 面向交互式开发；Work 面向持久任务、Inbox 审批、策略、产物、恢复和定时执行 |
-| **内嵌浏览器** | Electron 自有 Chromium 页面，支持导航策略、localhost 预览、CDP 中继和元素/上下文采集 |
-| **电脑控制** | 带可见审批和结构化上下文注入的 Desktop Use 能力 |
 
 ### 更多功能
 
@@ -191,7 +189,7 @@ Electron 宿主
 ├── Svelte 5 / SvelteKit 渲染层
 │   ├── Code 工作台：Pi Agent 与原生 Provider 桥接
 │   └── Work 工作台：任务、Inbox、策略、产物、恢复
-├── preload bridge + 内嵌 Chromium / CDP 浏览器
+├── 安全 preload bridge
 └── Rust Core 进程
     ├── session actor 与事件总线
     ├── Provider 与 runtime 桥接

@@ -910,47 +910,6 @@ pub async fn test_browser() -> Result<crate::work::models::WorkBrowserHealth, St
     crate::work::browser::test().await
 }
 
-#[tauri::command]
-pub async fn get_desktop_use_status(
-) -> Result<crate::work::desktop_operator::DesktopOperatorStatus, String> {
-    Ok(crate::work::desktop_operator::desktop_operator_manager()
-        .status()
-        .await)
-}
-
-#[tauri::command]
-pub async fn refresh_desktop_use_status(
-) -> Result<crate::work::desktop_operator::DesktopOperatorStatus, String> {
-    Ok(crate::work::desktop_operator::desktop_operator_manager()
-        .refresh_status()
-        .await)
-}
-
-#[tauri::command]
-pub fn get_desktop_use_binding() -> Result<bool, String> {
-    Ok(crate::work::desktop_operator::is_requested())
-}
-
-#[tauri::command]
-pub fn set_desktop_use_binding(enabled: bool) -> Result<(), String> {
-    crate::storage::profile_bindings::set_desktop_use_binding(enabled)
-}
-
-#[tauri::command]
-pub async fn request_desktop_use_permissions(
-) -> Result<crate::work::desktop_operator::DesktopOperatorStatus, String> {
-    crate::work::desktop_operator::desktop_operator_manager()
-        .request_permissions()
-        .await
-}
-
-#[tauri::command]
-pub async fn open_desktop_permission_pane(kind: String) -> Result<(), String> {
-    crate::work::desktop_operator::desktop_operator_manager()
-        .open_permission_pane(&kind)
-        .await
-}
-
 // ── Global MCP Catalog & Binding Commands ──
 
 #[tauri::command]

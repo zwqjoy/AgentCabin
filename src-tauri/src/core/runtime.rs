@@ -96,16 +96,11 @@ impl CoreRuntime {
         crate::web_server::broadcaster::register_shared_emitter(self.emitter.clone());
     }
 
-    /// Spawn background bridges (work, browser, desktop, code connector).
+    /// Spawn background bridges (Work and Code connector).
     pub fn spawn_bridges(&self) {
         tokio::spawn(async {
             if let Err(e) = crate::work::internal_bridge::start_internal_bridge().await {
                 log::error!("[work/bridge] Failed to start internal bridge: {e}");
-            }
-        });
-        tokio::spawn(async {
-            if let Err(e) = crate::desktop_runtime::start_bridge().await {
-                log::error!("[desktop/bridge] Failed to start desktop bridge: {e}");
             }
         });
         tokio::spawn(async {

@@ -95,7 +95,6 @@ struct Actor {
     cancel: CancellationToken,
     shutdown_tx: Option<oneshot::Sender<()>>,
     /// Code desktop bridge token owned by this actor process.
-    desktop_runtime_token: Option<String>,
     next_id: u64,
     pending: HashMap<String, PendingRequest>,
     permissions: HashMap<String, PermissionRequest>,
@@ -133,7 +132,6 @@ pub(super) async fn run_actor(
     cmd_rx: mpsc::Receiver<ActorCommand>,
     cancel: CancellationToken,
     shutdown_tx: oneshot::Sender<()>,
-    desktop_runtime_token: Option<String>,
 ) {
     let mut actor = Actor {
         emitter,
@@ -161,7 +159,6 @@ pub(super) async fn run_actor(
         cmd_rx,
         cancel,
         shutdown_tx: Some(shutdown_tx),
-        desktop_runtime_token,
         next_id: 1,
         pending: HashMap::new(),
         permissions: HashMap::new(),
@@ -1509,9 +1506,6 @@ impl Actor {
     }
 
     async fn cleanup(&mut self) {
-        if let Some(token) = self.desktop_runtime_token.take() {
-            crate::desktop_runtime::revoke_token(&token).await;
-        }
         let mut sessions = self.sessions.lock().await;
         let remove = sessions
             .get(&self.run_id)

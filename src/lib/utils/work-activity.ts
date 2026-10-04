@@ -24,16 +24,6 @@ const WORK_TOOL_LABELS: Record<string, string> = {
   web_open: "打开页面",
   web_extract: "摘取证据",
   web_cite: "生成引用",
-  browser_navigate: "打开网页",
-  browser_snapshot: "读取页面",
-  browser_take_screenshot: "截取页面",
-  browser_wait_for: "等待页面",
-  browser_tabs: "管理标签页",
-  browser_close: "关闭浏览器",
-  browser_click: "点击页面元素",
-  browser_type: "填写页面内容",
-  browser_select_option: "选择页面选项",
-  browser_scroll: "滚动页面",
   work_run_command: "运行命令",
   work_execute: "执行能力",
   work_read_file: "读取文件",
@@ -99,12 +89,7 @@ export function workToolDetail(tool: Pick<BusToolItem, "tool_name" | "input">): 
   if (name === "web_search") {
     return truncate(String(input.query ?? input.q ?? ""), 80);
   }
-  if (
-    name === "web_open" ||
-    name === "web_extract" ||
-    name === "web_cite" ||
-    name === "browser_navigate"
-  ) {
+  if (name === "web_open" || name === "web_extract" || name === "web_cite") {
     const url = String(input.url ?? "").trim();
     if (!url) return "";
     try {

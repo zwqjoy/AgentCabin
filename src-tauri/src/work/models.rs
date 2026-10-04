@@ -1681,9 +1681,9 @@ pub enum WorkReceiptSourceKind {
     /// URL appeared in a successful web search result set.
     WebSearch,
     /// Page content was actually fetched through web_open / web_fetch.
+    #[serde(alias = "browser")]
     WebPage,
     /// Page was opened through the interactive browser operator.
-    Browser,
     /// A durable Library entry was successfully read through the Host bridge.
     Library,
     #[default]
@@ -2384,6 +2384,13 @@ impl LibraryItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_browser_receipt_reads_as_web_page() {
+        let kind: WorkReceiptSourceKind = serde_json::from_str("\"browser\"").unwrap();
+        assert_eq!(kind, WorkReceiptSourceKind::WebPage);
+        assert_eq!(serde_json::to_string(&kind).unwrap(), "\"web_page\"");
+    }
 
     #[test]
     fn new_workspace_policy_defaults_to_auto_execution() {

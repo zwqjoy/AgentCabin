@@ -3091,8 +3091,8 @@
                       <div>
                         <h1 class="text-base font-semibold text-foreground">能力中心</h1>
                         <p class="mt-0.5 text-xs text-muted-foreground">
-                          统一管理 WorkBuddy 技能、专家、专家团、连接器以及
-                          MCP；网络、浏览器和电脑控制位于一级工具设置。
+                          统一管理 WorkBuddy 技能、专家、专家团、连接器以及 MCP；Web Research
+                          位于网络访问设置。
                         </p>
                       </div>
                     </div>

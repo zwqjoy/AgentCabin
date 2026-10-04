@@ -88,8 +88,6 @@ AgentCabin is an open-source desktop app for Pi Coding Agent. It is a Pi desktop
 | **Ralph Loop** | Auto-iterate the same prompt until a completion condition is met — hands-free coding with configurable max iterations |
 | **Doctor Diagnostics** | System health checks for CLI, platform, SSH, and proxy configuration |
 | **Code and Work Modes** | Code for interactive development; Work for durable tasks, inbox approvals, policies, artifacts, recovery, and scheduled execution |
-| **Embedded Browser** | Electron-owned Chromium surface with navigation policy, localhost preview, CDP relay, and element/context capture |
-| **Computer Use** | Desktop-use capability with visible approvals and structured context injection |
 
 ### Features
 
@@ -191,7 +189,7 @@ Electron host
 ├── Svelte 5 / SvelteKit renderer
 │   ├── Code workspace: Pi Agent and native provider bridges
 │   └── Work workspace: tasks, Inbox, policies, artifacts, recovery
-├── preload bridge + embedded Chromium / CDP browser
+├── secure preload bridge
 └── Rust core process
     ├── session actors and event bus
     ├── provider and runtime bridges

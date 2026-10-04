@@ -550,20 +550,7 @@ async fn internal_mcp_proxy(
 
 pub async fn revoke_session_token(token: &str) {
     let state = bridge_state();
-    let removed = state.tokens.write().await.remove(token);
-    if let Some(info) = removed {
-        let has_active = state
-            .tokens
-            .read()
-            .await
-            .values()
-            .any(|candidate| candidate.run_id == info.run_id);
-        if !has_active {
-            crate::work::desktop_operator::desktop_operator_manager()
-                .release_for_run(&info.run_id)
-                .await;
-        }
-    }
+    state.tokens.write().await.remove(token);
 }
 
 pub async fn revoke_run_tokens(run_id: &str) {
@@ -574,9 +561,6 @@ pub async fn revoke_run_tokens(run_id: &str) {
         .await
         .retain(|_, info| info.run_id != run_id);
     crate::work::coordinator::coordinator().cleanup_run(run_id);
-    crate::work::desktop_operator::desktop_operator_manager()
-        .release_for_run(run_id)
-        .await;
 }
 
 pub fn revoke_run_tokens_sync(run_id: &str) {
@@ -590,12 +574,6 @@ pub fn revoke_run_tokens_sync(run_id: &str) {
         });
     }
     crate::work::coordinator::coordinator().cleanup_run(run_id);
-    let r_id = run_id.to_string();
-    tokio::spawn(async move {
-        crate::work::desktop_operator::desktop_operator_manager()
-            .release_for_run(&r_id)
-            .await;
-    });
 }
 
 pub async fn is_run_active(run_id: &str) -> bool {

@@ -379,11 +379,9 @@ async fn spawn_actor_with_launch(
 
     super::register_session_map(&sessions);
 
-    let browser_token = extra_env.get("AGENTCABIN_BROWSER_BRIDGE_TOKEN").cloned();
     let connector_token = extra_env
         .get("AGENTCABIN_CODE_CONNECTOR_BRIDGE_TOKEN")
         .cloned();
-    let desktop_token = extra_env.get("AGENTCABIN_DESKTOP_BRIDGE_TOKEN").cloned();
     let work_bridge_token = extra_env.get("AGENTCABIN_WORK_BRIDGE_TOKEN").cloned();
 
     if settings.no_session_persistence
@@ -681,7 +679,6 @@ async fn spawn_actor_with_launch(
     let task_tag = tag.clone();
     let task_run_id = run_id.clone();
     let task_sessions = sessions.clone();
-    let actor_desktop_token = desktop_token.clone();
     let actor_work_bridge_token = work_bridge_token.clone();
     let persistent = !settings.no_session_persistence;
     let managed_provider = settings.pi_provider.is_some();
@@ -703,9 +700,7 @@ async fn spawn_actor_with_launch(
             managed_provider,
             permission_agent_dir,
             persistent,
-            browser_token,
             connector_token,
-            actor_desktop_token,
             actor_work_bridge_token,
             cancel,
             shutdown_tx,
@@ -724,7 +719,6 @@ async fn spawn_actor_with_launch(
             join_handle,
             shutdown_rx,
             work_bridge_token: work_bridge_token.clone(),
-            desktop_runtime_token: desktop_token.clone(),
         },
     );
     if start_tx.send(()).is_err() {
@@ -732,9 +726,7 @@ async fn spawn_actor_with_launch(
         if let Some(token) = work_bridge_token.as_deref() {
             crate::work::internal_bridge::revoke_session_token(token).await;
         }
-        if let Some(token) = desktop_token.as_deref() {
-            crate::desktop_runtime::revoke_token(token).await;
-        }
+
         return Err("Pi RPC actor failed to enter its process loop".to_string());
     }
     Ok(sender)

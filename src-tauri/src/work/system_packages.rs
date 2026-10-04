@@ -39,10 +39,6 @@ pub const PI_TODO_VERSION: &str = "2.11.0";
 pub const PI_TODO_SOURCE: &str = "npm:@juicesharp/rpiv-todo@2.11.0";
 const LEGACY_PI_TODO_PACKAGE_NAME: &str = "@pi9/todo";
 
-pub const PI_COMPUTER_USE_PACKAGE_NAME: &str = "@injaneity/pi-computer-use";
-pub const PI_COMPUTER_USE_VERSION: &str = "0.5.1";
-pub const PI_COMPUTER_USE_SOURCE: &str = "npm:@injaneity/pi-computer-use@0.5.1";
-
 pub const SYSTEM_MANAGED_PACKAGE_MESSAGE: &str =
     "这是 AgentCabin Work 系统组件，已由系统管理，请在对应能力设置中启用或停用。";
 
@@ -104,19 +100,9 @@ pub fn is_pi_web_access_source(source: &str) -> bool {
         )
 }
 
-pub fn is_pi_computer_use_source(source: &str) -> bool {
-    let normalized = source.trim().strip_prefix("npm:").unwrap_or(source.trim());
-    package_reference_matches(normalized, PI_COMPUTER_USE_PACKAGE_NAME)
-        || package_reference_matches(
-            final_reference_segment(normalized),
-            PI_COMPUTER_USE_PACKAGE_NAME,
-        )
-}
-
 pub fn is_system_managed_source(source: &str) -> bool {
     is_pi_mcp_adapter_source(source)
         || is_pi_web_access_source(source)
-        || is_pi_computer_use_source(source)
         || is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME)
         || is_package_source(source, PI_TODO_PACKAGE_NAME)
         || is_package_source(source, LEGACY_PI_TODO_PACKAGE_NAME)
@@ -170,8 +156,6 @@ fn managed_package_name(source: &str) -> Option<&'static str> {
         Some(PI_TODO_PACKAGE_NAME)
     } else if is_package_source(source, LEGACY_PI_TODO_PACKAGE_NAME) {
         Some(LEGACY_PI_TODO_PACKAGE_NAME)
-    } else if is_pi_computer_use_source(source) {
-        Some(PI_COMPUTER_USE_PACKAGE_NAME)
     } else {
         None
     }
@@ -575,11 +559,6 @@ mod tests {
         assert!(is_system_managed_source("npm:pi-web-access@0.23.0"));
         assert!(is_system_managed_source(PI_ASK_USER_QUESTION_SOURCE));
         assert!(is_system_managed_source(PI_TODO_SOURCE));
-        assert!(is_pi_computer_use_source("@injaneity/pi-computer-use"));
-        assert!(is_pi_computer_use_source(
-            "npm:@injaneity/pi-computer-use@0.5.1"
-        ));
-        assert!(is_system_managed_source(PI_COMPUTER_USE_SOURCE));
         assert!(is_pi_interaction_source(
             "/managed/node_modules/@juicesharp/rpiv-todo"
         ));

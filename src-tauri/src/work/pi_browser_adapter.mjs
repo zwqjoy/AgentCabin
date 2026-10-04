@@ -214,7 +214,6 @@ function getAllowedHosts() {
   const raw = String(
     process.env.AGENTCABIN_WEB_ALLOWED_HOSTS ||
     process.env.AGENTCABIN_WORK_BROWSER_ALLOWED_HOSTS ||
-    process.env.AGENTCABIN_BROWSER_ALLOWED_HOSTS ||
     ""
   );
   return raw

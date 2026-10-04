@@ -76,18 +76,3 @@ const integrity = {
   files,
 };
 writeFileSync(join(extensionsDir, "integrity.json"), `${JSON.stringify(integrity, null, 2)}\n`);
-
-try {
-  const { createComputerUseHostRuntime } = await import("../src-tauri/src/work/pi_computer_use_runtime.mjs");
-  const cuRuntime = await createComputerUseHostRuntime({ extensionsDir: join(extensionsDir, "node_modules") });
-  const toolDefs = cuRuntime.getToolDefinitions();
-  const defsPath = join(root, "src-tauri/src/work/pi_computer_use_definitions.json");
-  writeFileSync(defsPath, `${JSON.stringify(toolDefs, null, 2)}\n`);
-  console.log(`Synchronized ${toolDefs.length} upstream Computer Use tool definitions to ${relative(root, defsPath)}.`);
-} catch (error) {
-  console.warn(`[prepare-pi-extensions] could not extract computer-use tool definitions: ${error.message}`);
-}
-
-console.log(
-  `Prepared ${Object.keys(manifest.dependencies).length} pinned Pi extensions (${Object.keys(files).length} files, ${removedNativeDirectories.length} non-arm64 native directories removed).`,
-);

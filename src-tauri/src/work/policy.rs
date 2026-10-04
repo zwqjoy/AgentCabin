@@ -22,26 +22,6 @@ impl PolicyEvaluator {
             || name_lower == "work_command_info"
             || name_lower == "work_validate_artifact"
             || name_lower.starts_with("web_")
-            || name_lower == "browser_navigate"
-            || name_lower == "browser_snapshot"
-            || name_lower == "browser_take_screenshot"
-            || name_lower == "browser_wait_for"
-            || name_lower == "browser_tabs"
-            || name_lower == "browser_scroll"
-            || name_lower == "browser_press_key"
-            || name_lower == "browser_close"
-            || name_lower == "desktop_list_apps"
-            || name_lower == "desktop_probe_app"
-            || name_lower == "desktop_observe"
-            || name_lower == "desktop_screenshot"
-            || name_lower == "desktop_release"
-            || name_lower == "find_roots"
-            || name_lower == "observe_ui"
-            || name_lower == "search_ui"
-            || name_lower == "expand_ui"
-            || name_lower == "inspect_ui"
-            || name_lower == "read_text"
-            || name_lower == "wait_for"
             || name_lower.starts_with("read_")
             || name_lower.starts_with("view_")
             || name_lower.starts_with("list_")
@@ -55,18 +35,6 @@ impl PolicyEvaluator {
             || name_lower.starts_with("work_artifact_create")
             || name_lower == "work_register_artifact"
             || name_lower == "work_deliver"
-            || name_lower == "browser_click"
-            || name_lower == "browser_type"
-            || name_lower == "browser_select_option"
-            || name_lower == "browser_press_key"
-            || name_lower == "desktop_open_app"
-            || name_lower == "desktop_click"
-            || name_lower == "desktop_type"
-            || name_lower == "desktop_key"
-            || name_lower == "desktop_scroll"
-            || name_lower == "desktop_act_batch"
-            || name_lower == "launch_app"
-            || name_lower == "act_ui"
             || name_lower.starts_with("write_")
             || name_lower.starts_with("edit_")
         {
@@ -657,22 +625,6 @@ mod tests {
         assert_eq!(
             PolicyEvaluator::classify_tool_risk("feishu_send_message"),
             ToolRiskClass::External
-        );
-        assert_eq!(
-            PolicyEvaluator::classify_tool_risk("desktop_observe"),
-            ToolRiskClass::Read
-        );
-        assert_eq!(
-            PolicyEvaluator::classify_tool_risk("desktop_click"),
-            ToolRiskClass::WriteLocal
-        );
-        assert_eq!(
-            PolicyEvaluator::classify_tool_risk("observe_ui"),
-            ToolRiskClass::Read
-        );
-        assert_eq!(
-            PolicyEvaluator::classify_tool_risk("act_ui"),
-            ToolRiskClass::WriteLocal
         );
     }
 

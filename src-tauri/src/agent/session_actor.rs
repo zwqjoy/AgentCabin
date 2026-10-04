@@ -273,9 +273,6 @@ pub struct SessionActorHandle {
     /// exact lease, never every token for the WorkRun, because a replacement
     /// actor may already have registered a fresh token.
     pub work_bridge_token: Option<String>,
-    /// Code desktop bridge token owned by this actor process. Cleanup revokes
-    /// the exact token so a replaced actor cannot release its replacement.
-    pub desktop_runtime_token: Option<String>,
 }
 
 // ── Actor internals ──
@@ -350,8 +347,6 @@ struct SessionActor {
     /// Set when emitting PermissionPrompt / HookCallback(PreToolUse) / ElicitationPrompt.
     /// Cleared when the response is received. Retained during quarantine for diagnostics.
     pending_interactive_request: Option<PendingInteractiveRequest>,
-    /// Code desktop bridge token owned by this actor process.
-    desktop_runtime_token: Option<String>,
 }
 
 // ── Spawn entry point ──
@@ -380,7 +375,6 @@ pub fn spawn_actor(
     // Codex app-server transport: the driver + its handshake messages. `None`/empty = Claude.
     codex: Option<CodexAppServer>,
     codex_startup: Vec<Value>,
-    desktop_runtime_token: Option<String>,
 ) -> SessionActorHandle {
     let tag = Arc::new(());
     let (cmd_tx, cmd_rx) = mpsc::channel::<ActorCommand>(64);
@@ -402,7 +396,6 @@ pub fn spawn_actor(
         protocol: ProtocolState::new(is_resume),
         codex,
         codex_startup,
-        desktop_runtime_token: desktop_runtime_token.clone(),
         codex_ready: false,
         codex_overrides: CodexTurnOverrides::default(),
         state: String::new(),
@@ -445,7 +438,6 @@ pub fn spawn_actor(
         join_handle,
         shutdown_rx,
         work_bridge_token: None,
-        desktop_runtime_token,
     }
 }
 
@@ -3038,10 +3030,6 @@ impl SessionActor {
 
         // Fail all pending user replies (HC #12)
         self.fail_all_pending_replies("Session cleanup");
-
-        if let Some(token) = self.desktop_runtime_token.as_deref() {
-            crate::desktop_runtime::revoke_token(token).await;
-        }
 
         // Drain control waiters
         if !self.control_waiters.is_empty() {

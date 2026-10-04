@@ -179,9 +179,6 @@ jobs:
       - name: Prepare pinned Pi extensions
         run: npm run prepare:pi-extensions
 
-      - name: Prepare AgentCabin Computer Use resources
-        run: npm run prepare:agentcabin-computer-use
-
       - name: Build Core Server Binary
         run: npm run build:core:release
 

@@ -47,31 +47,6 @@ const BROWSER_TOOL_CATALOG = [
   ["web_cite", "Create stable citations from 网络访问 page passages in the current run ledger; use page_id plus exact passage_ids, or pass a list of passage_ids when citing multiple opened pages.", "read", true],
 ];
 
-const DESKTOP_OPERATOR_TOOL_CATALOG = [
-  ["launch_app", "Launch a native application and return its first immutable UI state.", "local_write", true],
-  ["find_roots", "Find controllable desktop roots with stable root refs.", "read", true],
-  ["observe_ui", "Observe one root and return an immutable stateId with a compact UI outline.", "read", true],
-  ["search_ui", "Search the complete cached UI state.", "read", true],
-  ["expand_ui", "Expand bounded local context around one cached UI element.", "read", true],
-  ["inspect_ui", "Inspect one exact cached UI element.", "read", true],
-  ["act_ui", "Execute checked UI actions from one state and return the successor state.", "local_write", true],
-  ["read_text", "Read text owned by an immutable UI state.", "read", true],
-  ["wait_for", "Wait for a scoped UI condition and return the successor state.", "read", true],
-  // Private native backend methods remain pipeline-addressable for the V2 adapter, but are
-  // no longer activated as model-facing tools.
-  ["desktop_list_apps", "Native backend: list desktop windows.", "read", false],
-  ["desktop_probe_app", "Native backend: probe an application.", "read", false],
-  ["desktop_open_app", "Native backend: open an application.", "local_write", false],
-  ["desktop_observe", "Native backend: observe a desktop window.", "read", false],
-  ["desktop_screenshot", "Native backend: capture a window.", "read", false],
-  ["desktop_click", "Native backend: click.", "local_write", false],
-  ["desktop_type", "Native backend: type text.", "local_write", false],
-  ["desktop_key", "Native backend: press keys.", "local_write", false],
-  ["desktop_scroll", "Native backend: scroll.", "local_write", false],
-  ["desktop_act_batch", "Native backend: execute one checked UI transaction.", "local_write", false],
-  ["desktop_release", "Native backend: release its lease.", "read", false],
-];
-
 function materialize(entries) {
   return entries.map(([name, description, effect, defaultActive]) => ({
     name,
@@ -84,11 +59,9 @@ function materialize(entries) {
 export function createWorkToolCatalog({
   mcpEnabled = process.env.AGENTCABIN_WORK_MCP_ENABLED === "1",
   browserEnabled = process.env.AGENTCABIN_WORK_BROWSER_ENABLED === "1",
-  desktopUseEnabled = process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED === "1",
 } = {}) {
   return [
     ...materialize(BASE_TOOL_CATALOG),
-    ...(desktopUseEnabled ? materialize(DESKTOP_OPERATOR_TOOL_CATALOG) : []),
     ...(mcpEnabled ? materialize(MCP_TOOL_CATALOG) : []),
     ...(browserEnabled ? materialize(BROWSER_TOOL_CATALOG) : []),
   ];

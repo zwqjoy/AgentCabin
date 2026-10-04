@@ -48,14 +48,12 @@
           {@const isLibrary = source.kinds.includes("library")}
           {@const badge = isLibrary
             ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-            : source.kinds.includes("browser")
-              ? "bg-violet-500/10 text-violet-600 dark:text-violet-300"
-              : "bg-blue-500/10 text-blue-600 dark:text-blue-300"}
+            : "bg-blue-500/10 text-blue-600 dark:text-blue-300"}
           <li
             class="flex items-center gap-2 rounded-lg border border-border/60 bg-card/40 px-2 py-1.5"
           >
             <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold {badge}">
-              {isLibrary ? "资料库" : source.kinds.includes("browser") ? "浏览器" : "网页"}
+              {isLibrary ? "资料库" : "网页"}
             </span>
             {#if isLibrary}
               <div

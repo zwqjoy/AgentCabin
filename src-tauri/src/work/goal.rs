@@ -395,9 +395,6 @@ impl<'a> GoalVerifier<'a> {
         let source_tools = [
             "web_open",
             "web_fetch",
-            "browser_navigate",
-            "browser_snapshot",
-            "browser_take_screenshot",
             "library_read",
             "work_mcp_call",
             "work_call_app",

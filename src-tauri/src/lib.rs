@@ -2,7 +2,6 @@ pub mod agent;
 pub mod code_connector_runtime;
 pub mod commands;
 pub mod core;
-pub mod desktop_runtime;
 pub mod hooks;
 pub mod models;
 pub mod pet;
@@ -112,15 +111,6 @@ pub fn run() {
     tauri::async_runtime::spawn(async {
         if let Err(e) = work::internal_bridge::start_internal_bridge().await {
             log::error!("[work/bridge] Failed to start internal bridge: {e}");
-        }
-    });
-
-    // Code's native desktop tools use the same loopback/bearer-token pattern
-    // as Browser Runtime. Work continues to authorize the same operator via
-    // its Work Tool Pipeline instead of this bridge.
-    tauri::async_runtime::spawn(async {
-        if let Err(e) = desktop_runtime::start_bridge().await {
-            log::error!("[desktop/bridge] Failed to start desktop bridge: {e}");
         }
     });
 
@@ -539,12 +529,6 @@ pub fn run() {
             commands::capabilities::get_browser_config,
             commands::capabilities::save_browser_config,
             commands::capabilities::test_browser,
-            commands::capabilities::get_desktop_use_status,
-            commands::capabilities::refresh_desktop_use_status,
-            commands::capabilities::request_desktop_use_permissions,
-            commands::capabilities::open_desktop_permission_pane,
-            commands::capabilities::get_desktop_use_binding,
-            commands::capabilities::set_desktop_use_binding,
             commands::pi_extensions::list_mcp_catalog,
             commands::pi_extensions::save_mcp_catalog_server,
             commands::pi_extensions::delete_mcp_catalog_server,

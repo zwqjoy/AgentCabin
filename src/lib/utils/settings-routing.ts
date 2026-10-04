@@ -14,8 +14,7 @@ export type SettingsTab =
   | "models"
   | "doctor"
   | "remote-access"
-  | "web-access"
-  | "desktop-use";
+  | "web-access";
 
 export interface ResolvedSettingsRoute {
   tab: SettingsTab;
@@ -38,7 +37,6 @@ export const CANONICAL_SETTINGS_TABS: readonly SettingsTab[] = [
   "doctor",
   "remote-access",
   "web-access",
-  "desktop-use",
 ] as const;
 
 /**
@@ -119,9 +117,6 @@ export function resolveSettingsRoute(
   }
   if (tab === "browser-use" || tab === "browser" || category === "browser") {
     return { tab: "web-access" };
-  }
-  if (tab === "desktop-use" || tab === "desktop" || tab === "computer") {
-    return { tab: "desktop-use" };
   }
   if (tab === "mcp") {
     return { tab: "capability-center", section: "mcp" };

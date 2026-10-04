@@ -1,7 +1,6 @@
 use super::{
-    add_code_desktop_use_env, cleanup_managed_directory, ensure_real_directory,
-    mcp_servers_toml_table, project_skills, write_managed_file, RuntimeProviderAdapter,
-    RuntimeSpawnConfig,
+    cleanup_managed_directory, ensure_real_directory, mcp_servers_toml_table, project_skills,
+    write_managed_file, RuntimeProviderAdapter, RuntimeSpawnConfig,
 };
 use crate::agent::capability_resolver::{EffectiveCapabilities, RuntimeProviderKind};
 use crate::agent::claude_stream;
@@ -30,10 +29,8 @@ impl RuntimeProviderAdapter for CodexRuntimeAdapter {
             "suppress_unstable_features_warning".into(),
             toml::Value::Boolean(true),
         );
-        let mut mcp_servers = caps.mcp_servers.clone();
-        if let Some(server) = super::code_desktop_mcp_server(caps)? {
-            mcp_servers.push(server);
-        }
+        let mcp_servers = caps.mcp_servers.clone();
+
         if !mcp_servers.is_empty() {
             config.insert(
                 "mcp_servers".into(),
@@ -51,7 +48,6 @@ impl RuntimeProviderAdapter for CodexRuntimeAdapter {
             codex_home.to_string_lossy().to_string(),
         );
         env.insert("HOME".to_string(), codex_home.to_string_lossy().to_string());
-        add_code_desktop_use_env(&mut env, caps.app_mode);
 
         let binary = claude_stream::which_binary("codex").unwrap_or_else(|| "codex".to_string());
         let args = vec![

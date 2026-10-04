@@ -66,9 +66,6 @@ jobs:
       - name: Prepare pinned Pi extensions
         run: npm run prepare:pi-extensions
 
-      - name: Prepare AgentCabin Computer Use resources
-        run: npm run prepare:agentcabin-computer-use
-
       - name: Use Electron-only Tauri build config
         shell: bash
         run: echo 'TAURI_CONFIG={"bundle":{"resources":[]}}' >> "$GITHUB_ENV"

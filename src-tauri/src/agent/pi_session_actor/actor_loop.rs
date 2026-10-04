@@ -261,9 +261,7 @@ pub(super) async fn run_actor(
     managed_provider: bool,
     permission_agent_dir: Option<PathBuf>,
     session_persistence_enabled: bool,
-    browser_token: Option<String>,
     connector_token: Option<String>,
-    desktop_token: Option<String>,
     work_bridge_token: Option<String>,
     cancel: CancellationToken,
     shutdown_tx: oneshot::Sender<()>,
@@ -1011,9 +1009,7 @@ pub(super) async fn run_actor(
         &sessions,
         &run_id,
         &tag,
-        browser_token.as_deref(),
         connector_token.as_deref(),
-        desktop_token.as_deref(),
         work_bridge_token.as_deref(),
     )
     .await;
@@ -1778,18 +1774,13 @@ async fn cleanup_actor(
     sessions: &ActorSessionMap,
     run_id: &str,
     tag: &Arc<()>,
-    browser_token: Option<&str>,
     connector_token: Option<&str>,
-    desktop_token: Option<&str>,
     work_bridge_token: Option<&str>,
 ) {
-    let _ = browser_token;
     if let Some(token) = connector_token {
         crate::code_connector_runtime::revoke_token(token).await;
     }
-    if let Some(token) = desktop_token {
-        crate::desktop_runtime::revoke_token(token).await;
-    }
+
     if let Some(token) = work_bridge_token {
         // WorkRun completion is turn-scoped; this process-scoped lease remains
         // valid while the Pi actor is idle and is revoked only after Pi exits.
@@ -2259,8 +2250,6 @@ mod tests {
             &crate::agent::adapter::new_actor_session_map(),
             &run_id,
             &Arc::new(()),
-            None,
-            None,
             None,
             Some(&old_token),
         )

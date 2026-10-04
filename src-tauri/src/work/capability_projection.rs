@@ -855,56 +855,6 @@ fn project_browser(paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
     }]
 }
 
-/// Computer Use is a host-owned Work capability. Both Pi and DSH reach it via
-/// the same Policy/Approval pipeline; neither runtime receives native desktop
-/// authority.
-fn project_desktop() -> Vec<CapabilityCenterItem> {
-    let requested = crate::work::desktop_operator::is_requested();
-    let ready = crate::work::desktop_operator::is_enabled();
-    let (readiness, reason) = if ready {
-        (
-            CapabilityReadiness::Ready,
-            "Computer Use V2 已就绪，并受 Work Policy / Approval 管控".to_string(),
-        )
-    } else if requested {
-        (
-            CapabilityReadiness::MissingDependency,
-            "已请求 Computer Use，但本机原生桌面后端尚未就绪".to_string(),
-        )
-    } else {
-        (
-            CapabilityReadiness::Disabled,
-            "Computer Use 默认关闭".to_string(),
-        )
-    };
-
-    vec![CapabilityCenterItem {
-        id: "work-computer-use".to_string(),
-        name: "Computer Use V2".to_string(),
-        description:
-            "通过 AgentCabin Host 执行受审批的桌面操作；运行时本身不直接获得原生桌面权限。"
-                .to_string(),
-        category: "computer_use".to_string(),
-        origin: "builtin".to_string(),
-        installed: true,
-        enabled: ready,
-        readiness,
-        readiness_reason: reason,
-        scopes: vec!["work".to_string()],
-        runtime_availability: work_runtime_scopes(ready, ready, false),
-        permissions: vec!["desktop".to_string(), "approval".to_string()],
-        auth: None,
-        health: None,
-        diagnostics: vec![],
-        capabilities: vec![
-            "launch_app".to_string(),
-            "observe_ui".to_string(),
-            "act_ui".to_string(),
-        ],
-        actions: vec![],
-    }]
-}
-
 /// Project MCP Servers
 fn project_mcp(_paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
     let configured = crate::storage::mcp_registry::list_configured(None);
@@ -961,9 +911,8 @@ pub fn build_capability_center_projection(
     // 2. Connectors
     items.extend(project_connectors(paths));
 
-    // 3. Web / Browser / Computer Use
+    // 3. Web Research
     items.extend(project_browser(paths));
-    items.extend(project_desktop());
 
     // 4. Skills
     items.extend(project_skills(paths, runtime_provider));
@@ -1354,7 +1303,7 @@ mod tests {
         assert!(!disabled_summary.enabled);
 
         // Configured Web Research
-        let missing_chromium = WorkBrowserSummary {
+        let configured_summary = WorkBrowserSummary {
             enabled: true,
             provider: "tavily".to_string(),
             configured: true,
@@ -1367,6 +1316,7 @@ mod tests {
             auth_kind: "api_key".to_string(),
             allowed_hosts: Vec::new(),
         };
+        assert!(configured_summary.configured);
     }
 
     #[test]
@@ -1453,7 +1403,7 @@ mod tests {
         assert!(projection
             .items
             .iter()
-            .any(|item| item.category == "computer_use"));
+            .all(|item| item.category != "computer_use"));
         assert_eq!(projection.overview.needs_auth_count, 0);
         assert_eq!(projection.overview.needs_setup_count, 0);
     }

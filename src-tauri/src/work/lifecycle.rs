@@ -343,22 +343,6 @@ impl WorkHarnessController {
             );
         }
 
-        if !effective_status.is_active() {
-            // A WorkRun terminal state closes the current task turn, not
-            // necessarily the interactive Pi process. The process may remain
-            // idle so the user can send a follow-up, and its bridge lease must
-            // stay valid until that actor actually exits. Actor cleanup owns
-            // exact-token revocation; stop/replacement has a timeout fallback.
-            let run_id_owned = run_id.to_string();
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn(async move {
-                    crate::work::desktop_operator::desktop_operator_manager()
-                        .release_for_run(&run_id_owned)
-                        .await;
-                });
-            }
-        }
-
         let failure_reason = if effective_status == WorkRunStatus::Failed {
             Some(
                 effective_error

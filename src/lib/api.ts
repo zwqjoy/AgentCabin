@@ -1774,36 +1774,6 @@ export function testBrowser(): Promise<WorkBrowserHealth> {
   return invoke<WorkBrowserHealth>("test_browser");
 }
 
-export async function getDesktopUseStatus(): Promise<import("$lib/types/work").DesktopUseStatus> {
-  return invoke<import("$lib/types/work").DesktopUseStatus>("get_desktop_use_status");
-}
-
-export async function refreshDesktopUseStatus(): Promise<
-  import("$lib/types/work").DesktopUseStatus
-> {
-  return invoke<import("$lib/types/work").DesktopUseStatus>("refresh_desktop_use_status");
-}
-
-export async function getDesktopUseBinding(): Promise<boolean> {
-  return invoke<boolean>("get_desktop_use_binding");
-}
-
-export async function setDesktopUseBinding(enabled: boolean): Promise<void> {
-  return invoke<void>("set_desktop_use_binding", { enabled });
-}
-
-export async function requestDesktopUsePermissions(): Promise<
-  import("$lib/types/work").DesktopUseStatus
-> {
-  return invoke<import("$lib/types/work").DesktopUseStatus>("request_desktop_use_permissions");
-}
-
-export async function openDesktopPermissionPane(
-  kind: "accessibility" | "screen-recording",
-): Promise<void> {
-  return invoke<void>("open_desktop_permission_pane", { kind });
-}
-
 export async function setMcpBinding(
   serverId: string,
   enabled: boolean,

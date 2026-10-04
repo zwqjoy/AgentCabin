@@ -193,11 +193,7 @@
         isFailed,
       };
     }
-    if (
-      toolName === "web_open" ||
-      toolName === "browser_navigate" ||
-      toolName === "read_url_content"
-    ) {
+    if (toolName === "web_open" || toolName === "read_url_content") {
       const url = String(inp.url || inp.Url || "");
       let domain = url;
       try {

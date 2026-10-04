@@ -11,7 +11,6 @@ import {
   readArtifactStorageMode,
   WORKSPACE_AREAS,
 } from "./pi_workspace_paths.mjs";
-import { registerComputerUseV2Tools } from "./agentcabin_computer_use_v2_adapter.mjs";
 import agentCabinWorkBrowserExtension from "./pi_browser_adapter.mjs";
 import {
   createWorkBridgeClient,
@@ -2769,16 +2768,6 @@ export default function agentCabinWorkExtension(pi) {
       }
     },
   });
-
-  const desktopEnabled = process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED === "1";
-
-  if (desktopEnabled) {
-    registerComputerUseV2Tools(pi, {
-      registerWorkTool,
-      callToolPipeline,
-      waitForWorkInboxResolution,
-    });
-  }
 
   pi.on("before_agent_start", async (event) => {
     applyActiveTools();

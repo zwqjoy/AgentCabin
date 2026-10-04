@@ -166,7 +166,7 @@ fn apply_projection(
     let mut sources: HashMap<String, WorkReceiptSource> = HashMap::new();
 
     // 1. Ledger-backed events (Tool Pipeline execution: web_search / web_open /
-    //    browser_navigate / library_read). Access requires a successful ToolResult.
+    //    web_open / library_read). Access requires a successful ToolResult.
     for source in ledger.sources {
         merge_source(&mut sources, source);
     }
@@ -401,24 +401,6 @@ impl LedgerProjection {
                                     first_seen_at: Some(timestamp.clone()),
                                     last_accessed_at: Some(timestamp.clone()),
                                     kinds: vec![WorkReceiptSourceKind::WebPage],
-                                });
-                            }
-                        }
-                        "browser_navigate" => {
-                            for url in outputs {
-                                if !is_http_url(url) {
-                                    continue;
-                                }
-                                sources.push(WorkReceiptSource {
-                                    url: url.clone(),
-                                    title: None,
-                                    provider: None,
-                                    surfaced_by_search: false,
-                                    accessed: true,
-                                    access_count: 1,
-                                    first_seen_at: Some(timestamp.clone()),
-                                    last_accessed_at: Some(timestamp.clone()),
-                                    kinds: vec![WorkReceiptSourceKind::Browser],
                                 });
                             }
                         }

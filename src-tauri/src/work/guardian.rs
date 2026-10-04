@@ -619,17 +619,7 @@ fn count_steering_facts(facts: &[RuntimeFact]) -> u32 {
 }
 
 pub fn is_polling_tool(tool_name: &str) -> bool {
-    matches!(
-        tool_name,
-        "desktop_observe"
-            | "desktop_screenshot"
-            | "observe_ui"
-            | "inspect_ui"
-            | "browser_snapshot"
-            | "browser_wait_for"
-            | "work_agent_status"
-            | "work_agent_wait"
-    )
+    matches!(tool_name, "work_agent_status" | "work_agent_wait")
 }
 
 fn check_duplicate_tool_streak(
@@ -969,7 +959,7 @@ mod tests {
         for i in 1..=20 {
             facts.push(RuntimeFact::ToolProposed {
                 tool_call_id: format!("call-{i}"),
-                tool_name: "desktop_observe".to_string(),
+                tool_name: "work_agent_status".to_string(),
                 action: "observe".to_string(),
                 arguments_hash: r#"{"pid":94187}"#.to_string(),
                 expected_outputs: Vec::new(),
@@ -991,7 +981,7 @@ mod tests {
             "2026-08-28T12:00:21Z",
             None,
         );
-        // 20 calls of desktop_observe must NOT trigger duplicate tool warning (threshold 60)
+        // 20 calls of work_agent_status must NOT trigger duplicate tool warning (threshold 60)
         assert_eq!(report.health, RunHealth::Healthy);
         assert!(!report
             .anomalies

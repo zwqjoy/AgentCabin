@@ -382,12 +382,6 @@ impl PiWorkRuntimeAdapter {
             }
         }
 
-        if request.desktop_use_enabled {
-            extra_env.insert(
-                "AGENTCABIN_WORK_DESKTOP_USE_ENABLED".to_string(),
-                "1".to_string(),
-            );
-        }
         // PI_CODING_AGENT_DIR: Pi-specific env var that sets the managed HOME.
         // Kept here (not in session_dispatch) because it is Pi-specific.
         extra_env.insert("PI_CODING_AGENT_DIR".to_string(), agent_dir.clone());

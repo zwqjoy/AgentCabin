@@ -67,7 +67,6 @@ pub async fn spawn_actor(
     permission_mode_override: Option<String>,
     cancel: CancellationToken,
     app_mode: crate::work::models::AppMode,
-    desktop_runtime: Option<(u16, String)>,
 ) -> Result<mpsc::Sender<ActorCommand>, String> {
     let caps = crate::agent::capability_resolver::CapabilityResolver::resolve(
         &crate::storage::data_dir(),
@@ -132,10 +131,6 @@ pub async fn spawn_actor(
     .env_remove("CLAUDECODE")
     .hide_console()
     .kill_on_drop(true);
-    if let Some((port, token)) = desktop_runtime.as_ref() {
-        cmd.env("AGENTCABIN_DESKTOP_BRIDGE_PORT", port.to_string());
-        cmd.env("AGENTCABIN_DESKTOP_BRIDGE_TOKEN", token);
-    }
 
     // When the user bound a global provider to Grok, route the spawned Grok process
     // through an AgentCabin-managed config (GROK_HOME) instead of xAI's default API.
@@ -290,7 +285,6 @@ pub async fn spawn_actor(
     let task_tag = tag.clone();
     let task_sessions = sessions.clone();
     let task_run_id = run_id.clone();
-    let actor_desktop_token = desktop_runtime.as_ref().map(|(_, token)| token.clone());
 
     let join_handle = tokio::spawn(async move {
         if start_rx.await.is_err() {
@@ -317,7 +311,6 @@ pub async fn spawn_actor(
             cmd_rx,
             cancel,
             shutdown_tx,
-            actor_desktop_token,
         )
         .await;
     });
@@ -332,15 +325,12 @@ pub async fn spawn_actor(
             join_handle,
             shutdown_rx,
             work_bridge_token: None,
-            desktop_runtime_token: desktop_runtime.as_ref().map(|(_, token)| token.clone()),
         },
     );
 
     if start_tx.send(()).is_err() {
         sessions.lock().await.remove(&run_id);
-        if let Some((_, token)) = desktop_runtime.as_ref() {
-            crate::desktop_runtime::revoke_token(token).await;
-        }
+
         return Err("Grok ACP actor failed to enter its process loop".to_string());
     }
 

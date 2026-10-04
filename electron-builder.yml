@@ -16,8 +16,6 @@ extraResources:
     filter:
       - "AgentCabin"
       - "AgentCabin.exe"
-  - from: "src-tauri/resources/agentcabin-computer-use"
-    to: "resources/agentcabin-computer-use"
   - from: "runtime-build"
     to: "runtimes"
   # Work's fixed system Pi extensions must be present on a clean install.

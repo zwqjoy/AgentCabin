@@ -89,14 +89,7 @@ impl ToolPipeline {
             || name_lower.starts_with("library_")
         {
             ToolConcurrencyClass::ParallelSafe
-        } else if name_lower.starts_with("desktop_")
-            || name_lower.ends_with("_ui")
-            || name_lower == "find_roots"
-            || name_lower == "wait_for"
-            || name_lower == "read_text"
-            || name_lower.contains("gui")
-            || name_lower.contains("terminal_exclusive")
-        {
+        } else if name_lower.contains("gui") || name_lower.contains("terminal_exclusive") {
             ToolConcurrencyClass::Exclusive
         } else {
             ToolConcurrencyClass::Serial
@@ -132,68 +125,6 @@ impl ToolPipeline {
         }
     }
 
-    fn is_desktop_operator_tool(tool_name: &str) -> bool {
-        matches!(
-            tool_name,
-            "desktop_list_apps"
-                | "desktop_probe_app"
-                | "desktop_open_app"
-                | "desktop_observe"
-                | "desktop_screenshot"
-                | "desktop_click"
-                | "desktop_type"
-                | "desktop_key"
-                | "desktop_scroll"
-                | "desktop_act_batch"
-                | "desktop_release"
-                | "launch_app"
-                | "find_roots"
-                | "observe_ui"
-                | "search_ui"
-                | "expand_ui"
-                | "inspect_ui"
-                | "act_ui"
-                | "read_text"
-                | "wait_for"
-                | "launch_browser"
-                | "navigate_browser"
-                | "evaluate_browser"
-        )
-    }
-
-    fn apply_capability_execution_policy(
-        tool_name: &str,
-        desktop_enabled: bool,
-        decision: WorkPolicyDecision,
-    ) -> WorkPolicyDecision {
-        if Self::is_desktop_operator_tool(tool_name) {
-            if desktop_enabled {
-                WorkPolicyDecision::Allow
-            } else {
-                WorkPolicyDecision::Deny
-            }
-        } else {
-            decision
-        }
-    }
-
-    fn desktop_interaction_requires_confirmation(intent: &ToolIntent) -> bool {
-        matches!(
-            intent.tool_name.as_str(),
-            "desktop_open_app"
-                | "desktop_click"
-                | "desktop_type"
-                | "desktop_key"
-                | "desktop_scroll"
-                | "desktop_act_batch"
-                | "launch_app"
-                | "act_ui"
-                | "launch_browser"
-                | "navigate_browser"
-                | "evaluate_browser"
-        )
-    }
-
     /// Build a semantic denial reason so the model attributes the refusal to its actual
     /// cause (execution mode / connector policy) instead of guessing a bogus file-name or
     /// path policy. The target is included to identify which call was refused, but the
@@ -204,12 +135,7 @@ impl ToolPipeline {
         effective_risk: ToolRiskClass,
     ) -> String {
         let target = intent.target_string();
-        if Self::is_desktop_operator_tool(&intent.tool_name)
-            && !crate::work::desktop_operator::is_enabled()
-        {
-            return "电脑控制当前未启用或 native backend 尚未就绪。请在设置 > 电脑控制中检查状态。开发调试可设置 AGENTCABIN_DESKTOP_USE_ENABLED=1。"
-                .to_string();
-        }
+
         match effective_risk {
             risk if policy.execution_mode == WorkExecutionMode::PlanFirst
                 && risk != ToolRiskClass::Read =>
@@ -290,19 +216,6 @@ impl ToolPipeline {
                 if !dir.is_empty() {
                     return Some(format!("{dir}/*"));
                 }
-            }
-        }
-        if matches!(
-            intent.tool_name.as_str(),
-            "browser_click" | "browser_type" | "browser_select_option" | "browser_press_key"
-        ) {
-            if let Some(selector) = intent
-                .arguments
-                .get("selector")
-                .and_then(|value| value.as_str())
-                .filter(|value| !value.trim().is_empty())
-            {
-                return Some(selector.to_string());
             }
         }
         None
@@ -593,15 +506,6 @@ impl ToolPipeline {
             );
         }
 
-        if Self::desktop_interaction_requires_confirmation(intent)
-            && !has_standing_rule
-            && policy.execution_mode != WorkExecutionMode::FullAccess
-            && policy.execution_mode != WorkExecutionMode::Auto
-            && decision == WorkPolicyDecision::Allow
-        {
-            decision = WorkPolicyDecision::Ask;
-        }
-
         // If tool is work_request_directory_access, validate external access root and evaluate access root existence
         if intent.tool_name == "work_request_directory_access" {
             let path_str = intent
@@ -761,15 +665,6 @@ impl ToolPipeline {
         {
             decision = WorkPolicyDecision::Ask;
         }
-
-        // Native browser and computer-use calls have dedicated, capability-scoped
-        // host bridges. Match Code's execution path for those tools only; regular
-        // Work commands, files, connectors, and approvals keep their policy.
-        decision = Self::apply_capability_execution_policy(
-            &intent.tool_name,
-            crate::work::desktop_operator::is_enabled(),
-            decision,
-        );
 
         let mut force_host_execution = false;
         match decision {
@@ -1798,30 +1693,6 @@ impl ToolPipeline {
         let started_at = Utc::now().to_rfc3339();
         let full_access = policy.execution_mode == WorkExecutionMode::FullAccess;
         match intent.tool_name.as_str() {
-            tool if Self::is_desktop_operator_tool(tool) => {
-                let mut args = intent.arguments.clone();
-                if let serde_json::Value::Object(ref mut map) = args {
-                    map.entry("toolCallId".to_string())
-                        .or_insert_with(|| serde_json::json!(intent.tool_call_id));
-                }
-                let payload = crate::work::desktop_operator::desktop_operator_manager()
-                    .execute(&intent.work_run_id, &intent.tool_name, args)
-                    .await?;
-                Ok(WorkExecutionResult {
-                    execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
-                    resource_id: intent.tool_name.clone(),
-                    action: intent.action.clone(),
-                    status: WorkExecutionStatus::Success,
-                    failure_kind: None,
-                    exit_code: Some(0),
-                    stdout: serde_json::to_string(&payload)
-                        .map_err(|error| format!("Failed to serialize desktop result: {error}"))?,
-                    stderr: String::new(),
-                    outputs: Vec::new(),
-                    started_at,
-                    finished_at: Utc::now().to_rfc3339(),
-                })
-            }
             "library_list" | "library_search" => {
                 if intent.workspace_id.trim().is_empty() {
                     return Err("Library tools require a Workspace".to_string());

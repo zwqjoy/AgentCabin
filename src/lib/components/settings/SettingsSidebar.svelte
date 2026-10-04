@@ -56,7 +56,6 @@
       items: [
         { id: "remote-access", label: "远程访问", icon: "remote-access" },
         { id: "web-access", label: "网络访问", icon: "web-access" },
-        { id: "desktop-use", label: "电脑控制", icon: "desktop-use" },
       ],
     },
   ];
@@ -304,22 +303,6 @@
                         ><rect x="3" y="4" width="18" height="12" rx="2" /><path
                           d="M8 20h8M12 16v4"
                         /><path d="m8 10 2 2 4-4" /></svg
-                      >
-                    {:else if item.icon === "desktop-use"}
-                      <svg
-                        class="h-4 w-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        ><rect width="20" height="14" x="2" y="3" rx="2" /><line
-                          x1="8"
-                          y1="21"
-                          x2="16"
-                          y2="21"
-                        /><line x1="12" y1="17" x2="12" y2="21" /></svg
                       >
                     {:else if item.icon === "hooks"}
                       <svg

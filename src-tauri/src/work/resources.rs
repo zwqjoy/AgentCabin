@@ -16,7 +16,7 @@ use crate::work::paths::WorkPaths;
 use crate::work::system_packages;
 
 const MAX_MANIFEST_BYTES: usize = 256 * 1024;
-const WORK_PI_SYSTEM_PROMPT: &str = "You are running in AgentCabin Work mode. Treat the selected Workspace as the default work boundary. Read source material from input/ but never write there; read user-managed project knowledge from context/ when it is relevant, but never modify context/ directly. If the user explicitly asks to remember a rule, decision, or status, use work_propose_context_update so the proposed content is shown and saved only after explicit user confirmation. Use scratch/ for drafts and output/ for deliverables. After writing a deliverable into output/, always call work_register_artifact for it so the user can see, validate, and deliver it from the Artifacts panel; final answers must reference registered Artifacts, not just file paths. Do not access Code projects or host files unless the user explicitly approves the directory in Work access settings or a supported connector. Work skills are preloaded by Pi from the Work Profile; never search for them in host-level skill directories and do not request external directory access for an installed Work skill. Before running commands whose host installation or path is uncertain, call work_command_info to preflight the executable; never use ps, which, file, or read host binaries. Use work_run_command with an argv array, never shell redirection (2>&1) or a shell pipeline; stderr is returned separately. The command sandbox is strictly network-isolated by the OS; never use Python scripts (urllib/requests), curl, or wget in work_run_command to access the internet. For web research, use web_search, web_open, web_extract, and web_cite through the Host network policy and cite exact returned passage IDs. For desktop tasks, infer the user's natural-language intent and use AgentCabin Computer Use V2. Use launch_app when an application is not open; otherwise find_roots then observe_ui. Keep the returned stateId with its @e refs, use cached search_ui/expand_ui/inspect_ui to locate controls, and call act_ui with dependent actions plus an expect condition whenever completion has observable UI evidence. Continue from act_ui's successor state instead of observing again. Never reuse stale state and never ask the user to name internal tool functions. For every non-trivial or multiline Python/data-processing script, first call work_write_file to save it under scratch/*.py, then call work_run_command with python/python3.12 and the script path; do not put Python source inside -c. When running a script under scratch/, if cwd is default '.' use 'scratch/foo.py'; if cwd is 'scratch', use 'foo.py' without duplicate scratch/ prefixes. Legacy inline python -c calls are materialized into scratch/ automatically. For Office conversion or formula recalculation, call work_run_command with command soffice and expected_outputs; Work executes through a structured host channel with headless mode and a private profile. Do not install packages as an automatic response to an Office or sandbox failure. When a work_run_command is blocked by the OS sandbox, Work presents a one-shot host-execution approval in Inbox; wait for that decision and do not retry the command or broaden its arguments yourself. For other tool or command failures due to missing permissions (EPERM, EACCES, Permission Denied, sudo, or an interactive password), do NOT retry blindly or silently skip the step. Immediately report the exact blocker and provide actionable, copy-pasteable terminal instructions for the user, and prompt the user to confirm before proceeding.";
+const WORK_PI_SYSTEM_PROMPT: &str = "You are running in AgentCabin Work mode. Treat the selected Workspace as the default work boundary. Read source material from input/ but never write there; read user-managed project knowledge from context/ when it is relevant, but never modify context/ directly. If the user explicitly asks to remember a rule, decision, or status, use work_propose_context_update so the proposed content is shown and saved only after explicit user confirmation. Use scratch/ for drafts and output/ for deliverables. After writing a deliverable into output/, always call work_register_artifact for it so the user can see, validate, and deliver it from the Artifacts panel; final answers must reference registered Artifacts, not just file paths. Do not access Code projects or host files unless the user explicitly approves the directory in Work access settings or a supported connector. Work skills are preloaded by Pi from the Work Profile; never search for them in host-level skill directories and do not request external directory access for an installed Work skill. Before running commands whose host installation or path is uncertain, call work_command_info to preflight the executable; never use ps, which, file, or read host binaries. Use work_run_command with an argv array, never shell redirection (2>&1) or a shell pipeline; stderr is returned separately. The command sandbox is strictly network-isolated by the OS; never use Python scripts (urllib/requests), curl, or wget in work_run_command to access the internet. For web research, use web_search, web_open, web_extract, and web_cite through the Host network policy and cite exact returned passage IDs. For every non-trivial or multiline Python/data-processing script, first call work_write_file to save it under scratch/*.py, then call work_run_command with python/python3.12 and the script path; do not put Python source inside -c. When running a script under scratch/, if cwd is default '.' use 'scratch/foo.py'; if cwd is 'scratch', use 'foo.py' without duplicate scratch/ prefixes. Legacy inline python -c calls are materialized into scratch/ automatically. For Office conversion or formula recalculation, call work_run_command with command soffice and expected_outputs; Work executes through a structured host channel with headless mode and a private profile. Do not install packages as an automatic response to an Office or sandbox failure. When a work_run_command is blocked by the OS sandbox, Work presents a one-shot host-execution approval in Inbox; wait for that decision and do not retry the command or broaden its arguments yourself. For other tool or command failures due to missing permissions (EPERM, EACCES, Permission Denied, sudo, or an interactive password), do NOT retry blindly or silently skip the step. Immediately report the exact blocker and provide actionable, copy-pasteable terminal instructions for the user, and prompt the user to confirm before proceeding.";
 
 /// Base Work instructions shared by runtimes that do not load the Pi Work
 /// extension. Keep the canonical product policy text in one place while
@@ -30,8 +30,6 @@ pub fn base_work_system_prompt() -> String {
 const WORK_PI_EXTENSION_FILENAME: &str = "agentcabin-work-core.mjs";
 const WORK_PI_EXTENSION_SOURCE: &str = include_str!("pi_core_extension.mjs");
 const WORK_PI_BROWSER_ADAPTER_SOURCE_IMPORT: &str = "./pi_browser_adapter.mjs";
-const WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_SOURCE_IMPORT: &str =
-    "./agentcabin_computer_use_v2_adapter.mjs";
 const WORK_RUNTIME_BRIDGE_DIR: &str = "runtime_bridge";
 const WORK_BRIDGE_CLIENT_FILENAME: &str = "bridge_client.mjs";
 const WORK_BRIDGE_CLIENT_SOURCE: &str = include_str!("runtime_bridge/bridge_client.mjs");
@@ -45,29 +43,6 @@ const WORK_PI_MCP_PERMISSIONS_FILENAME: &str = "agentcabin-work-mcp-permissions.
 const WORK_PI_MCP_PERMISSIONS_SOURCE: &str = include_str!("pi_mcp_permissions.mjs");
 const WORK_PI_BROWSER_ADAPTER_FILENAME: &str = browser::WORK_BROWSER_ADAPTER_FILENAME;
 const WORK_PI_BROWSER_ADAPTER_SOURCE: &str = include_str!("pi_browser_adapter.mjs");
-const WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_FILENAME: &str =
-    "agentcabin_computer_use_v2_adapter.mjs";
-const WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_SOURCE: &str =
-    include_str!("agentcabin_computer_use_v2_adapter.mjs");
-const WORK_COMPUTER_USE_V2_RUNTIME_FILENAME: &str = "computer_use_v2_runtime.mjs";
-const WORK_COMPUTER_USE_V2_RUNTIME_SOURCE: &str = include_str!("computer_use_v2_runtime.mjs");
-const WORK_COMPUTER_USE_V3_MODELS_FILENAME: &str = "computer_use_v3_models.mjs";
-const WORK_COMPUTER_USE_V3_MODELS_SOURCE: &str = include_str!("computer_use_v3_models.mjs");
-const WORK_DESKTOP_COMPUTER_USE_BACKEND_FILENAME: &str = "desktop_computer_use_backend.mjs";
-const WORK_DESKTOP_COMPUTER_USE_BACKEND_SOURCE: &str =
-    include_str!("desktop_computer_use_backend.mjs");
-const WORK_CDP_COMPUTER_USE_BACKEND_FILENAME: &str = "cdp_computer_use_backend.mjs";
-const WORK_CDP_COMPUTER_USE_BACKEND_SOURCE: &str = include_str!("cdp_computer_use_backend.mjs");
-const WORK_VISUAL_GROUNDING_BACKEND_FILENAME: &str = "visual_grounding_backend.mjs";
-const WORK_VISUAL_GROUNDING_BACKEND_SOURCE: &str = include_str!("visual_grounding_backend.mjs");
-const WORK_COMPUTER_USE_TOOL_PIPELINE_FILENAME: &str = "computer_use_tool_pipeline.mjs";
-const WORK_COMPUTER_USE_TOOL_PIPELINE_SOURCE: &str = include_str!("computer_use_tool_pipeline.mjs");
-const WORK_PI_COMPUTER_USE_PROXY_FILENAME: &str = "pi_computer_use_proxy.mjs";
-const WORK_PI_COMPUTER_USE_PROXY_SOURCE: &str = include_str!("pi_computer_use_proxy.mjs");
-const WORK_PI_COMPUTER_USE_DEFINITIONS_FILENAME: &str = "pi_computer_use_definitions.json";
-const WORK_PI_COMPUTER_USE_DEFINITIONS_SOURCE: &str =
-    include_str!("pi_computer_use_definitions.json");
-
 const RESOURCE_DIRECTORIES: &[(&str, WorkResourceKind)] = &[
     ("skills", WorkResourceKind::Skill),
     ("capabilities", WorkResourceKind::Capability),
@@ -91,7 +66,6 @@ pub struct WorkPiRuntime {
     pub mcp_adapter_entry: PathBuf,
     pub browser_adapter_entry: PathBuf,
     pub browser_enabled: bool,
-    pub desktop_use_enabled: bool,
     pub browser_provider: String,
     pub browser_max_results: u32,
     pub browser_api_key: Option<String>,
@@ -447,11 +421,9 @@ pub fn prepare_pi_runtime_with_paths(paths: &WorkPaths) -> Result<WorkPiRuntime,
     ensure_work_pi_mcp_permissions(paths)?;
     let mcp_adapter_entry = ensure_work_pi_mcp_adapter(paths)?;
     let browser_adapter_entry = ensure_work_pi_browser_adapter(paths)?;
-    ensure_work_computer_use_v2_modules(paths)?;
     let (browser_config, browser_api_key) = browser::runtime(paths)?;
     let browser_enabled =
         browser_config.enabled && crate::storage::profile_bindings::is_web_access_enabled();
-    let desktop_use_enabled = crate::work::desktop_operator::is_enabled();
     let records = scan_resources(paths);
     let package_cli_runtime = connector_package_manager::sync_cli_runtime(paths)?;
     let package_mcp_enabled = sync_pi_settings(paths, &records)?;
@@ -483,7 +455,6 @@ pub fn prepare_pi_runtime_with_paths(paths: &WorkPaths) -> Result<WorkPiRuntime,
         mcp_adapter_entry,
         browser_adapter_entry,
         browser_enabled,
-        desktop_use_enabled,
         browser_provider: browser_config.provider,
         browser_max_results: browser_config.max_results,
         browser_api_key,
@@ -592,180 +563,13 @@ fn ensure_work_pi_browser_adapter(paths: &WorkPaths) -> Result<PathBuf, String> 
     Ok(path)
 }
 
-fn ensure_work_computer_use_v2_modules(paths: &WorkPaths) -> Result<PathBuf, String> {
-    let dir = paths.work_extensions_dir();
-    let runtime_path = dir.join(WORK_COMPUTER_USE_V2_RUNTIME_FILENAME);
-    fs::write(&runtime_path, WORK_COMPUTER_USE_V2_RUNTIME_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare Work Computer Use V2 runtime {}: {error}",
-            runtime_path.display()
-        )
-    })?;
-    let models_path = dir.join(WORK_COMPUTER_USE_V3_MODELS_FILENAME);
-    fs::write(&models_path, WORK_COMPUTER_USE_V3_MODELS_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare Work Computer Use V3 models {}: {error}",
-            models_path.display()
-        )
-    })?;
-    let desktop_backend_path = dir.join(WORK_DESKTOP_COMPUTER_USE_BACKEND_FILENAME);
-    fs::write(
-        &desktop_backend_path,
-        WORK_DESKTOP_COMPUTER_USE_BACKEND_SOURCE,
-    )
-    .map_err(|error| {
-        format!(
-            "failed to prepare Work Desktop backend {}: {error}",
-            desktop_backend_path.display()
-        )
-    })?;
-    let cdp_backend_path = dir.join(WORK_CDP_COMPUTER_USE_BACKEND_FILENAME);
-    fs::write(&cdp_backend_path, WORK_CDP_COMPUTER_USE_BACKEND_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare Work CDP backend {}: {error}",
-            cdp_backend_path.display()
-        )
-    })?;
-    let visual_backend_path = dir.join(WORK_VISUAL_GROUNDING_BACKEND_FILENAME);
-    fs::write(&visual_backend_path, WORK_VISUAL_GROUNDING_BACKEND_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare Work Visual Grounding backend {}: {error}",
-            visual_backend_path.display()
-        )
-    })?;
-    let pipeline_path = dir.join(WORK_COMPUTER_USE_TOOL_PIPELINE_FILENAME);
-    fs::write(&pipeline_path, WORK_COMPUTER_USE_TOOL_PIPELINE_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare Work Computer Use tool pipeline {}: {error}",
-            pipeline_path.display()
-        )
-    })?;
-    let proxy_path = dir.join(WORK_PI_COMPUTER_USE_PROXY_FILENAME);
-    fs::write(&proxy_path, WORK_PI_COMPUTER_USE_PROXY_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare Work Computer Use proxy {}: {error}",
-            proxy_path.display()
-        )
-    })?;
-    let defs_path = dir.join(WORK_PI_COMPUTER_USE_DEFINITIONS_FILENAME);
-    fs::write(&defs_path, WORK_PI_COMPUTER_USE_DEFINITIONS_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare Work Computer Use definitions {}: {error}",
-            defs_path.display()
-        )
-    })?;
-    let adapter_path = dir.join(WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_FILENAME);
-    fs::write(
-        &adapter_path,
-        WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_SOURCE,
-    )
-    .map_err(|error| {
-        format!(
-            "failed to prepare Work Computer Use V2 adapter {}: {error}",
-            adapter_path.display()
-        )
-    })?;
-    Ok(adapter_path)
-}
-
-/// Provision the shared Pi Code Computer Use V2 adapter next to the other
-/// AgentCabin Code runtime adapters. No Skill installation is involved.
-pub fn ensure_code_desktop_operator_adapter(paths: &WorkPaths) -> Result<PathBuf, String> {
-    let dir = paths
-        .pi_system_dir()
-        .join("npm")
-        .join("node_modules")
-        .join("agentcabin-desktop-runtime");
-    fs::create_dir_all(&dir).map_err(|error| {
-        format!(
-            "failed to prepare shared Code desktop adapter directory {}: {error}",
-            dir.display()
-        )
-    })?;
-    let runtime_path = dir.join(WORK_COMPUTER_USE_V2_RUNTIME_FILENAME);
-    fs::write(&runtime_path, WORK_COMPUTER_USE_V2_RUNTIME_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare shared Code Computer Use V2 runtime {}: {error}",
-            runtime_path.display()
-        )
-    })?;
-    let models_path = dir.join(WORK_COMPUTER_USE_V3_MODELS_FILENAME);
-    fs::write(&models_path, WORK_COMPUTER_USE_V3_MODELS_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare shared Code Computer Use V3 models {}: {error}",
-            models_path.display()
-        )
-    })?;
-    let desktop_backend_path = dir.join(WORK_DESKTOP_COMPUTER_USE_BACKEND_FILENAME);
-    fs::write(
-        &desktop_backend_path,
-        WORK_DESKTOP_COMPUTER_USE_BACKEND_SOURCE,
-    )
-    .map_err(|error| {
-        format!(
-            "failed to prepare shared Code Desktop backend {}: {error}",
-            desktop_backend_path.display()
-        )
-    })?;
-    let cdp_backend_path = dir.join(WORK_CDP_COMPUTER_USE_BACKEND_FILENAME);
-    fs::write(&cdp_backend_path, WORK_CDP_COMPUTER_USE_BACKEND_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare shared Code CDP backend {}: {error}",
-            cdp_backend_path.display()
-        )
-    })?;
-    let visual_backend_path = dir.join(WORK_VISUAL_GROUNDING_BACKEND_FILENAME);
-    fs::write(&visual_backend_path, WORK_VISUAL_GROUNDING_BACKEND_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare shared Code Visual Grounding backend {}: {error}",
-            visual_backend_path.display()
-        )
-    })?;
-    let pipeline_path = dir.join(WORK_COMPUTER_USE_TOOL_PIPELINE_FILENAME);
-    fs::write(&pipeline_path, WORK_COMPUTER_USE_TOOL_PIPELINE_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare shared Code Computer Use tool pipeline {}: {error}",
-            pipeline_path.display()
-        )
-    })?;
-    let proxy_path = dir.join(WORK_PI_COMPUTER_USE_PROXY_FILENAME);
-    fs::write(&proxy_path, WORK_PI_COMPUTER_USE_PROXY_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare shared Code Computer Use proxy {}: {error}",
-            proxy_path.display()
-        )
-    })?;
-    let defs_path = dir.join(WORK_PI_COMPUTER_USE_DEFINITIONS_FILENAME);
-    fs::write(&defs_path, WORK_PI_COMPUTER_USE_DEFINITIONS_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare shared Code Computer Use definitions {}: {error}",
-            defs_path.display()
-        )
-    })?;
-    let path = dir.join(WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_FILENAME);
-    fs::write(&path, WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_SOURCE).map_err(|error| {
-        format!(
-            "failed to prepare shared Code Computer Use V2 adapter {}: {error}",
-            path.display()
-        )
-    })?;
-    Ok(path)
-}
-
 fn ensure_work_pi_extension(paths: &WorkPaths) -> Result<PathBuf, String> {
     let path = paths.work_extensions_dir().join(WORK_PI_EXTENSION_FILENAME);
     let browser_adapter_import = format!("./{WORK_PI_BROWSER_ADAPTER_FILENAME}");
-    let computer_use_v2_adapter_import =
-        format!("./{WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_FILENAME}");
-    let source = WORK_PI_EXTENSION_SOURCE
-        .replace(
-            WORK_PI_BROWSER_ADAPTER_SOURCE_IMPORT,
-            &browser_adapter_import,
-        )
-        .replace(
-            WORK_AGENTCABIN_COMPUTER_USE_V2_ADAPTER_SOURCE_IMPORT,
-            &computer_use_v2_adapter_import,
-        );
+    let source = WORK_PI_EXTENSION_SOURCE.replace(
+        WORK_PI_BROWSER_ADAPTER_SOURCE_IMPORT,
+        &browser_adapter_import,
+    );
     if source == WORK_PI_EXTENSION_SOURCE {
         return Err(format!(
             "failed to prepare Work Pi extension {}: adapter import was not found",

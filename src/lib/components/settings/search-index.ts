@@ -361,14 +361,6 @@ export const SETTINGS_SEARCH_INDEX: SearchIndexItem[] = [
     group: "网络访问",
   },
   {
-    id: "tool-desktop",
-    tab: "desktop-use",
-    section: "main",
-    title: "电脑控制 (Desktop / Computer Use)",
-    keywords: ["desktop", "computer use", "screen", "display", "control", "电脑", "操控", "屏幕"],
-    group: "电脑控制",
-  },
-  {
     id: "tool-mcp",
     tab: "capability-center",
     section: "mcp",

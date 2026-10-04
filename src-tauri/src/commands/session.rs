@@ -62,7 +62,6 @@ pub(super) async fn stop_actor(
     };
 
     crate::code_connector_runtime::revoke_session(run_id).await;
-    crate::desktop_runtime::revoke_session(run_id).await;
 
     let Some(mut handle) = handle else {
         return Ok(StopActorOutcome {
@@ -72,7 +71,6 @@ pub(super) async fn stop_actor(
     };
 
     let work_bridge_token = handle.work_bridge_token.clone();
-    let desktop_runtime_token = handle.desktop_runtime_token.clone();
 
     log::debug!("[session] stopping actor for run_id={}", run_id);
 
@@ -116,9 +114,6 @@ pub(super) async fn stop_actor(
         }
         if let Some(token) = work_bridge_token.as_deref() {
             crate::work::internal_bridge::revoke_session_token(token).await;
-        }
-        if let Some(token) = desktop_runtime_token.as_deref() {
-            crate::desktop_runtime::revoke_token(token).await;
         }
     }
 
@@ -778,21 +773,7 @@ pub(crate) async fn start_session_impl(
         crate::work::models::AppMode::Code
     };
 
-    let mut runtime_extra_env = resolved.extra_env.clone().unwrap_or_default();
-    let desktop_token = if app_mode == crate::work::models::AppMode::Code
-        && remote.is_none()
-        && crate::work::desktop_operator::is_enabled()
-    {
-        let (desktop_port, token) = crate::desktop_runtime::register_session(&run_id).await?;
-        runtime_extra_env.insert(
-            "AGENTCABIN_DESKTOP_BRIDGE_PORT".to_string(),
-            desktop_port.to_string(),
-        );
-        runtime_extra_env.insert("AGENTCABIN_DESKTOP_BRIDGE_TOKEN".to_string(), token.clone());
-        Some(token)
-    } else {
-        None
-    };
+    let runtime_extra_env = resolved.extra_env.clone().unwrap_or_default();
 
     // 6. Spawn CLI process + set up transport
     // Codex uses bidirectional app-server JSON-RPC via CodexAppServer driver;
@@ -801,9 +782,6 @@ pub(crate) async fn start_session_impl(
     let is_codex = meta.agent == "codex";
     let spawned = if is_codex {
         if remote.is_some() {
-            if let Some(token) = desktop_token.as_deref() {
-                crate::desktop_runtime::revoke_token(token).await;
-            }
             return Err("Codex app-server transport is not supported on remote hosts yet".into());
         }
         let result = spawn_codex_appserver_process(
@@ -868,9 +846,6 @@ pub(crate) async fn start_session_impl(
     let (child, stdin, stdout, stderr, codex, codex_startup) = match spawned {
         Ok(value) => value,
         Err(error) => {
-            if let Some(token) = desktop_token.as_deref() {
-                crate::desktop_runtime::revoke_token(token).await;
-            }
             return Err(error);
         }
     };
@@ -904,7 +879,6 @@ pub(crate) async fn start_session_impl(
         initial_auto_ctx_id,
         codex,
         codex_startup,
-        desktop_token,
     );
     let cmd_tx = actor_handle.cmd_tx.clone();
     sessions.lock().await.insert(run_id.clone(), actor_handle);
@@ -2718,21 +2692,7 @@ pub(crate) async fn approve_session_tool_impl(
     } else {
         crate::work::models::AppMode::Code
     };
-    let mut runtime_extra_env = resolved.extra_env.clone().unwrap_or_default();
-    let desktop_token = if app_mode == crate::work::models::AppMode::Code
-        && remote.is_none()
-        && crate::work::desktop_operator::is_enabled()
-    {
-        let (desktop_port, token) = crate::desktop_runtime::register_session(&run_id).await?;
-        runtime_extra_env.insert(
-            "AGENTCABIN_DESKTOP_BRIDGE_PORT".to_string(),
-            desktop_port.to_string(),
-        );
-        runtime_extra_env.insert("AGENTCABIN_DESKTOP_BRIDGE_TOKEN".to_string(), token.clone());
-        Some(token)
-    } else {
-        None
-    };
+    let runtime_extra_env = resolved.extra_env.clone().unwrap_or_default();
 
     // 6. Emit spawning
     let spawning_event = BusEvent::RunState {
@@ -2768,9 +2728,6 @@ pub(crate) async fn approve_session_tool_impl(
     let (child, stdin, stdout, stderr) = match spawned {
         Ok(value) => value,
         Err(error) => {
-            if let Some(token) = desktop_token.as_deref() {
-                crate::desktop_runtime::revoke_token(token).await;
-            }
             return Err(error);
         }
     };
@@ -2800,7 +2757,6 @@ pub(crate) async fn approve_session_tool_impl(
         normal + 1,
         None, // Claude transport
         vec![],
-        desktop_token,
     );
     sessions.lock().await.insert(run_id.clone(), actor_handle);
 

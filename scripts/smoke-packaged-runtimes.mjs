@@ -11,6 +11,7 @@
  * 6. Zero orphan processes lingering after completion.
  */
 
+import { assertRuntimeCapabilities } from "./assert-runtime-capabilities.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -75,6 +76,9 @@ if (manifest.node?.version !== "24.21.0") {
 console.log(
   `Manifest: Pi ${manifest.runtimes.pi.version}, Node ${manifest.node.version}, pnpm ${manifest.pnpm.version}`,
 );
+
+const packagedExtensions = resolve(runtimeRoot, "../runtime/extensions");
+assertRuntimeCapabilities(runtimeRoot, existsSync(join(packagedExtensions, "package.json")) ? packagedExtensions : join(root, "src-tauri/runtime/extensions"));
 
 const isWin = process.platform === "win32";
 const nodeBin = resolve(runtimeRoot, isWin ? "node/node.exe" : "node/bin/node");
@@ -280,7 +284,7 @@ async function testWorkActiveToolsSmoke() {
     for (const name of ["web_search", "web_open", "web_extract", "web_cite", "work_list_apps", "work_call_app", "work_run_connector_cli"]) {
       if (!tools.includes(name)) throw new Error(`Work active tools missing ${name}: ${tools}`);
     }
-    for (const name of ["agent_browser", "agent_browser_code", "agent_browser_tools"]) {
+    for (const name of ["agent_browser", "agent_browser_code", "agent_browser_tools", "launch_app", "find_roots", "observe_ui", "search_ui", "expand_ui", "inspect_ui", "act_ui", "read_text", "wait_for"]) {
       if (tools.includes(name)) throw new Error(`Removed automation tool registered: ${name}`);
     }
     console.log("✓ Work active tools retain Web Research and Apps; Browser Automation removed");
@@ -332,6 +336,8 @@ async function main() {
     ]);
     await testPiExtensionInstall();
     await testWorkActiveToolsSmoke();
+    runSync(nodeBin, [join(root, "scripts/test-pi-rpc.mjs")], { env: { AGENTCABIN_RUNTIME_ROOT: runtimeRoot } });
+    console.log("✓ Extended Pi RPC regression passed");
     await verifyNoOrphans();
 
     console.log("\n🎉 ALL PACKAGED RUNTIME CLOSURE SMOKE CHECKS PASSED SUCCESSFULLY!\n");

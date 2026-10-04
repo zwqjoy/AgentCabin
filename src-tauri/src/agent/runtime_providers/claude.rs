@@ -1,6 +1,6 @@
 use super::{
-    add_code_desktop_use_env, cleanup_managed_directory, ensure_real_directory, project_skills,
-    write_managed_file, RuntimeProviderAdapter, RuntimeSpawnConfig,
+    cleanup_managed_directory, ensure_real_directory, project_skills, write_managed_file,
+    RuntimeProviderAdapter, RuntimeSpawnConfig,
 };
 use crate::agent::capability_resolver::{EffectiveCapabilities, RuntimeProviderKind};
 use crate::agent::claude_stream;
@@ -36,10 +36,8 @@ impl RuntimeProviderAdapter for ClaudeRuntimeAdapter {
 
         // 2. Generate managed MCP config
         let mcp_config_path = managed_home.join("mcp.json");
-        let mut mcp_servers = caps.mcp_servers.clone();
-        if let Some(server) = super::code_desktop_mcp_server(caps)? {
-            mcp_servers.push(server);
-        }
+        let mcp_servers = caps.mcp_servers.clone();
+
         let mut servers_map = serde_json::Map::new();
         for server in &mcp_servers {
             let mut obj = serde_json::Map::new();
@@ -120,7 +118,6 @@ impl RuntimeProviderAdapter for ClaudeRuntimeAdapter {
             "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING".to_string(),
             "1".to_string(),
         );
-        add_code_desktop_use_env(&mut env, caps.app_mode);
 
         let binary = claude_stream::resolve_claude_path();
 

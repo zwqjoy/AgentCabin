@@ -137,13 +137,6 @@ pub(crate) async fn pi_launch_context(
         &shared_paths,
         crate::work::system_packages::PI_TODO_PACKAGE_NAME,
     );
-    let code_desktop_adapter = if run.app_mode == crate::work::models::AppMode::Code
-        && crate::work::desktop_operator::is_enabled()
-    {
-        Some(crate::work::resources::ensure_code_desktop_operator_adapter(&shared_paths)?)
-    } else {
-        None
-    };
     let context_usage_adapter =
         crate::pi_context_runtime::ensure_context_usage_extension(&shared_paths)?;
     let connector_skill_sources =
@@ -212,7 +205,6 @@ pub(crate) async fn pi_launch_context(
         if !browser_config.allowed_hosts.is_empty() {
             let hosts = browser_config.allowed_hosts.join(",");
             extra_env.insert("AGENTCABIN_WEB_ALLOWED_HOSTS".to_string(), hosts.clone());
-            extra_env.insert("AGENTCABIN_BROWSER_ALLOWED_HOSTS".to_string(), hosts);
         }
         if let Some(api_key) = browser_api_key.as_ref() {
             extra_env.insert("AGENTCABIN_WEB_API_KEY".to_string(), api_key.clone());
@@ -273,11 +265,6 @@ pub(crate) async fn pi_launch_context(
             .push(web_adapter.to_string_lossy().into_owned());
     }
 
-    if let Some(adapter) = code_desktop_adapter {
-        settings
-            .pi_shared_extension_sources
-            .push(adapter.to_string_lossy().into_owned());
-    }
     if let Some(adapter) = code_connector_adapter {
         settings
             .pi_shared_extension_sources
@@ -560,11 +547,6 @@ async fn start_grok_session(
     // Work runs return through the first-level Work runtime dispatch before
     // reaching this Code-only provider path.
     let app_mode = crate::work::models::AppMode::Code;
-    let desktop_runtime = if crate::work::desktop_operator::is_enabled() {
-        Some(crate::desktop_runtime::register_session(&run_id).await?)
-    } else {
-        None
-    };
     let cmd_tx = match grok_session_actor::spawn_actor(
         Arc::clone(emitter),
         sessions.clone(),
@@ -576,13 +558,11 @@ async fn start_grok_session(
         permission_mode_override,
         cancel_token.clone(),
         app_mode,
-        desktop_runtime,
     )
     .await
     {
         Ok(sender) => sender,
         Err(error) => {
-            crate::desktop_runtime::revoke_session(&run_id).await;
             storage::runs::update_status(&run_id, RunStatus::Failed, None, Some(error.clone()))
                 .ok();
             emit_state(emitter, &run_id, "failed", Some(error.clone()));
@@ -868,7 +848,6 @@ async fn start_work_session_actor(
                 session_id,
                 permission_mode_override: permission_mode_override.map(str::to_string),
                 capabilities: caps,
-                desktop_use_enabled: crate::work::desktop_operator::is_enabled(),
                 bridge: bridge_info.clone(),
                 extra_env,
                 context_plan: context_plan.clone(),
@@ -1222,23 +1201,6 @@ pub(crate) async fn start_session_impl_with_overrides(
             connector_token,
         );
     }
-    if run.app_mode == crate::work::models::AppMode::Code
-        && crate::work::desktop_operator::is_enabled()
-    {
-        let (desktop_port, desktop_token) =
-            match crate::desktop_runtime::register_session(&run.id).await {
-                Ok(value) => value,
-                Err(error) => {
-                    crate::code_connector_runtime::revoke_session(&run.id).await;
-                    return Err(error);
-                }
-            };
-        extra_env.insert(
-            "AGENTCABIN_DESKTOP_BRIDGE_PORT".to_string(),
-            desktop_port.to_string(),
-        );
-        extra_env.insert("AGENTCABIN_DESKTOP_BRIDGE_TOKEN".to_string(), desktop_token);
-    }
 
     let resumes_existing_session = resume_session_id.is_some();
     let cmd_tx = match pi_session_actor::spawn_actor(
@@ -1256,7 +1218,6 @@ pub(crate) async fn start_session_impl_with_overrides(
         Ok(sender) => sender,
         Err(error) => {
             crate::code_connector_runtime::revoke_session(&run_id).await;
-            crate::desktop_runtime::revoke_session(&run_id).await;
             storage::runs::update_status(&run_id, RunStatus::Failed, None, Some(error.clone()))
                 .ok();
             emit_state(emitter, &run_id, "failed", Some(error.clone()));

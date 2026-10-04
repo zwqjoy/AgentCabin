@@ -76,8 +76,6 @@ pub struct WorkRuntimeLaunchRequest {
     pub session_id: Option<String>,
     pub permission_mode_override: Option<String>,
     pub capabilities: EffectiveCapabilities,
-    /// Shared per-run Computer Use gate used by every Work provider.
-    pub desktop_use_enabled: bool,
     pub bridge: WorkBridgeLaunchInfo,
     pub extra_env: HashMap<String, String>,
     pub context_plan: crate::work::context::WorkContextPlan,

@@ -33,14 +33,6 @@ test("Work tool catalog is independent from the selected runtime", () => {
   assert.ok(!base.some((tool) => tool.name === "agent_browser"));
   assert.ok(!base.some((tool) => tool.name === "agent_browser_code"));
   assert.ok(!base.some((tool) => tool.name === "agent_browser_tools"));
-  const desktop = createWorkToolCatalog({
-    mcpEnabled: false,
-    browserEnabled: false,
-    desktopUseEnabled: true,
-    subagentChild: false,
-  });
-  assert.ok(desktop.some((tool) => tool.name === "desktop_observe"));
-  assert.ok(!browserDisabled.some((tool) => tool.name === "desktop_observe"));
   assert.ok(!browserDisabled.some((tool) => tool.name === "agent_browser"));
   assert.ok(!browserDisabled.some((tool) => tool.name === "agent_browser_code"));
   assert.ok(!browserDisabled.some((tool) => tool.name === "agent_browser_tools"));

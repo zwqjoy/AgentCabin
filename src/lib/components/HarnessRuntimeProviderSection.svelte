@@ -169,8 +169,8 @@
       <span>{mode === "code" ? "Code 工作载体 Profile" : "Work 工作载体 Profile 与沙箱防护"}</span>
     </div>
     <p class="mt-1 opacity-90">
-      Skills、MCP 与 Connector
-      由能力中心统一管理；网络、浏览器与电脑控制在一级工具设置中管理。当前工作载体仍保留独立的权限、审批、沙箱与工作区边界。
+      Skills、MCP 与 Connector 由能力中心统一管理；Web Research
+      在网络访问设置中管理。当前工作载体仍保留独立的权限、审批、沙箱与工作区边界。
     </p>
   </div>
 
@@ -333,7 +333,7 @@
           {mode === "code" ? "Code" : "Work"} 能力摘要 (中央能力中心托管)
         </h2>
         <p class="mt-1 text-xs text-muted-foreground">
-          Skills、MCP 与 Connector 由能力中心维护；网络、浏览器和电脑控制由独立的一级工具设置管理。
+          Skills、MCP 与 Connector 由能力中心维护；Web Research 由网络访问设置管理。
         </p>
       </div>
       <Button variant="outline" size="sm" onclick={() => onNavigate("capability-center")}>

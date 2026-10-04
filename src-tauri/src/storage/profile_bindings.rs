@@ -49,7 +49,6 @@ pub const CAPABILITY_KIND_MCP: &str = "mcp";
 pub const CAPABILITY_KIND_CONNECTOR: &str = "connector";
 pub const CAPABILITY_KIND_AGENT_PLUGIN: &str = "agent-plugin";
 pub const CAPABILITY_KIND_WEB_ACCESS: &str = "web-access";
-pub const CAPABILITY_KIND_DESKTOP_USE: &str = "desktop-use";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -81,7 +80,6 @@ fn validate_capability_kind(kind: &str) -> Result<&'static str, String> {
         CAPABILITY_KIND_CONNECTOR => Ok(CAPABILITY_KIND_CONNECTOR),
         CAPABILITY_KIND_AGENT_PLUGIN => Ok(CAPABILITY_KIND_AGENT_PLUGIN),
         CAPABILITY_KIND_WEB_ACCESS => Ok(CAPABILITY_KIND_WEB_ACCESS),
-        CAPABILITY_KIND_DESKTOP_USE => Ok(CAPABILITY_KIND_DESKTOP_USE),
         other => Err(format!("Unknown capability kind '{other}'")),
     }
 }
@@ -94,7 +92,12 @@ pub fn read_global_capability_bindings_with_root(root: &Path) -> Vec<GlobalCapab
     fs::read_to_string(path)
         .ok()
         .and_then(|content| serde_json::from_str::<GlobalCapabilityBindingsFile>(&content).ok())
-        .map(|file| file.bindings)
+        .map(|file| {
+            file.bindings
+                .into_iter()
+                .filter(|binding| !matches!(binding.kind.as_str(), "browser-use" | "desktop-use"))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -489,61 +492,6 @@ pub fn set_web_access_binding_with_root(root: &Path, enabled: bool) -> Result<()
 
 pub fn set_web_access_binding(enabled: bool) -> Result<(), String> {
     set_web_access_binding_with_root(&storage::data_dir(), enabled)
-}
-
-/// Desktop Use is an app-owned native capability rather than an installable
-/// package. An absent binding is deliberately disabled; the development P0
-/// environment flag remains a bootstrap override for local smoke tests.
-pub fn desktop_use_binding_path_with_root(root: &Path) -> PathBuf {
-    root.join("desktop-use-binding.json")
-}
-
-pub fn desktop_use_binding_path() -> PathBuf {
-    desktop_use_binding_path_with_root(&storage::data_dir())
-}
-
-pub fn read_desktop_use_binding_with_root(root: &Path) -> Option<WebAccessBinding> {
-    let path = desktop_use_binding_path_with_root(root);
-    if !is_regular_file_without_symlink(&path) {
-        return None;
-    }
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|content| serde_json::from_str::<WebAccessBindingsFile>(&content).ok())
-        .and_then(|file| file.binding)
-}
-
-pub fn is_desktop_use_enabled_with_root(root: &Path) -> Option<bool> {
-    if let Some(enabled) =
-        global_capability_override_with_root(root, CAPABILITY_KIND_DESKTOP_USE, "desktop-use")
-    {
-        return Some(enabled);
-    }
-    read_desktop_use_binding_with_root(root).map(|binding| binding.enabled)
-}
-
-pub fn is_desktop_use_enabled() -> Option<bool> {
-    is_desktop_use_enabled_with_root(&storage::data_dir())
-}
-
-pub fn set_desktop_use_binding_with_root(root: &Path, enabled: bool) -> Result<(), String> {
-    let path = desktop_use_binding_path_with_root(root);
-    let file = WebAccessBindingsFile {
-        binding: Some(WebAccessBinding { enabled }),
-    };
-    let serialized = serde_json::to_string_pretty(&file)
-        .map_err(|error| format!("Failed to serialize Desktop Use binding: {error}"))?;
-    write_managed_file(&path, format!("{serialized}\n"), "Desktop Use binding")?;
-    set_global_capability_binding_with_root(
-        root,
-        CAPABILITY_KIND_DESKTOP_USE,
-        "desktop-use",
-        enabled,
-    )
-}
-
-pub fn set_desktop_use_binding(enabled: bool) -> Result<(), String> {
-    set_desktop_use_binding_with_root(&storage::data_dir(), enabled)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2102,6 +2050,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn retired_automation_settings_are_backward_readable_and_forward_clean() {
+        let mut old = serde_json::to_value(crate::models::UserSettings::default()).unwrap();
+        old["browser_use_enabled"] = serde_json::json!(true);
+        old["desktop_use_enabled"] = serde_json::json!(true);
+        let settings: crate::models::UserSettings = serde_json::from_value(old).unwrap();
+        let saved = serde_json::to_value(settings).unwrap();
+        assert!(saved.get("browser_use_enabled").is_none());
+        assert!(saved.get("desktop_use_enabled").is_none());
+        let root = tempfile::TempDir::new().unwrap();
+        std::fs::write(capability_bindings_path_with_root(root.path()), r#"{"bindings":[{"kind":"browser-use","id":"browser-use","enabled":true},{"kind":"desktop-use","id":"desktop-use","enabled":true},{"kind":"web-access","id":"web-access","enabled":true}]}"#).unwrap();
+        let bindings = read_global_capability_bindings_with_root(root.path());
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].kind, "web-access");
+        set_global_capability_binding_with_root(root.path(), "web-access", "web-access", false)
+            .unwrap();
+        let saved =
+            std::fs::read_to_string(capability_bindings_path_with_root(root.path())).unwrap();
+        assert!(!saved.contains("browser-use"));
+        assert!(!saved.contains("desktop-use"));
+    }
+
+    #[test]
     fn test_mode_and_id_validation() {
         assert_eq!(validate_mode("code").unwrap(), "code");
         assert_eq!(validate_mode("WORK").unwrap(), "work");
@@ -2412,28 +2382,6 @@ mod tests {
             tmp.path(),
             "shared-connector"
         ));
-    }
-
-    #[test]
-    fn desktop_use_binding_is_global_and_opt_in() {
-        let tmp = tempfile::TempDir::new().unwrap();
-
-        assert_eq!(is_desktop_use_enabled_with_root(tmp.path()), None);
-
-        set_desktop_use_binding_with_root(tmp.path(), true).unwrap();
-        assert_eq!(is_desktop_use_enabled_with_root(tmp.path()), Some(true));
-
-        set_desktop_use_binding_with_root(tmp.path(), false).unwrap();
-        assert_eq!(is_desktop_use_enabled_with_root(tmp.path()), Some(false));
-        assert!(desktop_use_binding_path_with_root(tmp.path()).is_file());
-        assert!(!tmp
-            .path()
-            .join("profiles/code/desktop-use-binding.json")
-            .exists());
-        assert!(!tmp
-            .path()
-            .join("profiles/work/desktop-use-binding.json")
-            .exists());
     }
 
     #[test]

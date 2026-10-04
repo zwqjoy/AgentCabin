@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { assertRuntimeCapabilities } from "./assert-runtime-capabilities.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,3 +25,5 @@ for (const rel of [
   if (!existsSync(join(runtime, rel))) throw new Error(`RuntimeClosureInvalid: missing ${rel}`);
 }
 console.log(`runtime closure valid: Pi ${m.runtimes.pi.version}, Node ${m.node.version}, pnpm ${m.pnpm.version}`);
+
+assertRuntimeCapabilities(runtime, join(root, "src-tauri/runtime/extensions"));
