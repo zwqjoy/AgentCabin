@@ -1166,8 +1166,7 @@ async fn handle_control(
             let req_cwd = request.get("cwd").and_then(Value::as_str);
             let configured = crate::storage::mcp_registry::list_pi_configured(req_cwd);
             let live = protocol.mcp_servers();
-            let runtime_available =
-                crate::storage::mcp_registry::is_pi_mcp_adapter_installed(req_cwd);
+            let runtime_available = crate::agent::runtime_locator::pi_coding_agent_entry().is_ok();
             return Ok(json!({
                 "servers": live,
                 "configured": configured,
@@ -1201,13 +1200,11 @@ async fn handle_control(
             return Ok(serde_json::to_value(res).unwrap_or_default());
         }
         "mcp_reconnect" => {
-            let req_cwd = request.get("cwd").and_then(Value::as_str);
-            let runtime_available =
-                crate::storage::mcp_registry::is_pi_mcp_adapter_installed(req_cwd);
+            let runtime_available = crate::agent::runtime_locator::pi_coding_agent_entry().is_ok();
             if !runtime_available {
                 return Ok(json!({
                     "success": false,
-                    "message": "Pi MCP runtime unavailable: pi-mcp-adapter extension is not installed",
+                    "message": "Pi native MCP runtime unavailable",
                     "runtime_available": false,
                 }));
             }

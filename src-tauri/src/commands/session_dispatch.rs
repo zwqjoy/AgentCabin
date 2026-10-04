@@ -171,15 +171,6 @@ pub(crate) async fn pi_launch_context(
     .0
     .iter()
     .any(|server| server.enabled);
-    if code_mcp_enabled {
-        crate::work::system_packages::ensure_common_system_package(
-            &shared_paths,
-            crate::work::system_packages::PI_MCP_ADAPTER_PACKAGE_NAME,
-            crate::work::system_packages::PI_MCP_ADAPTER_VERSION,
-            crate::work::system_packages::PI_MCP_ADAPTER_SOURCE,
-        )
-        .await?;
-    }
     let (browser_config, browser_api_key) = crate::work::browser::runtime(&shared_paths)?;
     let web_access_enabled =
         browser_config.enabled && crate::storage::profile_bindings::is_web_access_enabled();
@@ -237,7 +228,7 @@ pub(crate) async fn pi_launch_context(
                     .file_name()
                     .and_then(|name| name.to_str())
                     .unwrap_or_default();
-                name != crate::work::system_packages::PI_MCP_ADAPTER_PACKAGE_NAME
+                !crate::work::system_packages::is_retired_mcp_adapter_source(name)
                     && name != crate::work::system_packages::PI_WEB_ACCESS_PACKAGE_NAME
                     && !crate::work::system_packages::is_pi_interaction_source(
                         &path.to_string_lossy(),
@@ -249,14 +240,12 @@ pub(crate) async fn pi_launch_context(
         .pi_shared_extension_sources
         .push(context_usage_adapter.to_string_lossy().into_owned());
     if code_mcp_enabled {
-        settings.pi_shared_extension_sources.push(
-            crate::work::system_packages::common_system_package_entry_path(
-                &shared_paths,
-                crate::work::system_packages::PI_MCP_ADAPTER_PACKAGE_NAME,
-            )
-            .to_string_lossy()
-            .into_owned(),
-        );
+        settings
+            .pi_shared_extension_sources
+            .push("builtin:tool-search".into());
+        settings
+            .pi_shared_extension_sources
+            .push("builtin:mcp".into());
     }
     if web_access_enabled {
         let web_adapter = crate::work::browser::ensure_code_web_adapter(&shared_paths)?;

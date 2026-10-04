@@ -74,6 +74,11 @@ impl RuntimeProviderAdapter for PiRuntimeAdapter {
                     obj.insert("headers".into(), serde_json::Value::Object(headers_map));
                 }
             }
+            if caps.app_mode == crate::work::models::AppMode::Code {
+                // Code's existing managed config uses native discovery after
+                // retiring the shared adapter; keep its tools reachable without codemode.
+                obj.insert("exposure".into(), serde_json::json!("deferred"));
+            }
             servers_map.insert(server.id.clone(), serde_json::Value::Object(obj));
         }
 

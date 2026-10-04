@@ -34,46 +34,6 @@ const RESERVED_WORK_ENV_KEYS: &[&str] = &[
     "NPM_CONFIG_CACHE",
 ];
 
-pub async fn install_adapter() -> Result<String, String> {
-    let paths = WorkPaths::app();
-    paths.ensure_layout()?;
-    install_adapter_with_paths(&paths).await
-}
-
-pub async fn ensure_adapter() -> Result<(), String> {
-    let paths = WorkPaths::app();
-    ensure_adapter_for_paths(&paths).await
-}
-
-pub async fn ensure_adapter_for_paths(paths: &WorkPaths) -> Result<(), String> {
-    paths.ensure_layout()?;
-    connectors::ensure_config(paths)?;
-    let package_mcp_runtime = crate::work::connector_package_manager::sync_mcp_runtime(paths)?;
-    let agent_plugin_mcp_enabled =
-        !crate::storage::agent_plugins::list_enabled_mcp_servers_with_root(paths.data_root())
-            .is_empty();
-    if (!connectors::has_enabled(paths)?
-        && !package_mcp_runtime.enabled()
-        && !agent_plugin_mcp_enabled)
-        || connectors::is_adapter_installed(paths)
-    {
-        return Ok(());
-    }
-    install_adapter_with_paths(paths).await.map(|_| ())
-}
-
-async fn install_adapter_with_paths(paths: &WorkPaths) -> Result<String, String> {
-    connectors::ensure_config(paths)?;
-    crate::work::system_packages::ensure_common_system_package(
-        paths,
-        crate::work::system_packages::PI_MCP_ADAPTER_PACKAGE_NAME,
-        crate::work::system_packages::PI_MCP_ADAPTER_VERSION,
-        crate::work::system_packages::PI_MCP_ADAPTER_SOURCE,
-    )
-    .await?;
-    Ok("Pi MCP adapter 已安装，下一次 Pi Work 会话会加载它".into())
-}
-
 pub async fn test(name: &str) -> Result<WorkConnectorHealth, String> {
     let paths = WorkPaths::app();
     paths.ensure_layout()?;
@@ -1150,46 +1110,6 @@ mod tests {
         let health = test_with_paths(&paths, "disabled").await.unwrap();
         assert_eq!(health.status, WorkConnectorHealthStatus::Disabled);
         assert_eq!(health.tool_count, 0);
-    }
-
-    #[tokio::test]
-    async fn skips_adapter_install_when_no_connector_is_enabled() {
-        let temp = TempDir::new().unwrap();
-        let paths = paths(&temp);
-        fs::write(paths.work_mcp_config_path(), r#"{"mcpServers":{}}"#).unwrap();
-
-        ensure_adapter_for_paths(&paths).await.unwrap();
-
-        assert!(!connectors::is_adapter_installed(&paths));
-    }
-
-    #[tokio::test]
-    async fn accepts_an_already_installed_adapter_without_reinstalling() {
-        let temp = TempDir::new().unwrap();
-        let paths = paths(&temp);
-        fs::write(
-            paths.work_mcp_config_path(),
-            r#"{"mcpServers":{"fixture":{"command":"fixture"}}}"#,
-        )
-        .unwrap();
-        let package_dir = paths
-            .pi_system_dir()
-            .join("npm")
-            .join("node_modules")
-            .join("pi-mcp-adapter");
-        fs::create_dir_all(&package_dir).unwrap();
-        fs::write(
-            package_dir.join("package.json"),
-            format!(
-                r#"{{"name":"pi-mcp-adapter","version":"{}"}}"#,
-                crate::work::system_packages::PI_MCP_ADAPTER_VERSION
-            ),
-        )
-        .unwrap();
-
-        ensure_adapter_for_paths(&paths).await.unwrap();
-
-        assert!(connectors::is_adapter_installed(&paths));
     }
 
     #[cfg(unix)]

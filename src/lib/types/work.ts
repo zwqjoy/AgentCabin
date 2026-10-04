@@ -167,7 +167,6 @@ export interface WorkConnectorSummary {
   runtimeAvailable: boolean;
   piRuntimeAvailable?: boolean;
   dshRuntimeAvailable?: boolean;
-  adapterInstalled: boolean;
 }
 
 export type ConnectorRuntimeKind = "mcp" | "cli" | "skill";

@@ -276,8 +276,6 @@ pub fn run() {
             commands::work::work_trust_connector_package,
             commands::work::work_enable_connector_package,
             commands::work::work_uninstall_connector_package,
-            commands::work::work_install_mcp_adapter,
-            commands::work::work_is_mcp_adapter_installed,
             commands::work::work_test_connector,
             commands::work::work_get_browser_config,
             commands::work::work_save_browser_config,

@@ -191,7 +191,6 @@ async fn work_dispatch(
         "work_trust_connector_package" => crate::commands::work::capabilities::work_trust_connector_package(package_id: String, trusted: bool),
         "work_enable_connector_package" => crate::commands::work::capabilities::work_enable_connector_package(package_id: String, enabled: bool),
         "work_uninstall_connector_package" => crate::commands::work::capabilities::work_uninstall_connector_package(package_id: String),
-        "work_is_mcp_adapter_installed" => crate::commands::work::capabilities::work_is_mcp_adapter_installed(),
         "work_get_browser_config" => crate::commands::work::capabilities::work_get_browser_config(),
         "work_save_browser_config" => crate::commands::work::capabilities::work_save_browser_config(provider: String, enabled: bool, max_results: Option<u32>, api_key: Option<String>, endpoint_url: Option<String>, allowed_hosts: Option<Vec<String>>),
         "work_install_browser_adapter" => crate::commands::work::capabilities::work_install_browser_adapter(),
@@ -245,7 +244,6 @@ async fn work_dispatch(
         // capabilities (commands/work/capabilities.rs, async half)
         "work_install_community_skill" => crate::commands::work::capabilities::work_install_community_skill(source: String, skill_id: String),
         "work_import_skill_zip" => crate::commands::work::capabilities::work_import_skill_zip(zip_path: String, slug: String),
-        "work_install_mcp_adapter" => crate::commands::work::capabilities::work_install_mcp_adapter(),
         "work_test_connector" => crate::commands::work::capabilities::work_test_connector(name: String),
         "work_test_browser" => crate::commands::work::capabilities::work_test_browser(),
         "work_apps_catalog" => crate::commands::work::capabilities::work_apps_catalog(),

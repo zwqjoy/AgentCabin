@@ -1,7 +1,7 @@
 //! Pi packages owned by the AgentCabin runtime.
 //!
-//! Common MCP packages are installed once under `~/.agentcabin/pi/system` and
-//! injected through mode-specific adapters. Native Web is backend-owned; the
+//! Interaction packages are installed once under `~/.agentcabin/pi/system`.
+//! MCP is provided by the bundled Pi Host. Native Web is backend-owned; the
 //! legacy `pi-web-access` source remains reserved only to prevent stale
 //! profiles from loading a second provider.
 
@@ -20,10 +20,6 @@ use crate::agent::claude_stream::{augmented_path, resolve_pi_path};
 use crate::process_ext::HideConsole;
 use crate::work::paths::WorkPaths;
 use crate::work::sandbox::{ExecutionCommand, WorkSandboxLauncher};
-
-pub const PI_MCP_ADAPTER_PACKAGE_NAME: &str = "pi-mcp-adapter";
-pub const PI_MCP_ADAPTER_VERSION: &str = "2.22.0";
-pub const PI_MCP_ADAPTER_SOURCE: &str = "npm:pi-mcp-adapter@2.22.0";
 
 pub const PI_WEB_ACCESS_PACKAGE_NAME: &str = "pi-web-access";
 /// Legacy source retained for stale-profile detection; it is no longer
@@ -82,13 +78,11 @@ fn final_reference_segment(source: &str) -> &str {
         .unwrap_or(source.trim())
 }
 
-pub fn is_pi_mcp_adapter_source(source: &str) -> bool {
+/// Negative compatibility filter: never provision or load the retired adapter.
+pub fn is_retired_mcp_adapter_source(source: &str) -> bool {
     let normalized = source.trim().strip_prefix("npm:").unwrap_or(source.trim());
-    package_reference_matches(normalized, PI_MCP_ADAPTER_PACKAGE_NAME)
-        || package_reference_matches(
-            final_reference_segment(normalized),
-            PI_MCP_ADAPTER_PACKAGE_NAME,
-        )
+    package_reference_matches(normalized, "pi-mcp-adapter")
+        || package_reference_matches(final_reference_segment(normalized), "pi-mcp-adapter")
 }
 
 pub fn is_pi_web_access_source(source: &str) -> bool {
@@ -114,7 +108,7 @@ pub fn is_retired_automation_source(source: &str) -> bool {
 
 pub fn is_system_managed_source(source: &str) -> bool {
     is_retired_automation_source(source)
-        || is_pi_mcp_adapter_source(source)
+        || is_retired_mcp_adapter_source(source)
         || is_pi_web_access_source(source)
         || is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME)
         || is_package_source(source, PI_TODO_PACKAGE_NAME)
@@ -159,9 +153,7 @@ pub fn common_system_package_entry_path(paths: &WorkPaths, package_name: &str) -
 }
 
 fn managed_package_name(source: &str) -> Option<&'static str> {
-    if is_pi_mcp_adapter_source(source) {
-        Some(PI_MCP_ADAPTER_PACKAGE_NAME)
-    } else if is_pi_web_access_source(source) {
+    if is_pi_web_access_source(source) {
         Some(PI_WEB_ACCESS_PACKAGE_NAME)
     } else if is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME) {
         Some(PI_ASK_USER_QUESTION_PACKAGE_NAME)
@@ -577,9 +569,9 @@ mod tests {
 
     #[test]
     fn recognizes_reserved_npm_and_repository_references() {
-        assert!(is_pi_mcp_adapter_source("pi-mcp-adapter"));
-        assert!(is_pi_mcp_adapter_source("npm:pi-mcp-adapter@2.22.0"));
-        assert!(is_pi_mcp_adapter_source(
+        assert!(is_retired_mcp_adapter_source("pi-mcp-adapter"));
+        assert!(is_retired_mcp_adapter_source("npm:pi-mcp-adapter@2.22.0"));
+        assert!(is_retired_mcp_adapter_source(
             "git:github.com/nicobailon/pi-mcp-adapter.git"
         ));
         assert!(is_pi_web_access_source("npm:pi-web-access@0.23.0"));

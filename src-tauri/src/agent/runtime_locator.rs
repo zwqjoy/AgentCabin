@@ -127,6 +127,19 @@ pub fn bundled() -> Result<RuntimePaths, String> {
         manifest,
     })
 }
+/// Resolve native APIs from the single application-owned Pi Host.
+pub fn pi_coding_agent_entry() -> Result<PathBuf, String> {
+    let entry = bundled()?
+        .root
+        .join("pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js");
+    if !entry.is_file() {
+        return Err(format!(
+            "RuntimeClosureInvalid: missing {}",
+            entry.display()
+        ));
+    }
+    Ok(entry)
+}
 pub fn resolve_pi() -> Result<String, String> {
     let p = bundled()?.pi;
     if p.is_file() {

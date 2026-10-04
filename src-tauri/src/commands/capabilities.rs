@@ -583,8 +583,10 @@ fn validate_shared_pi_source(source: &str) -> Result<&str, String> {
     if source.starts_with('.') || source.starts_with('/') {
         return Err("Shared Pi extension installation accepts npm or git package sources, not project-local paths".into());
     }
-    if crate::work::system_packages::is_pi_mcp_adapter_source(source) {
-        return Err("pi-mcp-adapter 是 AgentCabin 系统级内置组件，无需手动安装。请在「能力配置」中配置并启用 MCP 服务即可自动注入。".into());
+    if crate::work::system_packages::is_retired_mcp_adapter_source(source) {
+        return Err(
+            "旧 MCP adapter 已停用；Work 使用 Pi 原生 MCP，请在能力配置中管理连接器。".into(),
+        );
     }
     if crate::work::system_packages::is_pi_web_access_source(source) {
         return Err("pi-web-access 已由 AgentCabin 浏览器与联网系统级接管，无需手动安装。".into());

@@ -2114,10 +2114,6 @@ async fn fork_session_pi(
         return Err("Pi RPC session transport does not support remote hosts yet".to_string());
     }
 
-    if source.app_mode == crate::work::models::AppMode::Work {
-        crate::work::mcp::ensure_adapter().await?;
-    }
-
     let source_session_id = source
         .session_id
         .clone()

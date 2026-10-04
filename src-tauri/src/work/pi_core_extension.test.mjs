@@ -1752,7 +1752,7 @@ test("Work core exposes MCP only when the explicit MCP runtime gate is enabled",
 
     process.env.AGENTCABIN_WORK_MCP_ENABLED = "1";
     const enabled = await listedTools();
-    assert.equal(enabled.details.tools.some((tool) => tool.name === "mcp"), true);
+    assert.equal(enabled.details.tools.some((tool) => tool.name === "mcp"), false);
   } finally {
     if (previous.workspaceRoot === undefined) delete process.env.AGENTCABIN_WORKSPACE_ROOT; else process.env.AGENTCABIN_WORKSPACE_ROOT = previous.workspaceRoot;
     if (previous.workspaceId === undefined) delete process.env.AGENTCABIN_WORKSPACE_ID; else process.env.AGENTCABIN_WORKSPACE_ID = previous.workspaceId;

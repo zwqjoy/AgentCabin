@@ -281,14 +281,6 @@ export function uninstallWorkConnectorPackage(packageId: string): Promise<void> 
   return invoke<void>("work_uninstall_connector_package", { packageId });
 }
 
-export function installWorkMcpAdapter(): Promise<string> {
-  return invoke<string>("work_install_mcp_adapter");
-}
-
-export function isWorkMcpAdapterInstalled(): Promise<boolean> {
-  return invoke<boolean>("work_is_mcp_adapter_installed");
-}
-
 export function listWorkAppsCatalog(): Promise<AppCatalogItem[]> {
   return invoke<AppCatalogItem[]>("work_apps_catalog");
 }

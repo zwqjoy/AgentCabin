@@ -148,20 +148,6 @@ pub fn work_uninstall_connector_package(package_id: String) -> Result<(), String
 }
 
 #[tauri::command]
-pub async fn work_install_mcp_adapter() -> Result<String, String> {
-    ensure_work_enabled()?;
-    mcp::install_adapter().await
-}
-
-#[tauri::command]
-pub fn work_is_mcp_adapter_installed() -> Result<bool, String> {
-    ensure_work_enabled()?;
-    let paths = crate::work::paths::WorkPaths::app();
-    paths.ensure_layout()?;
-    Ok(connectors::is_adapter_installed(&paths))
-}
-
-#[tauri::command]
 pub async fn work_test_connector(name: String) -> Result<WorkConnectorHealth, String> {
     ensure_work_enabled()?;
     mcp::test(&name).await

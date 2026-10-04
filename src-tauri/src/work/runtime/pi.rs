@@ -77,7 +77,7 @@ impl WorkRuntimeAdapter for PiWorkRuntimeAdapter {
         context: &WorkRuntimePrepareContext,
     ) -> Result<(), WorkRuntimeError> {
         self.validate_work_run(&context.run)?;
-        // Provision Pi-specific packages and MCP adapter for Work.
+        // Provision the Work interaction packages; native MCP ships with Pi.
         crate::work::system_packages::ensure_required_work_packages(&context.paths)
             .await
             .map_err(|e| {
@@ -90,11 +90,7 @@ impl WorkRuntimeAdapter for PiWorkRuntimeAdapter {
                     "Failed to ensure Pi interaction extensions: {e}"
                 ))
             })?;
-        crate::work::mcp::ensure_adapter_for_paths(&context.paths)
-            .await
-            .map_err(|e| {
-                WorkRuntimeError::LaunchFailed(format!("Failed to ensure Pi MCP adapter: {e}"))
-            })?;
+
         Ok(())
     }
 
@@ -411,14 +407,11 @@ impl PiWorkRuntimeAdapter {
             runtime.mcp_config_path.to_string_lossy().into_owned(),
         );
         extra_env.insert(
-            "AGENTCABIN_PI_SYSTEM_MCP_ADAPTER_ENTRY".to_string(),
-            crate::work::system_packages::common_system_package_entry_path(
-                &work_paths,
-                crate::work::system_packages::PI_MCP_ADAPTER_PACKAGE_NAME,
-            )
-            .join("index.ts")
-            .to_string_lossy()
-            .into_owned(),
+            "AGENTCABIN_PI_CODING_AGENT_ENTRY".to_string(),
+            crate::agent::runtime_locator::pi_coding_agent_entry()
+                .map_err(WorkRuntimeError::LaunchFailed)?
+                .to_string_lossy()
+                .into_owned(),
         );
         extra_env.insert(
             "AGENTCABIN_WORK_MCP_SECRETS".to_string(),

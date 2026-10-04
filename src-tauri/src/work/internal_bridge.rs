@@ -248,6 +248,7 @@ fn validate_mcp_tool_name(name: &str) -> Result<&str, String> {
 
 fn stable_mcp_tool_call_id(
     run_id: &str,
+    process_scope: &str,
     server_name: &str,
     method: &str,
     request_id: &serde_json::Value,
@@ -256,6 +257,9 @@ fn stable_mcp_tool_call_id(
     let mut hasher = Sha256::new();
     let value = serde_json::json!({
         "runId": run_id,
+        // Native clients restart their JSON-RPC counter on reconnect/resume.
+        // Hash the process-bound token to avoid collisions across Pi launches.
+        "processScope": process_scope,
         "server": server_name,
         "method": method,
         "requestId": request_id,
@@ -385,7 +389,20 @@ async fn internal_mcp_proxy(
     Path(server_name): Path<String>,
     Json(request): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let ctx = authenticate_work_context(&state, &headers).await?;
+    internal_mcp_proxy_with_paths(state, headers, server_name, request, WorkPaths::app()).await
+}
+
+// Explicit paths let the protocol regression exercise the production handler
+// against an isolated Host store, without changing process-global authority.
+async fn internal_mcp_proxy_with_paths(
+    state: InternalBridgeState,
+    headers: HeaderMap,
+    server_name: String,
+    request: serde_json::Value,
+    paths: WorkPaths,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let token = authenticate_token(&state, &headers).await?;
+    let ctx = trusted_work_context_for_token(token, &paths)?;
     let server_name = match validate_mcp_server_name(&server_name) {
         Ok(name) => name,
         Err(error) => return Ok(mcp_rpc_error(serde_json::Value::Null, -32602, error)),
@@ -429,6 +446,7 @@ async fn internal_mcp_proxy(
                 workspace_id: ctx.token_info.workspace_id.clone(),
                 tool_call_id: stable_mcp_tool_call_id(
                     &ctx.token_info.run_id,
+                    &ctx.token_info.token,
                     server_name,
                     method,
                     &id,
@@ -445,7 +463,6 @@ async fn internal_mcp_proxy(
                 execution_context: ctx.token_info.execution_context,
                 policy_revision: None,
             };
-            let paths = WorkPaths::app();
             match execute_mcp_pipeline(&paths, &ctx, &intent, &policy).await {
                 Ok(result) if result.success => match mcp_json_result(&result.stdout, "tools/list")
                 {
@@ -498,6 +515,7 @@ async fn internal_mcp_proxy(
                 workspace_id: ctx.token_info.workspace_id.clone(),
                 tool_call_id: stable_mcp_tool_call_id(
                     &ctx.token_info.run_id,
+                    &ctx.token_info.token,
                     server_name,
                     method,
                     &id,
@@ -516,7 +534,6 @@ async fn internal_mcp_proxy(
                 execution_context: ctx.token_info.execution_context,
                 policy_revision: None,
             };
-            let paths = WorkPaths::app();
             match execute_mcp_pipeline(&paths, &ctx, &intent, &policy).await {
                 Ok(result) if result.success => match mcp_json_result(&result.stdout, "tools/call")
                 {
@@ -1729,6 +1746,317 @@ async fn internal_web_fetch(
 mod tests {
     use super::*;
     use crate::work::executor::{WorkExecutionResult, WorkExecutionStatus};
+
+    #[test]
+    fn native_mcp_request_ids_are_stable_only_within_a_process_scope() {
+        let id = json!(2);
+        let args = json!({"name":"search_docs","arguments":{}});
+        let first = stable_mcp_tool_call_id("run", "first-token", "docs", "tools/call", &id, &args);
+        assert_eq!(
+            first,
+            stable_mcp_tool_call_id("run", "first-token", "docs", "tools/call", &id, &args)
+        );
+        assert_ne!(
+            first,
+            stable_mcp_tool_call_id("run", "next-token", "docs", "tools/call", &id, &args)
+        );
+        assert!(!first.contains("first-token"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires prepared bundled Node and Pi runtime; run explicitly with --ignored"]
+    async fn native_pi_search_calls_authenticated_host_bridge_and_inbox() {
+        use crate::work::interaction::InteractionManager;
+        use crate::work::models::{
+            PendingInteractionState, TaskStandingRule, ToolRiskClass, WorkPolicy,
+        };
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let runtime = crate::agent::runtime_locator::bundled().unwrap();
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let fixture = Router::new().route("/mcp", post(move |Json(request): Json<serde_json::Value>| {
+            let calls = counted.clone();
+            async move {
+                let result = match request["method"].as_str().unwrap_or_default() {
+                    "tools/list" => {
+                        let mut tools = vec![
+                            json!({"name":"search_docs","description":"Search documentation","inputSchema":{"type":"object","properties":{}}}),
+                            json!({"name":"get_doc","description":"Retrieve documentation","inputSchema":{"type":"object","properties":{}}}),
+                            json!({"name":"create_item","description":"Create an item","inputSchema":{"type":"object","properties":{}}})
+                        ];
+                        tools.extend((0..55).map(|i| json!({"name":format!("unrelated_{i}"),"description":format!("Unrelated operation {i}"),"inputSchema":{"type":"object","properties":{}}})));
+                        json!({"tools":tools})
+                    },
+                    "tools/call" => { calls.fetch_add(1, Ordering::SeqCst); json!({"content":[{"type":"text","text":"real-host-pipeline-result"}]}) },
+                    _ => json!({"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}}),
+                };
+                Json(json!({"jsonrpc":"2.0","id":request["id"],"result":result}))
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let remote = listener.local_addr().unwrap();
+        let remote_server = tokio::spawn(async move {
+            axum::serve(listener, fixture).await.unwrap();
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let paths = WorkPaths::new(temp.path().to_path_buf());
+        paths.ensure_layout().unwrap();
+        std::fs::write(paths.work_mcp_config_path(), json!({"mcpServers":{"fixture":{"type":"streamable-http","url":format!("http://{remote}/mcp")}}}).to_string()).unwrap();
+        let workspace = crate::work::workspace::WorkspaceManager::new(paths.clone())
+            .create("Native Pi MCP")
+            .unwrap();
+        let policy = WorkPolicy {
+            allow_external_connectors: true,
+            standing_rules: vec![
+                TaskStandingRule {
+                    id: "docs".into(),
+                    tool_name: "work_mcp_call".into(),
+                    target_pattern: "mcp://fixture/search_docs".into(),
+                    risk_class: ToolRiskClass::External,
+                    granted_at: chrono::Utc::now().to_rfc3339(),
+                },
+                TaskStandingRule {
+                    id: "list".into(),
+                    tool_name: "work_mcp_list".into(),
+                    target_pattern: "mcp://fixture".into(),
+                    risk_class: ToolRiskClass::External,
+                    granted_at: chrono::Utc::now().to_rfc3339(),
+                },
+            ],
+            ..Default::default()
+        };
+        let tasks = crate::work::tasks::TaskManager::new(paths.clone());
+        let task = tasks
+            .create_task(&workspace.id, "Native MCP", "Verify bridge", Some(policy))
+            .unwrap();
+        let run = tasks
+            .start_run(&task.id, None, crate::work::models::WorkRunTrigger::Manual)
+            .unwrap();
+        let state = InternalBridgeState::default();
+        let mut token = test_bridge_token(&workspace.id, Some(&task.id), &run.id);
+        token.token = "native-test-token".into();
+        state
+            .tokens
+            .write()
+            .await
+            .insert(token.token.clone(), token.clone());
+        token.token = "native-resume-token".into();
+        state
+            .tokens
+            .write()
+            .await
+            .insert(token.token.clone(), token);
+        let host_paths = paths.clone();
+        let router = Router::new().route(
+            "/internal/work/mcp/:server_name",
+            post(
+                move |headers: HeaderMap,
+                      Path(name): Path<String>,
+                      Json(request): Json<serde_json::Value>| {
+                    internal_mcp_proxy_with_paths(
+                        state.clone(),
+                        headers,
+                        name,
+                        request,
+                        host_paths.clone(),
+                    )
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let bridge = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let mut child = tokio::process::Command::new(runtime.node)
+            .arg(repo.join("scripts/smoke-work-native-mcp.mjs"))
+            .current_dir(repo)
+            .env("AGENTCABIN_RUNTIME_ROOT", runtime.root)
+            .env("AGENTCABIN_NATIVE_MCP_TEST_BRIDGE_PORT", port.to_string())
+            .env(
+                "AGENTCABIN_NATIVE_MCP_TEST_BRIDGE_TOKEN",
+                "native-test-token",
+            )
+            .env(
+                "AGENTCABIN_NATIVE_MCP_TEST_RESUME_TOKEN",
+                "native-resume-token",
+            )
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let approvals = Arc::new(AtomicUsize::new(0));
+        let approved = approvals.clone();
+        let authority = async {
+            let manager = InteractionManager::new(paths.clone());
+            for _ in 0..1000 {
+                let pending = manager.list_pending(Some(&task.id), Some(&run.id)).unwrap();
+                if let Some(item) = pending.first() {
+                    assert_eq!(pending.len(), 1);
+                    assert_eq!(
+                        calls.load(Ordering::SeqCst),
+                        1,
+                        "mutation cannot run before Inbox approval"
+                    );
+                    approved.fetch_add(1, Ordering::SeqCst);
+                    manager
+                        .resolve_interaction_once(
+                            &item.interaction_id,
+                            PendingInteractionState::Resolved,
+                            Some(json!({"decision":"allowed","outcome":"allowed_once"})),
+                        )
+                        .unwrap();
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            panic!("Native MCP did not reach Host Inbox");
+        };
+        let (status, ()) = tokio::join!(child.wait(), authority);
+        remote_server.abort();
+        bridge.abort();
+        assert!(status.unwrap().success());
+        assert_eq!(
+            approvals.load(Ordering::SeqCst),
+            1,
+            "no duplicate Pi-side approval"
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "read, approved mutation, resumed read"
+        );
+    }
+
+    #[tokio::test]
+    async fn native_projection_host_pipeline_allows_reads_and_waits_once_for_mutation() {
+        use crate::work::interaction::InteractionManager;
+        use crate::work::models::{
+            PendingInteractionState, TaskStandingRule, ToolRiskClass, WorkPolicy,
+        };
+        use crate::work::pipeline::ToolIntent;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let fixture = Router::new().route(
+            "/mcp",
+            post(move |Json(request): Json<serde_json::Value>| {
+                let calls = counted.clone();
+                async move {
+                    let result = if request["method"] == "tools/call" {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        json!({"content":[{"type":"text","text":"host-authority-ok"}]})
+                    } else {
+                        json!({"capabilities":{"tools":{}}})
+                    };
+                    Json(json!({"jsonrpc":"2.0","id":request["id"],"result":result}))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, fixture).await.unwrap();
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let paths = WorkPaths::new(temp.path().to_path_buf());
+        paths.ensure_layout().unwrap();
+        std::fs::write(
+            paths.work_mcp_config_path(),
+            json!({"mcpServers":{"fixture":{
+                "type":"streamable-http", "url":format!("http://{address}/mcp")
+            }}})
+            .to_string(),
+        )
+        .unwrap();
+        let workspace = crate::work::workspace::WorkspaceManager::new(paths.clone())
+            .create("MCP authority")
+            .unwrap();
+        let policy = WorkPolicy {
+            allow_external_connectors: true,
+            standing_rules: vec![TaskStandingRule {
+                id: "read-docs".into(),
+                tool_name: "work_mcp_call".into(),
+                target_pattern: "mcp://fixture/search_docs".into(),
+                risk_class: ToolRiskClass::External,
+                granted_at: chrono::Utc::now().to_rfc3339(),
+            }],
+            ..Default::default()
+        };
+        let tasks = crate::work::tasks::TaskManager::new(paths.clone());
+        let task = tasks
+            .create_task(
+                &workspace.id,
+                "MCP",
+                "Verify Host authority",
+                Some(policy.clone()),
+            )
+            .unwrap();
+        let run = tasks
+            .start_run(&task.id, None, crate::work::models::WorkRunTrigger::Manual)
+            .unwrap();
+        let ctx = trusted_work_context_for_token(
+            test_bridge_token(&workspace.id, Some(&task.id), &run.id),
+            &paths,
+        )
+        .unwrap();
+        let make_intent = |tool: &str| ToolIntent {
+            task_id: task.id.clone(),
+            work_run_id: run.id.clone(),
+            session_id: None,
+            workspace_id: workspace.id.clone(),
+            tool_call_id: format!("native-{tool}"),
+            tool_name: "work_mcp_call".into(),
+            action: tool.into(),
+            arguments: json!({"server":"fixture","tool_name":tool,"arguments":{},"target":format!("mcp://fixture/{tool}")}),
+            input_paths: vec![],
+            expected_outputs: vec![],
+            execution_context: ExecutionContext::Attended,
+            policy_revision: None,
+        };
+        let read = execute_mcp_pipeline(&paths, &ctx, &make_intent("search_docs"), &policy)
+            .await
+            .unwrap();
+        assert!(read.success, "{}", read.stderr);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let mutation = make_intent("create_item");
+        let waiting = execute_mcp_pipeline(&paths, &ctx, &mutation, &policy);
+        let approval = async {
+            let manager = InteractionManager::new(paths.clone());
+            for _ in 0..100 {
+                let pending = manager.list_pending(Some(&task.id), Some(&run.id)).unwrap();
+                if let Some(item) = pending.first() {
+                    assert_eq!(pending.len(), 1, "Host must create exactly one approval");
+                    assert_eq!(
+                        calls.load(Ordering::SeqCst),
+                        1,
+                        "mutation must wait for approval"
+                    );
+                    manager
+                        .resolve_interaction_once(
+                            &item.interaction_id,
+                            PendingInteractionState::Resolved,
+                            Some(json!({"decision":"allowed","outcome":"allowed_once"})),
+                        )
+                        .unwrap();
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            panic!("Host Inbox approval was not created");
+        };
+        let (result, ()) = tokio::join!(waiting, approval);
+        let result = result.unwrap();
+        assert!(result.success, "{}", result.stderr);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(InteractionManager::new(paths)
+            .list_pending(Some(&task.id), Some(&run.id))
+            .unwrap()
+            .is_empty());
+        server.abort();
+    }
 
     #[test]
     fn execution_payload_wires_resource_and_input_paths() {

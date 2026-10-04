@@ -303,8 +303,6 @@ pub struct WorkConnectorSummary {
     pub pi_runtime_available: bool,
     #[serde(default)]
     pub dsh_runtime_available: bool,
-    /// Whether the legacy Pi MCP adapter package is installed.
-    pub adapter_installed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

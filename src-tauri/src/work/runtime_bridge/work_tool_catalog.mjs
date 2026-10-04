@@ -36,10 +36,6 @@ const BASE_TOOL_CATALOG = [
   ["work_call_app", "Execute a tool/action on a connected external app (e.g. Gmail, Google Calendar, Google Drive, Slack, GitHub, Notion) via Host MCP Bridge.", "external", true],
 ];
 
-const MCP_TOOL_CATALOG = [
-  ["mcp", "Use the configured external MCP connector proxy after the Work MCP adapter is loaded.", "external", true],
-];
-
 const BROWSER_TOOL_CATALOG = [
   ["web_search", "Search the web through the explicitly configured Work 网络访问 provider.", "external", true],
   ["web_open", "Fetch a public web page and save a private Work 网络访问 page snapshot.", "external", true],
@@ -57,12 +53,10 @@ function materialize(entries) {
 }
 
 export function createWorkToolCatalog({
-  mcpEnabled = process.env.AGENTCABIN_WORK_MCP_ENABLED === "1",
   browserEnabled = process.env.AGENTCABIN_WORK_BROWSER_ENABLED === "1",
 } = {}) {
   return [
     ...materialize(BASE_TOOL_CATALOG),
-    ...(mcpEnabled ? materialize(MCP_TOOL_CATALOG) : []),
     ...(browserEnabled ? materialize(BROWSER_TOOL_CATALOG) : []),
   ];
 }

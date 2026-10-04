@@ -1768,7 +1768,7 @@ pub fn list_pi_configured(cwd: Option<&str>) -> Vec<ConfiguredMcpServer> {
         }
     }
 
-    // 3. Shared global: ~/.config/mcp/mcp.json (readable by pi-mcp-adapter)
+    // 3. Shared global: ~/.config/mcp/mcp.json
     if let Some(home) = crate::storage::home_dir() {
         let shared_global = std::path::PathBuf::from(home)
             .join(".config")
@@ -1801,7 +1801,7 @@ pub fn list_pi_configured(cwd: Option<&str>) -> Vec<ConfiguredMcpServer> {
         }
     }
 
-    // 4. Shared project: <cwd>/.mcp.json (readable by both Claude and pi-mcp-adapter)
+    // 4. Shared project: <cwd>/.mcp.json
     if let Some(cwd_str) = cwd.filter(|s| !s.trim().is_empty()) {
         let shared_project = std::path::PathBuf::from(cwd_str).join(".mcp.json");
         if let Ok(content) = std::fs::read_to_string(&shared_project) {
@@ -1986,55 +1986,6 @@ pub fn toggle_pi_server_config(
         success: true,
         message: format!("Toggled Pi MCP server '{}' to enabled={}", name, enabled),
     })
-}
-
-/// Check whether `pi-mcp-adapter` is installed as a Pi extension.
-///
-/// Reads `~/.pi/agent/settings.json` and `<cwd>/.pi/settings.json` for the
-/// `packages` array and looks for an entry whose source matches
-/// `pi-mcp-adapter` or an npm reference for that package.
-pub fn is_pi_mcp_adapter_installed(cwd: Option<&str>) -> bool {
-    let home = match crate::storage::home_dir() {
-        Some(h) => std::path::PathBuf::from(h),
-        None => return false,
-    };
-
-    let paths = [
-        Some(home.join(".pi").join("agent").join("settings.json")),
-        cwd.filter(|s| !s.trim().is_empty()).map(|c| {
-            std::path::PathBuf::from(c)
-                .join(".pi")
-                .join("settings.json")
-        }),
-    ];
-
-    for path in paths.into_iter().flatten() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(root) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(packages) = root.get("packages").and_then(|v| v.as_array()) {
-                    for entry in packages {
-                        let source = match entry {
-                            serde_json::Value::String(s) => s.clone(),
-                            serde_json::Value::Object(obj) => obj
-                                .get("source")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            _ => continue,
-                        };
-                        if source == "pi-mcp-adapter"
-                            || source == "npm:pi-mcp-adapter"
-                            || source.starts_with("npm:pi-mcp-adapter@")
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    false
 }
 
 // ── Tests ──

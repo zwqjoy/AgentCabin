@@ -1483,6 +1483,11 @@ export default function agentCabinWorkExtension(pi) {
 
   function applyActiveTools() {
     try {
+      // Each Pi extension receives its own API object. Native tool_search updates
+      // the shared runtime, not this extension's setActiveTools wrapper.
+      for (const name of pi.getActiveTools?.() ?? []) {
+        if (name === "tool_search" || name.startsWith("mcp__")) activeTools.add(name);
+      }
       if (originalSetActiveTools) {
         originalSetActiveTools([...activeTools]);
       }
@@ -2799,7 +2804,7 @@ export default function agentCabinWorkExtension(pi) {
       ? " 当前权限为完全访问：后续文件读写和命令执行不受 Workspace 路径边界或 Work OS 沙箱限制；仍然保留 Work 运行记录、成果登记和 Workspace 知识库的显式确认规则。"
       : "";
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## AgentCabin Work tools\n除非用户明确要求其他语言，所有面向用户的说明、状态和结论都使用简体中文，避免使用英文开场白或泛化的状态句。对于复杂多步任务，先调用 work_set_goal 记录明确目标，再调用 work_replace_plan 制定具体执行步骤；在步骤开始和完成时调用 work_update_step，并在关键里程碑处保存简要的 work_save_checkpoint。简单单步问题无需形式化计划。这些 Work 状态工具为内部进度记录，无需用户审批，也不要在普通文本中请求“确认执行 / 修改计划 / 取消”。只有遇到真实的业务选择、外部副作用或 Work 工具明确发出的风险确认时，才等待用户输入；需要用户选择或补充事实时，调用 Pi 的 ask_user_question 一次性提交结构化问题，不要把普通进度汇报伪装成提问。复杂多步任务使用 Pi 的 todo 工具跟踪步骤，Work 的 work_* 计划工具仍用于持久化运行进度与恢复。Todo 必须使用真实任务 ID 更新：开始一项前调用 todo(action=\"update\", id=<任务ID>, status=\"in_progress\")，完成后立即调用 todo(action=\"update\", id=<任务ID>, status=\"completed\")。所有工作和成果写入完成后、最终答复之前，必须调用 todo(action=\"list\") 读取任务和 ID，逐项将确已完成的任务更新为 completed，再调用 list 核对；不能只在文字中报告 Todo 已完成。未完成或受阻项保持 pending/in_progress 并说明原因；work_update_step 不会更新 Pi Todo。需要了解可用能力或工具目录时，调用 work_discover_capabilities 或 work_list_tools。从 input/ 读取源材料，并在相关时从 context/ 读取项目背景知识（这些工作区目录已可访问，切勿传入 work_request_directory_access；切勿直接修改 input/ 或 context/）。仅在需要访问 Workspace 外的主机绝对目录时调用 work_request_directory_access。当用户明确要求记住规则、决策或状态时，调用 work_propose_context_update 提交确认。在当前 Workspace 或已授权外部目录中写入草稿至 scratch/，最终成果写入 output/（写入 output/ 会自动登记为成果 Artifact）。${pathGuidance}${workPresetGuidance()}${codingGuidance}${fullAccessGuidance}${browserGuidance}${externalGuidance}${CONVERSATION_HTML_GUIDANCE}`,
+      systemPrompt: `${event.systemPrompt}\n\n## AgentCabin Work tools\n除非用户明确要求其他语言，所有面向用户的说明、状态和结论都使用简体中文，避免使用英文开场白或泛化的状态句。对于复杂多步任务，先调用 work_set_goal 记录明确目标，再调用 work_replace_plan 制定具体执行步骤；在步骤开始和完成时调用 work_update_step，并在关键里程碑处保存简要的 work_save_checkpoint。简单单步问题无需形式化计划。这些 Work 状态工具为内部进度记录，无需用户审批，也不要在普通文本中请求“确认执行 / 修改计划 / 取消”。只有遇到真实的业务选择、外部副作用或 Work 工具明确发出的风险确认时，才等待用户输入；需要用户选择或补充事实时，调用 Pi 的 ask_user_question 一次性提交结构化问题，不要把普通进度汇报伪装成提问。复杂多步任务使用 Pi 的 todo 工具跟踪步骤，Work 的 work_* 计划工具仍用于持久化运行进度与恢复。Todo 必须使用真实任务 ID 更新：开始一项前调用 todo(action=\"update\", id=<任务ID>, status=\"in_progress\")，完成后立即调用 todo(action=\"update\", id=<任务ID>, status=\"completed\")。所有工作和成果写入完成后、最终答复之前，必须调用 todo(action=\"list\") 读取任务和 ID，逐项将确已完成的任务更新为 completed，再调用 list 核对；不能只在文字中报告 Todo 已完成。未完成或受阻项保持 pending/in_progress 并说明原因；work_update_step 不会更新 Pi Todo。AgentCabin 能力与资源使用 work_discover_capabilities，可选 Work 工具使用 work_list_tools。已连接 MCP 的具体工具未出现在当前工具列表时，使用 Pi 原生 tool_search 按意图搜索，随后直接调用加载的 mcp__<server>__<tool>。不要读取 MCP 凭据或连接真实 MCP endpoint。从 input/ 读取源材料，并在相关时从 context/ 读取项目背景知识（这些工作区目录已可访问，切勿传入 work_request_directory_access；切勿直接修改 input/ 或 context/）。仅在需要访问 Workspace 外的主机绝对目录时调用 work_request_directory_access。当用户明确要求记住规则、决策或状态时，调用 work_propose_context_update 提交确认。在当前 Workspace 或已授权外部目录中写入草稿至 scratch/，最终成果写入 output/（写入 output/ 会自动登记为成果 Artifact）。${pathGuidance}${workPresetGuidance()}${codingGuidance}${fullAccessGuidance}${browserGuidance}${externalGuidance}${CONVERSATION_HTML_GUIDANCE}`,
     };
   });
 }

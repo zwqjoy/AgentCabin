@@ -258,7 +258,7 @@
   {:else}
     <div class="mt-4 grid gap-2">
       {#each visibleConnectors as connector (connector.name)}
-        {@const piRuntimeReady = connector.piRuntimeAvailable ?? connector.adapterInstalled}
+        {@const piRuntimeReady = connector.piRuntimeAvailable ?? connector.runtimeAvailable}
         {@const dshRuntimeReady = connector.dshRuntimeAvailable ?? false}
         <div
           class="flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-background/50 px-3.5 py-3"

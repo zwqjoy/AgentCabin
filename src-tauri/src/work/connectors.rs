@@ -6,7 +6,6 @@ use serde_json::{Map, Value};
 use crate::work::models::WorkConnectorSummary;
 use crate::work::paths::WorkPaths;
 
-pub use crate::work::system_packages::PI_MCP_ADAPTER_SOURCE;
 pub const WORK_MCP_SECRET_PLACEHOLDER: &str = "__AGENTCABIN_WORK_SECRET__";
 const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_SECRETS_BYTES: u64 = 4 * 1024 * 1024;
@@ -95,11 +94,10 @@ pub fn read_runtime_root(paths: &WorkPaths) -> Result<Value, String> {
 
 pub fn list_with_paths(paths: &WorkPaths) -> Result<Vec<WorkConnectorSummary>, String> {
     let root = read_root(paths)?;
-    let pi_runtime_available = has_pi_adapter(paths)?;
+    let pi_runtime_available = crate::agent::runtime_locator::pi_coding_agent_entry().is_ok();
     // Keep the removed DSH readiness field false for older frontend clients.
     let dsh_runtime_available = false;
     let runtime_available = pi_runtime_available;
-    let adapter_installed = is_adapter_installed(paths);
     let Some(servers) = root
         .get("mcpServers")
         .or_else(|| root.get("mcp_servers"))
@@ -117,7 +115,6 @@ pub fn list_with_paths(paths: &WorkPaths) -> Result<Vec<WorkConnectorSummary>, S
                 runtime_available,
                 pi_runtime_available,
                 dsh_runtime_available,
-                adapter_installed,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -245,42 +242,22 @@ pub fn ensure_config(paths: &WorkPaths) -> Result<(), String> {
     Ok(())
 }
 
-pub fn is_adapter_installed(paths: &WorkPaths) -> bool {
-    let package_path = crate::work::system_packages::common_system_package_manifest_path(
-        paths,
-        crate::work::system_packages::PI_MCP_ADAPTER_PACKAGE_NAME,
-    );
-    let Ok(content) = fs::read_to_string(package_path) else {
-        return false;
-    };
-    let Ok(package) = serde_json::from_str::<Value>(&content) else {
-        return false;
-    };
-    package.get("name").and_then(Value::as_str)
-        == Some(crate::work::system_packages::PI_MCP_ADAPTER_PACKAGE_NAME)
-        && package.get("version").and_then(Value::as_str)
-            == Some(crate::work::system_packages::PI_MCP_ADAPTER_VERSION)
-}
-
 pub fn sync_pi_settings(
     paths: &WorkPaths,
     settings: &mut Map<String, Value>,
 ) -> Result<(), String> {
     ensure_config(paths)?;
-    let mut packages = settings
+    let packages = settings
         .remove("packages")
         .and_then(|value| value.as_array().cloned())
         .unwrap_or_default()
         .into_iter()
         .filter(|entry| {
             package_source(entry).is_none_or(|source| {
-                !crate::work::system_packages::is_pi_mcp_adapter_source(source)
+                !crate::work::system_packages::is_retired_mcp_adapter_source(source)
             })
         })
         .collect::<Vec<_>>();
-    if has_enabled(paths)? {
-        packages.push(Value::String(PI_MCP_ADAPTER_SOURCE.to_string()));
-    }
     settings.insert("packages".into(), Value::Array(packages));
     Ok(())
 }
@@ -349,7 +326,6 @@ fn summarize(
     runtime_available: bool,
     pi_runtime_available: bool,
     dsh_runtime_available: bool,
-    adapter_installed: bool,
 ) -> Result<WorkConnectorSummary, String> {
     let object = config
         .as_object()
@@ -400,7 +376,6 @@ fn summarize(
         runtime_available,
         pi_runtime_available,
         dsh_runtime_available,
-        adapter_installed,
     })
 }
 
@@ -711,25 +686,6 @@ fn redact_argument(value: &str) -> String {
     }
 }
 
-fn has_pi_adapter(paths: &WorkPaths) -> Result<bool, String> {
-    let path = paths.work_profile_dir().join("settings.json");
-    if !path.is_file() {
-        return Ok(false);
-    }
-    let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let root = serde_json::from_str::<Value>(&content).unwrap_or_else(|_| serde_json::json!({}));
-    Ok(root
-        .get("packages")
-        .and_then(Value::as_array)
-        .is_some_and(|packages| {
-            packages.iter().any(|entry| {
-                package_source(entry).is_some_and(|source| {
-                    crate::work::system_packages::is_pi_mcp_adapter_source(source)
-                })
-            })
-        }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -880,7 +836,7 @@ mod tests {
         .unwrap();
         let mut settings = Map::new();
         sync_pi_settings(&paths, &mut settings).unwrap();
-        assert_eq!(settings["packages"][0], PI_MCP_ADAPTER_SOURCE);
+        assert!(settings["packages"].as_array().unwrap().is_empty());
 
         let mut root = read_root(&paths).unwrap();
         root["mcpServers"]["research"]["disabled"] = Value::Bool(true);
