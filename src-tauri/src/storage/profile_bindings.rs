@@ -745,6 +745,11 @@ pub fn list_enabled_pi_extension_sources_with_root(root: &Path, mode: &str) -> V
     let mut paths = catalog
         .into_iter()
         .filter(|item| {
+            if crate::work::system_packages::is_retired_automation_source(&item.source)
+                || crate::work::system_packages::is_retired_automation_source(&item.package_path)
+            {
+                return false;
+            }
             is_pi_extension_enabled_with_root(root, mode, &item.id)
                 && !(mode.trim().eq_ignore_ascii_case("work")
                     && is_pi_code_native_extension_source(&item.source))

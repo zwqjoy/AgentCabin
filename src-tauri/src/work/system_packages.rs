@@ -100,8 +100,21 @@ pub fn is_pi_web_access_source(source: &str) -> bool {
         )
 }
 
+/// Ignore retired built-in extension references in old profiles. This never
+/// provisions, loads, or writes an automation dependency.
+pub fn is_retired_automation_source(source: &str) -> bool {
+    [
+        "pi-agent-browser-native",
+        "agent-browser",
+        "@injaneity/pi-computer-use",
+    ]
+    .iter()
+    .any(|name| is_package_source(source, name))
+}
+
 pub fn is_system_managed_source(source: &str) -> bool {
-    is_pi_mcp_adapter_source(source)
+    is_retired_automation_source(source)
+        || is_pi_mcp_adapter_source(source)
         || is_pi_web_access_source(source)
         || is_package_source(source, PI_ASK_USER_QUESTION_PACKAGE_NAME)
         || is_package_source(source, PI_TODO_PACKAGE_NAME)
@@ -544,6 +557,23 @@ pub async fn ensure_required_work_packages(paths: &WorkPaths) -> Result<(), Stri
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn ignores_retired_automation_sources_without_matching_unrelated_extensions() {
+        for source in [
+            "npm:pi-agent-browser-native@0.8.2",
+            "npm:agent-browser@0.37.0",
+            "npm:@injaneity/pi-computer-use@0.5.1",
+            "/managed/node_modules/@injaneity/pi-computer-use",
+        ] {
+            assert!(is_retired_automation_source(source));
+            assert!(is_system_managed_source(source));
+        }
+        assert!(!is_retired_automation_source("npm:pi-mcp-adapter@2.22.0"));
+        assert!(!is_retired_automation_source(
+            "npm:@acme/agent-browser-wrapper"
+        ));
+    }
 
     #[test]
     fn recognizes_reserved_npm_and_repository_references() {
