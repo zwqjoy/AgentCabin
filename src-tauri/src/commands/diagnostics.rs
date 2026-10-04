@@ -12,7 +12,7 @@ use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
 
-const MINIMUM_PI_VERSION: &str = "0.99.1";
+const MINIMUM_PI_VERSION: &str = "1.0.2";
 
 fn parse_cli_semver(raw: &str) -> Option<semver::Version> {
     raw.split_whitespace().find_map(|token| {
@@ -1792,12 +1792,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pi_version_gate_requires_0_99_1_or_newer() {
+    fn pi_version_gate_requires_1_0_2_or_newer() {
         assert!(!pi_version_supported("0.87.1"));
         assert!(!pi_version_supported("0.99.0"));
-        assert!(pi_version_supported("0.99.1"));
-        assert!(pi_version_supported("pi 0.99.1"));
-        assert!(pi_version_supported("v1.0.0"));
+        assert!(pi_version_supported("1.0.2"));
+        assert!(pi_version_supported("pi 1.0.2"));
+        assert!(!pi_version_supported("v1.0.0"));
+        assert!(pi_version_supported("v1.0.2"));
         assert!(!pi_version_supported("unknown"));
     }
 

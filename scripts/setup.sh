@@ -631,7 +631,7 @@ else
     require_or_exit "Node.js / npm (required to install Pi Agent CLI)"
   fi
 
-  if confirm "Prepare bundled Pi Agent runtime @earendil-works/pi-coding-agent@0.99.1? (npm run prepare:runtimes)"; then
+  if confirm "Prepare bundled Pi Agent runtime @earendil-works/pi-coding-agent@1.0.2? (npm run prepare:runtimes)"; then
     if $USE_MIRROR; then
       npm config set registry https://registry.npmmirror.com 2>/dev/null || true
     fi

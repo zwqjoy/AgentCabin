@@ -124,7 +124,7 @@
         <span class="rounded bg-muted px-2 py-0.5 font-mono text-muted-foreground"
           >agent-browser 0.37.0</span
         >
-        <span class="rounded bg-muted px-2 py-0.5 font-mono text-muted-foreground">Pi 0.99.1</span>
+        <span class="rounded bg-muted px-2 py-0.5 font-mono text-muted-foreground">Pi 1.0.2</span>
       </div>
       <p class="mt-2 text-[11px] leading-5 text-muted-foreground">
         由 Pi 执行浏览器自动化；AgentCabin 负责启用、打包和展示执行状态。
