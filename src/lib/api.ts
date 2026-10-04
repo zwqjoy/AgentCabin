@@ -1774,14 +1774,6 @@ export function testBrowser(): Promise<WorkBrowserHealth> {
   return invoke<WorkBrowserHealth>("test_browser");
 }
 
-export async function getBrowserUseBinding(): Promise<boolean> {
-  return invoke<boolean>("get_browser_use_binding");
-}
-
-export async function setBrowserUseBinding(enabled: boolean): Promise<void> {
-  return invoke<void>("set_browser_use_binding", { enabled });
-}
-
 export async function getDesktopUseStatus(): Promise<import("$lib/types/work").DesktopUseStatus> {
   return invoke<import("$lib/types/work").DesktopUseStatus>("get_desktop_use_status");
 }
@@ -1810,10 +1802,6 @@ export async function openDesktopPermissionPane(
   kind: "accessibility" | "screen-recording",
 ): Promise<void> {
   return invoke<void>("open_desktop_permission_pane", { kind });
-}
-
-export async function prepareBrowserRuntime(): Promise<WorkBrowserSummary> {
-  return invoke<WorkBrowserSummary>("prepare_browser_runtime");
 }
 
 export async function setMcpBinding(

@@ -12,18 +12,14 @@
   } from "$lib/types/work";
   import WorkConversationInspector from "./WorkConversationInspector.svelte";
   import FilePreviewPane from "$lib/components/FilePreviewPane.svelte";
-  import BrowserInspector from "$lib/components/browser/BrowserInspector.svelte";
   import { resolveWorkPreviewPath } from "$lib/api/work";
-  import { getWorkBrowserRunId, isInteractiveBrowserToolName } from "$lib/utils/work-browser";
 
-  type WorkAsideTab = "tasks" | "browser" | "files";
+  type WorkAsideTab = "tasks" | "files";
 
   interface Props {
     open: boolean;
     onClose: () => void;
-    onRequestOpenBrowser?: () => void;
     activeTab: WorkAsideTab;
-    browserActivitySeen?: boolean;
     sessionInfo: SessionInfoData | null;
     progress: WorkProgressSnapshot | null;
     progressView?: WorkRunProgressView | null;
@@ -52,9 +48,7 @@
   let {
     open,
     onClose,
-    onRequestOpenBrowser,
     activeTab = $bindable<WorkAsideTab>("tasks"),
-    browserActivitySeen = false,
     sessionInfo,
     progress,
     progressView = null,
@@ -84,8 +78,6 @@
   // the parent Pi/session run. Bind the visible WebContentsView to the same ID
   // used by ToolPipeline or the agent can control one page while this panel
   // attaches a blank surface for the parent session.
-  const browserRunId = $derived(getWorkBrowserRunId(progressView?.workRunId, sessionInfo?.runId));
-  let autoOpenedBrowserRunId = $state("");
   let resolvedFilePath = $state("");
   let filePreviewError = $state("");
   let resolvingFilePath = $state(false);
@@ -114,28 +106,6 @@
       .finally(() => {
         if (sequence === fileResolveSequence) resolvingFilePath = false;
       });
-  });
-
-  let hasBrowserActivity = $derived.by(() => {
-    const hint = [
-      progressView?.currentActivity?.kind,
-      progressView?.currentActivity?.toolName,
-      progress?.activeToolName,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return browserActivitySeen || isInteractiveBrowserToolName(hint);
-  });
-
-  // Open the outer inspector on the first browser action for each run. This
-  // component stays mounted while the aside is closed, so it can request the
-  // parent to reveal the Browser surface before its contents mount.
-  $effect(() => {
-    const runId = browserRunId;
-    if (!hasBrowserActivity || !runId || autoOpenedBrowserRunId === runId) return;
-    autoOpenedBrowserRunId = runId;
-    activeTab = "browser";
-    if (!open) onRequestOpenBrowser?.();
   });
 
   const isTaskCompleted = $derived.by(() => {
@@ -325,31 +295,6 @@
       >
         <span>文件</span>
       </button>
-      <button
-        type="button"
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors relative {activeTab ===
-        'browser'
-          ? 'bg-background text-foreground shadow-xs'
-          : 'text-muted-foreground hover:text-foreground'}"
-        onclick={() => (activeTab = "browser")}
-        title="受控浏览器与交互画布"
-      >
-        <svg
-          class="h-3.5 w-3.5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20" />
-        </svg>
-        <span>浏览器</span>
-        {#if hasBrowserActivity}
-          <span class="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-        {/if}
-      </button>
     </div>
 
     <div class="flex items-center gap-1">
@@ -488,20 +433,5 @@
         </div>
       {/if}
     {/if}
-    <div
-      class="absolute inset-0 overflow-hidden {open && activeTab === 'browser'
-        ? 'visible pointer-events-auto'
-        : 'invisible pointer-events-none'}"
-    >
-      {#if browserRunId}
-        <BrowserInspector
-          runId={browserRunId}
-          mode="work"
-          {readOnly}
-          {isTaskCompleted}
-          surfaceVisible={open && activeTab === "browser"}
-        />
-      {/if}
-    </div>
   </div>
 </aside>

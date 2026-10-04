@@ -14,7 +14,6 @@
   import { fpsCounter, isPerfEnabled } from "$lib/utils/perf";
   import SessionInfoPanel from "$lib/components/SessionInfoPanel.svelte";
   import StatusIcon from "$lib/components/StatusIcon.svelte";
-  import BrowserInspector from "$lib/components/browser/BrowserInspector.svelte";
   import {
     extractFilesFromTimeline,
     extractFilesFromHooks,
@@ -38,7 +37,7 @@
     onToggle,
     onScrollToTool,
     onScrollToTurn,
-    requestedTab = $bindable(null as "tools" | "files" | "info" | "tasks" | "browser" | null),
+    requestedTab = $bindable(null as "tools" | "files" | "info" | "tasks" | null),
     backgroundTasks = new Map(),
     activeBackgroundTasks = [],
     cwd = "",
@@ -55,7 +54,7 @@
     onToggle: () => void;
     onScrollToTool?: (toolUseId: string) => void;
     onScrollToTurn?: (anchorId: string) => void;
-    requestedTab?: "tools" | "files" | "info" | "tasks" | "browser" | null;
+    requestedTab?: "tools" | "files" | "info" | "tasks" | null;
     backgroundTasks?: Map<string, TaskNotificationItem>;
     activeBackgroundTasks?: TaskNotificationItem[];
     /** Working directory for file preview (typically store.effectiveCwd). */
@@ -69,7 +68,7 @@
   } = $props();
 
   // ── Tab state ──
-  type SidebarPanel = "files" | "git" | "tools" | "info" | "tasks" | "browser";
+  type SidebarPanel = "files" | "git" | "tools" | "info" | "tasks";
   let activeTab: SidebarPanel = $state("files");
   let isMaximized = $state(false);
 
@@ -830,30 +829,6 @@
               ></span>
             {/if}
           </button>
-          <!-- 5. Browser Use icon -->
-          <button
-            class="p-1.5 rounded transition-colors relative {activeTab === 'browser'
-              ? 'bg-accent text-foreground'
-              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'}"
-            onclick={() => (activeTab = "browser")}
-            title="浏览器操作 / Browser Use"
-          >
-            <svg
-              class="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <path
-                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
-              />
-            </svg>
-          </button>
         </div>
         <button
           class="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-accent"
@@ -1605,24 +1580,6 @@
               </div>
             </div>
           {/if}
-        </div>
-      {/if}
-
-      {#if mountedTabs.has("browser")}
-        <div
-          class="absolute inset-0 flex flex-col"
-          style="visibility: {activeTab === 'browser'
-            ? 'visible'
-            : 'hidden'}; pointer-events: {activeTab === 'browser' ? 'auto' : 'none'};"
-        >
-          <BrowserInspector
-            {runId}
-            mode="code"
-            readOnly={false}
-            isTaskCompleted={sessionInfo?.status === "completed" ||
-              sessionInfo?.status === "failed" ||
-              sessionInfo?.status === "stopped"}
-          />
         </div>
       {/if}
     </div>

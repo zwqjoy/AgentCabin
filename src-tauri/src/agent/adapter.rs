@@ -57,9 +57,6 @@ pub struct AdapterSettings {
     /// Work-only Browser adapter bridge. It is loaded only when the Work
     /// Browser config is enabled and has a Work-owned provider secret.
     pub pi_work_browser_adapter: Option<String>,
-    /// Browser Use extension entrypoint (pi-agent-browser-native).
-    /// Loaded when browser_use_enabled is true.
-    pub pi_browser_native_extension: Option<String>,
     /// AgentCabin-shared Pi extension package paths explicitly enabled for the
     /// current profile. Package installation is shared; activation is not.
     pub pi_shared_extension_sources: Vec<String>,
@@ -332,7 +329,6 @@ pub fn build_adapter_settings(
         pi_work_extension: None,
         pi_work_mcp_adapter: None,
         pi_work_browser_adapter: None,
-        pi_browser_native_extension: None,
         pi_shared_extension_sources: Vec::new(),
         pi_work_package_sources: Vec::new(),
         pi_work_skill_sources: Vec::new(),
@@ -555,7 +551,6 @@ mod tests {
             pi_work_extension: None,
             pi_work_mcp_adapter: None,
             pi_work_browser_adapter: None,
-            pi_browser_native_extension: None,
             pi_shared_extension_sources: vec![],
             pi_work_package_sources: vec![],
             pi_work_skill_sources: vec![],

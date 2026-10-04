@@ -49,7 +49,6 @@ pub const CAPABILITY_KIND_MCP: &str = "mcp";
 pub const CAPABILITY_KIND_CONNECTOR: &str = "connector";
 pub const CAPABILITY_KIND_AGENT_PLUGIN: &str = "agent-plugin";
 pub const CAPABILITY_KIND_WEB_ACCESS: &str = "web-access";
-pub const CAPABILITY_KIND_BROWSER_USE: &str = "browser-use";
 pub const CAPABILITY_KIND_DESKTOP_USE: &str = "desktop-use";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -82,7 +81,6 @@ fn validate_capability_kind(kind: &str) -> Result<&'static str, String> {
         CAPABILITY_KIND_CONNECTOR => Ok(CAPABILITY_KIND_CONNECTOR),
         CAPABILITY_KIND_AGENT_PLUGIN => Ok(CAPABILITY_KIND_AGENT_PLUGIN),
         CAPABILITY_KIND_WEB_ACCESS => Ok(CAPABILITY_KIND_WEB_ACCESS),
-        CAPABILITY_KIND_BROWSER_USE => Ok(CAPABILITY_KIND_BROWSER_USE),
         CAPABILITY_KIND_DESKTOP_USE => Ok(CAPABILITY_KIND_DESKTOP_USE),
         other => Err(format!("Unknown capability kind '{other}'")),
     }
@@ -491,62 +489,6 @@ pub fn set_web_access_binding_with_root(root: &Path, enabled: bool) -> Result<()
 
 pub fn set_web_access_binding(enabled: bool) -> Result<(), String> {
     set_web_access_binding_with_root(&storage::data_dir(), enabled)
-}
-
-/// Browser Use controls the shared Electron Chromium capability. Its
-/// enablement is global.
-pub fn browser_use_binding_path_with_root(root: &Path) -> PathBuf {
-    root.join("browser-use-binding.json")
-}
-
-pub fn browser_use_binding_path() -> PathBuf {
-    browser_use_binding_path_with_root(&storage::data_dir())
-}
-
-pub fn read_browser_use_binding_with_root(root: &Path) -> Option<WebAccessBinding> {
-    let path = browser_use_binding_path_with_root(root);
-    if !is_regular_file_without_symlink(&path) {
-        return None;
-    }
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|content| serde_json::from_str::<WebAccessBindingsFile>(&content).ok())
-        .and_then(|file| file.binding)
-}
-
-pub fn is_browser_use_enabled_with_root(root: &Path) -> bool {
-    if let Some(enabled) =
-        global_capability_override_with_root(root, CAPABILITY_KIND_BROWSER_USE, "browser-use")
-    {
-        return enabled;
-    }
-    read_browser_use_binding_with_root(root)
-        .map(|binding| binding.enabled)
-        .unwrap_or(true)
-}
-
-pub fn is_browser_use_enabled() -> bool {
-    is_browser_use_enabled_with_root(&storage::data_dir())
-}
-
-pub fn set_browser_use_binding_with_root(root: &Path, enabled: bool) -> Result<(), String> {
-    let path = browser_use_binding_path_with_root(root);
-    let file = WebAccessBindingsFile {
-        binding: Some(WebAccessBinding { enabled }),
-    };
-    let serialized = serde_json::to_string_pretty(&file)
-        .map_err(|error| format!("Failed to serialize Browser Use binding: {error}"))?;
-    write_managed_file(&path, format!("{serialized}\n"), "Browser Use binding")?;
-    set_global_capability_binding_with_root(
-        root,
-        CAPABILITY_KIND_BROWSER_USE,
-        "browser-use",
-        enabled,
-    )
-}
-
-pub fn set_browser_use_binding(enabled: bool) -> Result<(), String> {
-    set_browser_use_binding_with_root(&storage::data_dir(), enabled)
 }
 
 /// Desktop Use is an app-owned native capability rather than an installable
@@ -2470,26 +2412,6 @@ mod tests {
             tmp.path(),
             "shared-connector"
         ));
-    }
-
-    #[test]
-    fn browser_use_binding_is_global_and_default_enabled() {
-        let tmp = tempfile::TempDir::new().unwrap();
-
-        assert!(is_browser_use_enabled_with_root(tmp.path()));
-
-        set_browser_use_binding_with_root(tmp.path(), false).unwrap();
-        assert!(!is_browser_use_enabled_with_root(tmp.path()));
-
-        assert!(browser_use_binding_path_with_root(tmp.path()).is_file());
-        assert!(!tmp
-            .path()
-            .join("profiles/code/browser-use-binding.json")
-            .exists());
-        assert!(!tmp
-            .path()
-            .join("profiles/work/browser-use-binding.json")
-            .exists());
     }
 
     #[test]

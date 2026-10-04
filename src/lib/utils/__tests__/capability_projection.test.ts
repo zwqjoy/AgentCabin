@@ -140,7 +140,6 @@ describe("Capability Center 2.0 Projection & UI Models", () => {
         },
       ],
       browserEnabled: true,
-      browserUseEnabled: false,
       browserStatus: "ready",
       allowedTools: ["*"],
       disallowedTools: [],

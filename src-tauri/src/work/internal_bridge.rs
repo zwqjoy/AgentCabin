@@ -128,10 +128,6 @@ pub async fn start_internal_bridge() -> Result<u16, String> {
         .route("/internal/work/execute", post(internal_work_execute))
         .route("/internal/work/tool_pipeline", post(internal_tool_pipeline))
         .route(
-            "/internal/work/browser_host_command",
-            post(internal_browser_host_command),
-        )
-        .route(
             "/internal/work/task_state/update",
             post(internal_task_state_update),
         )
@@ -851,126 +847,6 @@ async fn internal_inbox_status(
     Ok(Json(json!({
         "status": item.status,
         "response": item.response,
-    })))
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct BrowserHostCommandPayload {
-    args: Vec<String>,
-    cwd: String,
-    #[serde(default)]
-    stdin: String,
-    #[serde(default)]
-    env: HashMap<String, String>,
-}
-
-async fn internal_browser_host_command(
-    State(state): State<InternalBridgeState>,
-    headers: HeaderMap,
-    Json(payload): Json<BrowserHostCommandPayload>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let ctx = authenticate_work_context(&state, &headers).await?;
-    let invalid = |message: String| (StatusCode::BAD_REQUEST, Json(json!({"error": message})));
-    if payload.args.is_empty()
-        || payload.args.len() > 64
-        || payload.args.iter().any(|arg| arg.len() > 8192)
-        || payload.stdin.len() > 1024 * 1024
-    {
-        return Err(invalid(
-            "Invalid browser command arguments or input size".to_string(),
-        ));
-    }
-    let paths = WorkPaths::app();
-    let cwd = paths
-        .resolve_command_cwd(
-            &ctx.token_info.workspace_id,
-            Some(&ctx.token_info.run_id),
-            &payload.cwd,
-            true,
-        )
-        .map_err(invalid)?;
-
-    let executable = crate::agent::runtime_locator::bundled()
-        .map_err(invalid)?
-        .agent_browser;
-    if !executable.is_file() {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"error": "Bundled agent-browser is unavailable"})),
-        ));
-    }
-    let mut command = tokio::process::Command::new(executable);
-    command
-        .args(&payload.args)
-        .current_dir(cwd)
-        .env_remove("AGENTCABIN_WORK_BROWSER_HOST_PROXY")
-        .env_remove("AGENTCABIN_WORK_BRIDGE_TOKEN")
-        .env_remove("AGENTCABIN_WORK_BRIDGE_PORT")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    for (key, value) in &payload.env {
-        if matches!(
-            key.as_str(),
-            "AGENT_BROWSER_NAMESPACE"
-                | "AGENT_BROWSER_DEFAULT_TIMEOUT"
-                | "AGENT_BROWSER_IDLE_TIMEOUT_MS"
-                | "AGENT_BROWSER_CONFIG"
-                | "AGENT_BROWSER_USER_AGENT"
-                | "AGENT_BROWSER_RESTORE"
-                | "AGENT_BROWSER_AUTOSAVE_INTERVAL_MS"
-        ) && value.len() <= 1024
-        {
-            command.env(key, value);
-        }
-    }
-    #[cfg(unix)]
-    {
-        let socket_dir =
-            crate::work::runtime::pi::prepare_agent_browser_socket_dir().map_err(invalid)?;
-        command
-            .env("PI_AGENT_BROWSER_SOCKET_DIR", &socket_dir)
-            .env("AGENT_BROWSER_SOCKET_DIR", socket_dir);
-    }
-    let mut child = command.spawn().map_err(|error| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": format!("Failed to start host browser: {error}")})),
-        )
-    })?;
-    if let Some(mut pipe) = child.stdin.take() {
-        use tokio::io::AsyncWriteExt;
-        pipe.write_all(payload.stdin.as_bytes())
-            .await
-            .map_err(|error| invalid(error.to_string()))?;
-    }
-    let output = tokio::time::timeout(Duration::from_secs(90), child.wait_with_output())
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::GATEWAY_TIMEOUT,
-                Json(json!({"error": "Host browser command timed out"})),
-            )
-        })?
-        .map_err(|error| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": error.to_string()})),
-            )
-        })?;
-    if output.stdout.len() > 8 * 1024 * 1024 || output.stderr.len() > 8 * 1024 * 1024 {
-        return Err((
-            StatusCode::PAYLOAD_TOO_LARGE,
-            Json(json!({"error": "Browser output exceeds 8 MiB"})),
-        ));
-    }
-    Ok(Json(json!({
-        "status": "completed",
-        "exitCode": output.status.code().unwrap_or(1),
-        "stdout": String::from_utf8_lossy(&output.stdout),
-        "stderr": String::from_utf8_lossy(&output.stderr),
     })))
 }
 

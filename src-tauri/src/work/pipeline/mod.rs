@@ -161,23 +161,6 @@ impl ToolPipeline {
         )
     }
 
-    fn is_browser_operator_tool(tool_name: &str) -> bool {
-        matches!(
-            tool_name,
-            "browser_navigate"
-                | "browser_snapshot"
-                | "browser_take_screenshot"
-                | "browser_wait_for"
-                | "browser_tabs"
-                | "browser_scroll"
-                | "browser_press_key"
-                | "browser_close"
-                | "browser_click"
-                | "browser_type"
-                | "browser_select_option"
-        )
-    }
-
     fn apply_capability_execution_policy(
         tool_name: &str,
         desktop_enabled: bool,
@@ -189,8 +172,6 @@ impl ToolPipeline {
             } else {
                 WorkPolicyDecision::Deny
             }
-        } else if Self::is_browser_operator_tool(tool_name) {
-            WorkPolicyDecision::Allow
         } else {
             decision
         }

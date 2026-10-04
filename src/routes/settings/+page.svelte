@@ -90,7 +90,6 @@
   import DoctorSettings from "$lib/components/settings/pages/DoctorSettings.svelte";
   import RemoteAccessSettings from "$lib/components/settings/pages/RemoteAccessSettings.svelte";
   import WebAccessSettings from "$lib/components/settings/pages/WebAccessSettings.svelte";
-  import BrowserUseSettings from "$lib/components/settings/pages/BrowserUseSettings.svelte";
   import DesktopUseSettings from "$lib/components/settings/pages/DesktopUseSettings.svelte";
   import {
     resolveSettingsRoute,
@@ -148,8 +147,6 @@
         return "远程访问 (Remote Access)";
       case "web-access":
         return "网络访问 (Web Access)";
-      case "browser-use":
-        return "浏览器自动化 (Browser Use)";
       case "desktop-use":
         return "电脑控制 (Desktop Use)";
       default:
@@ -185,8 +182,6 @@
         return "通过局域网或 HTTP 隧道，从浏览器访问 AgentCabin。";
       case "web-access":
         return "配置搜索供应商与网页抓取知识库连接能力。";
-      case "browser-use":
-        return "配置 Playwright/Chromium 自动化环境与浏览器操控通道。";
       case "desktop-use":
         return "管理系统辅助功能权限与原生屏幕自动化操控。";
       default:
@@ -244,20 +239,17 @@
   let desktopToolLoading = $state(true);
   let webAccessEnabled = $state(true);
   let webAccessConfig = $state<WorkBrowserSummary | null>(null);
-  let browserUseEnabled = $state(true);
   let desktopUseStatus = $state<DesktopUseStatus | null>(null);
 
   async function refreshDesktopToolSettings() {
     desktopToolLoading = true;
     try {
-      const [webEnabled, browserEnabled, browserConfig, desktopStatus] = await Promise.allSettled([
+      const [webEnabled, browserConfig, desktopStatus] = await Promise.allSettled([
         api.getWebAccessBinding(),
-        api.getBrowserUseBinding(),
         api.getBrowserConfig(),
         api.getDesktopUseStatus(),
       ]);
       if (webEnabled.status === "fulfilled") webAccessEnabled = webEnabled.value;
-      if (browserEnabled.status === "fulfilled") browserUseEnabled = browserEnabled.value;
       if (browserConfig.status === "fulfilled") webAccessConfig = browserConfig.value;
       if (desktopStatus.status === "fulfilled") desktopUseStatus = desktopStatus.value;
       if (desktopStatus.status === "rejected") {
@@ -288,16 +280,6 @@
   async function toggleSettingsWebAccess(enabled: boolean) {
     await api.setWebAccessBinding(enabled);
     webAccessEnabled = enabled;
-  }
-
-  async function toggleSettingsBrowserUse(enabled: boolean) {
-    await api.setBrowserUseBinding(enabled);
-    browserUseEnabled = enabled;
-  }
-
-  async function prepareSettingsBrowserRuntime(): Promise<WorkBrowserSummary> {
-    webAccessConfig = await api.prepareBrowserRuntime();
-    return webAccessConfig;
   }
 
   async function toggleSettingsDesktopUse(enabled: boolean) {
@@ -1909,17 +1891,6 @@
           onSave={saveSettingsWebAccess}
           onToggle={toggleSettingsWebAccess}
           onTest={testSettingsWebAccess}
-        />
-      {/if}
-    {:else if activeTab === "browser-use"}
-      {#if webAccessConfig}
-        <BrowserUseSettings
-          runtime={webAccessConfig}
-          enabled={browserUseEnabled}
-          onToggle={async (enabled) => {
-            await toggleSettingsBrowserUse(enabled);
-          }}
-          onPrepare={prepareSettingsBrowserRuntime}
         />
       {/if}
     {:else if activeTab === "desktop-use"}

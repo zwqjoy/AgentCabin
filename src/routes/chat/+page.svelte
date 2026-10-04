@@ -573,8 +573,6 @@
   let codeAsideRequestedTab = $state<CodeAsideTabType | null>(null);
   let codeAsideRequestedPath = $state<string | null>(null);
   let codeAsideRequestedReviewFilePath = $state<string | null>(null);
-  let browserAutoOpenedRunId = $state("");
-  let observedLiveBrowserActivitySequence = store.liveBrowserToolActivity?.sequence ?? 0;
   let turnSummaryRunId = "";
 
   function openFileInCodeAside(filePath: string) {
@@ -1058,7 +1056,7 @@
   });
 
   let stashedInput: PromptInputSnapshot | null = $state(null);
-  let sidebarRequestedTab = $state<"tools" | "files" | "info" | "tasks" | "browser" | null>(null);
+  let sidebarRequestedTab = $state<"tools" | "files" | "info" | "tasks" | null>(null);
   let requestedPreviewPath = $state<string | null>(null);
 
   function openPreviewForPath(path: string) {
@@ -2679,27 +2677,6 @@
     codeAsideOpen = open;
     codeAsideOpenByRun.set(runId, open);
   }
-
-  $effect(() => {
-    const activity = store.liveBrowserToolActivity;
-    if (!activity || activity.sequence === observedLiveBrowserActivitySequence) return;
-    observedLiveBrowserActivitySequence = activity.sequence;
-
-    const activeRunId = runId || store.run?.id || "";
-    if (
-      !activeRunId ||
-      activity.runId !== activeRunId ||
-      (runId && store.run?.id !== runId) ||
-      browserAutoOpenedRunId === activeRunId
-    ) {
-      return;
-    }
-
-    browserAutoOpenedRunId = activeRunId;
-    codeAsideRequestedPath = null;
-    codeAsideRequestedTab = "browser";
-    setCodeAsideOpen(true);
-  });
 
   // Keep the Code aside visibility with its conversation as the chat page is
   // reused while switching between runs.

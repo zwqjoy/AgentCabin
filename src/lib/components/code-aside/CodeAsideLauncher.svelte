@@ -11,7 +11,6 @@
   const options: { type: CodeAsideTabType; label: string; shortcut: string }[] = [
     { type: "review", label: "审查", shortcut: CODE_ASIDE_SHORTCUTS.review },
     { type: "terminal", label: "终端", shortcut: CODE_ASIDE_SHORTCUTS.terminal },
-    { type: "browser", label: "浏览器", shortcut: CODE_ASIDE_SHORTCUTS.browser },
     { type: "file", label: "文件", shortcut: CODE_ASIDE_SHORTCUTS.file },
   ];
 </script>
@@ -50,20 +49,6 @@
             >
               <polyline points="4 17 10 11 4 5" />
               <line x1="12" y1="19" x2="20" y2="19" />
-            </svg>
-          {:else if opt.type === "browser"}
-            <svg
-              class="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <path
-                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
-              />
             </svg>
           {:else}
             <svg

@@ -513,12 +513,6 @@ fn summary(
         // Keep the legacy aggregate meaningful for clients that do not yet
         // render the runtime matrix.
         runtime_available: pi_runtime_available || dsh_runtime_available,
-        browser_runtime_node_available: true,
-        browser_runtime_available: true,
-        playwright_installed: true,
-        chromium_installed: true,
-        browser_runtime_managed: true,
-        browser_runtime_message: String::new(),
         max_results: config.max_results,
         endpoint_url: config.endpoint_url.clone(),
         auth_kind: auth_kind_for_provider(&config.provider).to_string(),

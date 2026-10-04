@@ -15,7 +15,6 @@ export type SettingsTab =
   | "doctor"
   | "remote-access"
   | "web-access"
-  | "browser-use"
   | "desktop-use";
 
 export interface ResolvedSettingsRoute {
@@ -39,7 +38,6 @@ export const CANONICAL_SETTINGS_TABS: readonly SettingsTab[] = [
   "doctor",
   "remote-access",
   "web-access",
-  "browser-use",
   "desktop-use",
 ] as const;
 
@@ -120,7 +118,7 @@ export function resolveSettingsRoute(
     return { tab: "web-access" };
   }
   if (tab === "browser-use" || tab === "browser" || category === "browser") {
-    return { tab: "browser-use" };
+    return { tab: "web-access" };
   }
   if (tab === "desktop-use" || tab === "desktop" || tab === "computer") {
     return { tab: "desktop-use" };

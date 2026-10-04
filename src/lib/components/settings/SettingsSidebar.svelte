@@ -56,7 +56,6 @@
       items: [
         { id: "remote-access", label: "远程访问", icon: "remote-access" },
         { id: "web-access", label: "网络访问", icon: "web-access" },
-        { id: "browser-use", label: "浏览器自动化", icon: "browser-use" },
         { id: "desktop-use", label: "电脑控制", icon: "desktop-use" },
       ],
     },
@@ -305,19 +304,6 @@
                         ><rect x="3" y="4" width="18" height="12" rx="2" /><path
                           d="M8 20h8M12 16v4"
                         /><path d="m8 10 2 2 4-4" /></svg
-                      >
-                    {:else if item.icon === "browser-use"}
-                      <svg
-                        class="h-4 w-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        ><rect width="18" height="18" x="3" y="3" rx="2" /><path
-                          d="M3 9h18M9 21V9"
-                        /></svg
                       >
                     {:else if item.icon === "desktop-use"}
                       <svg

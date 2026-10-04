@@ -54,35 +54,25 @@
     mcpCount: number;
     connectorsCount: number;
     networkEnabled: boolean;
-    browserUseEnabled: boolean;
   }>({
     skillsCount: 0,
     mcpCount: 0,
     connectorsCount: 0,
     networkEnabled: true,
-    browserUseEnabled: true,
   });
   let legacyWorkRuntime = $state<string | null>(null);
 
   async function loadCapabilitiesSummary() {
     try {
-      const [
-        skills,
-        mcpCatalog,
-        mcpBindings,
-        connectorCatalog,
-        connectorBindings,
-        webAccess,
-        browserUse,
-      ] = await Promise.all([
-        api.listSkills(),
-        api.listMcpCatalog().catch(() => []),
-        api.getMcpBindings().catch(() => []),
-        api.listConnectorCatalog().catch(() => []),
-        api.getConnectorBindings().catch(() => []),
-        api.getWebAccessBinding().catch(() => true),
-        api.getBrowserUseBinding().catch(() => true),
-      ]);
+      const [skills, mcpCatalog, mcpBindings, connectorCatalog, connectorBindings, webAccess] =
+        await Promise.all([
+          api.listSkills(),
+          api.listMcpCatalog().catch(() => []),
+          api.getMcpBindings().catch(() => []),
+          api.listConnectorCatalog().catch(() => []),
+          api.getConnectorBindings().catch(() => []),
+          api.getWebAccessBinding().catch(() => true),
+        ]);
       const isEnabledByDefault = <T extends { id: string }>(
         catalog: T[],
         bindings: Array<{ serverId?: string; connectorId?: string; enabled: boolean }>,
@@ -104,7 +94,6 @@
           "connectorId",
         ),
         networkEnabled: webAccess,
-        browserUseEnabled: browserUse,
       };
     } catch {
       // fallback
@@ -412,23 +401,6 @@
           type="button"
           class="text-[11px] text-primary hover:underline"
           onclick={() => onNavigate("web-access")}
-        >
-          管理 &rarr;
-        </button>
-      </div>
-
-      <!-- Browser -->
-      <div
-        class="flex flex-col justify-between p-3 rounded-lg border border-border/50 bg-background/50 text-center"
-      >
-        <span class="text-[11px] text-muted-foreground">受管浏览器</span>
-        <span class="text-xs font-semibold text-blue-600 dark:text-blue-400 my-2">
-          {capabilityStats.browserUseEnabled ? "已启用" : "已停用"}
-        </span>
-        <button
-          type="button"
-          class="text-[11px] text-primary hover:underline"
-          onclick={() => onNavigate("browser-use")}
         >
           管理 &rarr;
         </button>

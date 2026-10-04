@@ -370,12 +370,6 @@ pub struct WorkBrowserSummary {
     #[serde(default)]
     pub dsh_runtime_available: bool,
     pub runtime_available: bool,
-    pub browser_runtime_node_available: bool,
-    pub browser_runtime_available: bool,
-    pub playwright_installed: bool,
-    pub chromium_installed: bool,
-    pub browser_runtime_managed: bool,
-    pub browser_runtime_message: String,
     pub max_results: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint_url: Option<String>,

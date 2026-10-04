@@ -24,7 +24,6 @@ pub enum WorkContextKind {
     Connector,
     AgentPlugin,
     WebAccess,
-    BrowserUse,
     Library,
     Artifact,
     Memory,
@@ -37,12 +36,7 @@ impl WorkContextKind {
     pub fn is_capability(&self) -> bool {
         matches!(
             self,
-            Self::Skill
-                | Self::Mcp
-                | Self::Connector
-                | Self::AgentPlugin
-                | Self::WebAccess
-                | Self::BrowserUse
+            Self::Skill | Self::Mcp | Self::Connector | Self::AgentPlugin | Self::WebAccess
         )
     }
 
@@ -61,7 +55,6 @@ impl WorkContextKind {
             Self::Connector => "connector",
             Self::AgentPlugin => "agent_plugin",
             Self::WebAccess => "web_access",
-            Self::BrowserUse => "browser_use",
             Self::Library => "library",
             Self::Artifact => "artifact",
             Self::Memory => "memory",
@@ -356,7 +349,6 @@ pub struct CapabilitySnapshot {
     pub mcp_servers: Vec<String>,
     pub connectors: Vec<String>,
     pub web_access: bool,
-    pub browser_use: bool,
 }
 
 impl CapabilitySnapshot {
@@ -377,14 +369,12 @@ impl CapabilitySnapshot {
             .map(|s| s.name.clone())
             .collect();
         let web_access = capabilities.browser_enabled;
-        let browser_use = capabilities.browser_use_enabled;
 
         Self {
             skills,
             mcp_servers,
             connectors,
             web_access,
-            browser_use,
         }
     }
 
@@ -410,16 +400,12 @@ impl CapabilitySnapshot {
         let web_access = plan.segments.iter().any(|s| {
             s.kind == WorkContextKind::WebAccess && s.selection == WorkContextSelection::Selected
         });
-        let browser_use = plan.segments.iter().any(|s| {
-            s.kind == WorkContextKind::BrowserUse && s.selection == WorkContextSelection::Selected
-        });
 
         Self {
             skills,
             mcp_servers,
             connectors,
             web_access,
-            browser_use,
         }
     }
 }

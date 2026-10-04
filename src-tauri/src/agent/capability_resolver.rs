@@ -119,8 +119,6 @@ pub struct EffectiveCapabilities {
     pub mcp_servers: Vec<EffectiveMcpServer>,
     pub connectors: Vec<EffectiveConnector>,
     pub browser_enabled: bool,
-    #[serde(default)]
-    pub browser_use_enabled: bool,
     pub browser_config: Option<WorkBrowserConfig>,
     pub allowed_tools: Vec<String>,
     pub disallowed_tools: Vec<String>,
@@ -646,7 +644,6 @@ impl CapabilityResolver {
             mcp_servers,
             connectors,
             browser_enabled,
-            browser_use_enabled: profile_bindings::is_browser_use_enabled_with_root(root),
             browser_config,
             allowed_tools: Vec::new(),
             disallowed_tools: Vec::new(),

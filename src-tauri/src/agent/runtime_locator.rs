@@ -21,8 +21,6 @@ pub struct Version {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Runtimes {
     pub pi: Package,
-    #[serde(default, rename = "agentBrowser")]
-    pub agent_browser: Option<Package>,
 }
 #[derive(Debug, Clone, Deserialize)]
 pub struct Package {
@@ -37,7 +35,6 @@ pub struct RuntimePaths {
     pub node: PathBuf,
     pub pi: PathBuf,
     pub pnpm: PathBuf,
-    pub agent_browser: PathBuf,
 }
 
 /// Directories that may hold the app-pinned Pi extension packages, i.e. the
@@ -126,98 +123,10 @@ pub fn bundled() -> Result<RuntimePaths, String> {
         }),
         pi: bin("pi"),
         pnpm: bin("pnpm"),
-        agent_browser: bin("agent-browser"),
         root,
         manifest,
     })
 }
-pub fn resolve_agent_browser() -> Result<String, String> {
-    if let Ok(paths) = bundled() {
-        let p = &paths.agent_browser;
-        if p.is_file() {
-            return Ok(p.to_string_lossy().into());
-        }
-    }
-    for node_modules in extension_node_modules_dirs() {
-        let candidate = node_modules.join(".bin").join(if cfg!(windows) {
-            "agent-browser.cmd"
-        } else {
-            "agent-browser"
-        });
-        if candidate.is_file() {
-            return Ok(candidate.to_string_lossy().into());
-        }
-    }
-    Err("RuntimeClosureInvalid: missing agent-browser".to_string())
-}
-
-/// Chromium-family browser bundles agent-browser may launch on macOS. Keep
-/// system Chrome-family apps and Playwright's Chrome for Testing bundles
-/// explicit so Work can grant process-exec without opening the whole cache.
-#[cfg(target_os = "macos")]
-const MACOS_BROWSER_BUNDLES: [&str; 4] = [
-    "/Applications/Google Chrome.app",
-    "/Applications/Google Chrome Canary.app",
-    "/Applications/Chromium.app",
-    "/Applications/Brave Browser.app",
-];
-
-/// Resolve the concrete Chrome bundle available to agent-browser. Prefer the
-/// newest Playwright-managed Chrome for Testing install because that is the
-/// browser agent-browser uses when it has been installed; fall back to a
-/// system Chrome-family app when no cached browser is present.
-#[cfg(target_os = "macos")]
-pub fn resolve_installed_browser_bundle() -> Option<PathBuf> {
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        let browser_cache = home.join("Library/Caches/ms-playwright");
-        if let Ok(entries) = std::fs::read_dir(browser_cache) {
-            let mut entries: Vec<_> = entries.flatten().collect();
-            entries.sort_by_key(|entry| {
-                entry
-                    .file_name()
-                    .to_string_lossy()
-                    .strip_prefix("chromium-")
-                    .and_then(|version| version.parse::<u32>().ok())
-                    .unwrap_or_default()
-            });
-            entries.reverse();
-            for entry in entries {
-                let name = entry.file_name();
-                if !name.to_string_lossy().starts_with("chromium-") {
-                    continue;
-                }
-
-                for bundle in [
-                    entry
-                        .path()
-                        .join("chrome-mac-arm64/Google Chrome for Testing.app"),
-                    entry
-                        .path()
-                        .join("chrome-mac-x64/Google Chrome for Testing.app"),
-                    entry
-                        .path()
-                        .join("chrome-mac/Google Chrome for Testing.app"),
-                    entry.path().join("chrome-mac/Chromium.app"),
-                ] {
-                    if bundle.is_dir() {
-                        return Some(bundle);
-                    }
-                }
-            }
-        }
-    }
-
-    MACOS_BROWSER_BUNDLES
-        .iter()
-        .map(PathBuf::from)
-        .find(|path| path.is_dir())
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn resolve_installed_browser_bundle() -> Option<PathBuf> {
-    None
-}
-
 pub fn resolve_pi() -> Result<String, String> {
     let p = bundled()?.pi;
     if p.is_file() {

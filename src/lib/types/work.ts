@@ -371,12 +371,6 @@ export interface WorkBrowserSummary {
   piRuntimeAvailable?: boolean;
   dshRuntimeAvailable?: boolean;
   runtimeAvailable: boolean;
-  browserRuntimeNodeAvailable: boolean;
-  browserRuntimeAvailable: boolean;
-  playwrightInstalled: boolean;
-  chromiumInstalled: boolean;
-  browserRuntimeManaged: boolean;
-  browserRuntimeMessage: string;
   maxResults: number;
   endpointUrl?: string;
   authKind?: string;
@@ -1351,7 +1345,6 @@ export interface RunEffectiveCapabilitiesView {
   mcpServers: McpServerCapabilityItemView[];
   connectors: ConnectorCapabilityItemView[];
   browserEnabled: boolean;
-  browserUseEnabled: boolean;
   browserStatus: string;
   allowedTools: string[];
   disallowedTools: string[];

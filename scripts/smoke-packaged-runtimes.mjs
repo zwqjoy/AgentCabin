@@ -88,11 +88,6 @@ const npmCli = resolve(
     : "node/node_modules/npm/bin/npm-cli.js",
 );
 
-const agentBrowserBin = resolve(
-  runtimeRoot,
-  isWin ? "agent-browser/bin/agent-browser.cmd" : "agent-browser/bin/agent-browser",
-);
-
 const requiredBinaries = [
   ["node", nodeBin],
   ["npm-cli", npmCli],
@@ -100,9 +95,7 @@ const requiredBinaries = [
   ["pi", piBin],
 ];
 
-if (manifest.runtimes?.agentBrowser) {
-  requiredBinaries.push(["agent-browser", agentBrowserBin]);
-}
+
 
 for (const [name, path] of requiredBinaries) {
   if (!existsSync(path)) {
@@ -124,7 +117,6 @@ const bundledBinDirs = [
   resolve(runtimeRoot, isWin ? "node" : "node/bin"),
   resolve(runtimeRoot, isWin ? "pnpm/bin" : "pnpm/bin"),
   resolve(runtimeRoot, isWin ? "pi/bin" : "pi/bin"),
-  resolve(runtimeRoot, isWin ? "agent-browser/bin" : "agent-browser/bin"),
 ];
 const augmentedPath = `${bundledBinDirs.join(isWin ? ";" : ":")}${isWin ? ";" : ":"}${process.env.PATH || ""}`;
 
@@ -269,170 +261,33 @@ async function testPiExtensionInstall() {
   console.log("✓ Pi extension removed successfully");
 }
 
-async function testAgentBrowserSmoke() {
-  console.log("\n=== 4. Testing agent-browser Presence & Version Validation ===");
-  if (!existsSync(agentBrowserBin)) {
-    throw new Error(`agent-browser binary not found at ${agentBrowserBin}`);
-  }
-
-  const expectedVersion = manifest.runtimes?.agentBrowser?.version || "0.37.0";
-
-  // 1. Run agent-browser binary directly
-  console.log("Checking agent-browser binary directly...");
-  const res = runSync(agentBrowserBin, ["--version"]);
-  const versionOutput = res.stdout.trim();
-  console.log(`agent-browser output (direct): ${versionOutput}`);
-  if (!versionOutput.includes(expectedVersion)) {
-    throw new Error(
-      `agent-browser version mismatch: expected ${expectedVersion}, got ${versionOutput}`,
-    );
-  }
-  console.log(`✓ agent-browser direct binary verified (${expectedVersion})`);
-
-  // 2. Run agent-browser via augmented PATH discovery
-  console.log("Checking agent-browser discovery via augmented PATH...");
-  const resPath = runSync("agent-browser", ["--version"]);
-  const pathVersionOutput = resPath.stdout.trim();
-  console.log(`agent-browser output (via PATH): ${pathVersionOutput}`);
-  if (!pathVersionOutput.includes(expectedVersion)) {
-    throw new Error(
-      `agent-browser via PATH lookup failed: expected ${expectedVersion}, got ${pathVersionOutput}`,
-    );
-  }
-  console.log(`✓ agent-browser verified via PATH lookup (${expectedVersion})`);
-
-  // 3. Validate packaged pi-agent-browser-native extension pinning (0.8.2)
-  const isPackagedClosure = !runtimeRoot.endsWith("runtime-build");
-  const packagedExtPkgJson = resolve(
-    runtimeRoot,
-    "../runtime/extensions/node_modules/pi-agent-browser-native/package.json",
-  );
-  const devExtPkgJson = resolve(
-    root,
-    "src-tauri/runtime/extensions/node_modules/pi-agent-browser-native/package.json",
-  );
-
-  const targetExtPkgJson = isPackagedClosure ? packagedExtPkgJson : devExtPkgJson;
-
-  if (!existsSync(targetExtPkgJson)) {
-    throw new Error(
-      `pi-agent-browser-native package.json not found in ${isPackagedClosure ? "packaged resources" : "dev extensions"} (checked ${targetExtPkgJson})`,
-    );
-  }
-
-  const extPkg = JSON.parse(readFileSync(targetExtPkgJson, "utf8"));
-  if (extPkg.version !== "0.8.2") {
-    throw new Error(
-      `pi-agent-browser-native version in ${targetExtPkgJson} mismatch: expected exact 0.8.2, got ${extPkg.version}`,
-    );
-  }
-  console.log(
-    `✓ pi-agent-browser-native installed package verified exact ${extPkg.version} (${targetExtPkgJson})`,
-  );
-  return targetExtPkgJson;
-}
-
-async function testBrowserUseActiveToolsSmoke(targetExtPkgJson) {
-  console.log("\n=== 5. Testing Browser Use Active Tools (Code & Work Modes) ===");
-  const browserExtDir = resolve(targetExtPkgJson, "..");
-  const coreExtPath = resolve(root, "src-tauri/src/work/pi_core_extension.mjs");
-  const piSdkPath = resolve(
-    runtimeRoot,
-    "pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js",
-  );
-
+async function testWorkActiveToolsSmoke() {
+  const piSdkPath = resolve(runtimeRoot, "pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js");
   const { createAgentSession, DefaultResourceLoader } = await import(piSdkPath);
-
-  // 1. Code Mode + Browser Use ON
-  console.log("Checking Code Mode + Browser Use ON active tools...");
-  const tempAgentDirCode = createTempDir("smoke-code-bu");
-  const resourceLoaderCode = new DefaultResourceLoader({
-    cwd: process.cwd(),
-    agentDir: tempAgentDirCode,
-    additionalExtensionPaths: [browserExtDir],
-  });
-  await resourceLoaderCode.reload();
-  const { session: codeSession } = await createAgentSession({
-    agentDir: tempAgentDirCode,
-    resourceLoader: resourceLoaderCode,
-  });
-  const codeTools = codeSession.getActiveToolNames();
-  if (!codeTools.includes("agent_browser")) {
-    throw new Error(`Code mode active tools missing 'agent_browser'. Got: ${codeTools.join(", ")}`);
-  }
-  if (!codeTools.includes("agent_browser_code")) {
-    throw new Error(
-      `Code mode active tools missing 'agent_browser_code'. Got: ${codeTools.join(", ")}`,
-    );
-  }
-  if (!codeTools.includes("agent_browser_tools")) {
-    throw new Error(
-      `Code mode active tools missing 'agent_browser_tools'. Got: ${codeTools.join(", ")}`,
-    );
-  }
-  console.log(
-    "✓ Code Mode + Browser Use ON: active tools contain agent_browser, agent_browser_code, agent_browser_tools",
-  );
-
-  // 2. Work Mode + Browser Use ON
-  console.log("Checking Work Mode + Browser Use ON active tools after session_start...");
-  const prevEnv = process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED;
-  process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED = "1";
+  const agentDir = createTempDir("work-tools");
+  const previous = process.env.AGENTCABIN_WORK_BROWSER_ENABLED;
+  process.env.AGENTCABIN_WORK_BROWSER_ENABLED = "1";
+  let session;
   try {
-    const tempAgentDirWork = createTempDir("smoke-work-bu");
-    const resourceLoaderWork = new DefaultResourceLoader({
-      cwd: process.cwd(),
-      agentDir: tempAgentDirWork,
-      additionalExtensionPaths: [coreExtPath, browserExtDir],
+    const resourceLoader = new DefaultResourceLoader({
+      cwd: agentDir, agentDir,
+      additionalExtensionPaths: [resolve(root, "src-tauri/src/work/pi_core_extension.mjs"), resolve(root, "src-tauri/src/work/pi_browser_adapter.mjs")],
     });
-    await resourceLoaderWork.reload();
-    const { session: workSession } = await createAgentSession({
-      agentDir: tempAgentDirWork,
-      resourceLoader: resourceLoaderWork,
-    });
-    await workSession.extensionRunner.emit({ type: "session_start" });
-    const workTools = workSession.getActiveToolNames();
-
-    // Must include agent_browser*
-    if (!workTools.includes("agent_browser")) {
-      throw new Error(
-        `Work mode active tools missing 'agent_browser'. Got: ${workTools.join(", ")}`,
-      );
+    await resourceLoader.reload();
+    ({ session } = await createAgentSession({ agentDir, resourceLoader }));
+    await session.extensionRunner.emit({ type: "session_start" });
+    const tools = session.getActiveToolNames();
+    for (const name of ["web_search", "web_open", "web_extract", "web_cite", "work_list_apps", "work_call_app", "work_run_connector_cli"]) {
+      if (!tools.includes(name)) throw new Error(`Work active tools missing ${name}: ${tools}`);
     }
-    if (!workTools.includes("agent_browser_code")) {
-      throw new Error(
-        `Work mode active tools missing 'agent_browser_code'. Got: ${workTools.join(", ")}`,
-      );
+    for (const name of ["agent_browser", "agent_browser_code", "agent_browser_tools"]) {
+      if (tools.includes(name)) throw new Error(`Removed automation tool registered: ${name}`);
     }
-    if (!workTools.includes("agent_browser_tools")) {
-      throw new Error(
-        `Work mode active tools missing 'agent_browser_tools'. Got: ${workTools.join(", ")}`,
-      );
-    }
-
-    // Must NOT include legacy browser_*
-    const forbiddenTools = [
-      "browser_navigate",
-      "browser_click",
-      "browser_type",
-      "browser_snapshot",
-    ];
-    for (const forbidden of forbiddenTools) {
-      if (workTools.includes(forbidden)) {
-        throw new Error(
-          `Work mode active tools must not include legacy '${forbidden}'. Got: ${workTools.join(", ")}`,
-        );
-      }
-    }
-    console.log(
-      "✓ Work Mode + Browser Use ON: active tools contain agent_browser* and no legacy browser_*",
-    );
+    console.log("✓ Work active tools retain Web Research and Apps; Browser Automation removed");
   } finally {
-    if (prevEnv === undefined) {
-      delete process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED;
-    } else {
-      process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED = prevEnv;
-    }
+    session?.dispose();
+    if (previous === undefined) delete process.env.AGENTCABIN_WORK_BROWSER_ENABLED;
+    else process.env.AGENTCABIN_WORK_BROWSER_ENABLED = previous;
   }
 }
 
@@ -476,8 +331,7 @@ async function main() {
       "--no-context-files",
     ]);
     await testPiExtensionInstall();
-    const targetExtPkgJson = await testAgentBrowserSmoke();
-    await testBrowserUseActiveToolsSmoke(targetExtPkgJson);
+    await testWorkActiveToolsSmoke();
     await verifyNoOrphans();
 
     console.log("\n🎉 ALL PACKAGED RUNTIME CLOSURE SMOKE CHECKS PASSED SUCCESSFULLY!\n");

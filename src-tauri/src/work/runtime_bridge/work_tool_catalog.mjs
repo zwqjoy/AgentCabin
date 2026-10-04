@@ -47,27 +47,6 @@ const BROWSER_TOOL_CATALOG = [
   ["web_cite", "Create stable citations from 网络访问 page passages in the current run ledger; use page_id plus exact passage_ids, or pass a list of passage_ids when citing multiple opened pages.", "read", true],
 ];
 
-const BROWSER_NATIVE_TOOL_CATALOG = [
-  [
-    "agent_browser",
-    "Browse and interact through native agent-browser commands. One command in args; fixed sequences use batch --bail and JSON-array stdin. Use agent_browser_code for loops/branches and agent_browser_tools for advanced capabilities.",
-    "read",
-    true,
-  ],
-  [
-    "agent_browser_code",
-    "Execute custom automation code within the persistent browser context.",
-    "read",
-    true,
-  ],
-  [
-    "agent_browser_tools",
-    "Discover and dynamically enable advanced browser automation tools.",
-    "read",
-    true,
-  ],
-];
-
 const DESKTOP_OPERATOR_TOOL_CATALOG = [
   ["launch_app", "Launch a native application and return its first immutable UI state.", "local_write", true],
   ["find_roots", "Find controllable desktop roots with stable root refs.", "read", true],
@@ -105,12 +84,10 @@ function materialize(entries) {
 export function createWorkToolCatalog({
   mcpEnabled = process.env.AGENTCABIN_WORK_MCP_ENABLED === "1",
   browserEnabled = process.env.AGENTCABIN_WORK_BROWSER_ENABLED === "1",
-  browserUseEnabled = process.env.AGENTCABIN_WORK_BROWSER_USE_ENABLED === "1",
   desktopUseEnabled = process.env.AGENTCABIN_WORK_DESKTOP_USE_ENABLED === "1",
 } = {}) {
   return [
     ...materialize(BASE_TOOL_CATALOG),
-    ...(browserUseEnabled ? materialize(BROWSER_NATIVE_TOOL_CATALOG) : []),
     ...(desktopUseEnabled ? materialize(DESKTOP_OPERATOR_TOOL_CATALOG) : []),
     ...(mcpEnabled ? materialize(MCP_TOOL_CATALOG) : []),
     ...(browserEnabled ? materialize(BROWSER_TOOL_CATALOG) : []),

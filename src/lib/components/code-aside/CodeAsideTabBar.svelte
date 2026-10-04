@@ -75,7 +75,6 @@
 
   const menuItems: { type: CodeAsideTabType; label: string; icon: string; shortcut: string }[] = [
     { type: "terminal", label: "终端", icon: "terminal", shortcut: CODE_ASIDE_SHORTCUTS.terminal },
-    { type: "browser", label: "浏览器", icon: "browser", shortcut: CODE_ASIDE_SHORTCUTS.browser },
     { type: "file", label: "文件", icon: "file", shortcut: CODE_ASIDE_SHORTCUTS.file },
     { type: "review", label: "审查", icon: "review", shortcut: CODE_ASIDE_SHORTCUTS.review },
   ];
@@ -127,20 +126,6 @@
           >
             <polyline points="4 17 10 11 4 5" />
             <line x1="12" y1="19" x2="20" y2="19" />
-          </svg>
-        {:else if tab.type === "browser"}
-          <svg
-            class="h-3.5 w-3.5 shrink-0 opacity-75"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="2" y1="12" x2="22" y2="12" />
-            <path
-              d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
-            />
           </svg>
         {:else}
           <svg
@@ -289,19 +274,6 @@
               stroke-width="2"
             >
               <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
-            </svg>
-          {:else if item.icon === "browser"}
-            <svg
-              class="h-3.5 w-3.5 opacity-70 shrink-0"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <path
-                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
-              />
             </svg>
           {:else if item.icon === "file"}
             <svg

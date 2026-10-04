@@ -235,7 +235,6 @@ pub struct RunEffectiveCapabilitiesView {
     pub mcp_servers: Vec<McpServerCapabilityItemView>,
     pub connectors: Vec<ConnectorCapabilityItemView>,
     pub browser_enabled: bool,
-    pub browser_use_enabled: bool,
     pub browser_status: String,
     pub allowed_tools: Vec<String>,
     pub disallowed_tools: Vec<String>,
@@ -326,7 +325,6 @@ pub fn project_effective_capabilities_view(
         mcp_servers,
         connectors,
         browser_enabled: caps.browser_enabled,
-        browser_use_enabled: caps.browser_use_enabled,
         browser_status,
         allowed_tools: caps.allowed_tools.clone(),
         disallowed_tools: caps.disallowed_tools.clone(),
@@ -784,7 +782,7 @@ fn project_connectors(paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
     items
 }
 
-/// Project Work web access and browser automation into the same capability
+/// Project Web Research into the same capability
 /// matrix as Skills, MCP, and Connectors. The DSH native Work plugin uses the
 /// authenticated bridge directly; it must not be treated as missing merely
 /// because Pi's legacy browser adapter has not been installed.
@@ -792,8 +790,6 @@ fn project_browser(paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
     let Ok(summary) = browser::get_config_with_paths(paths) else {
         return Vec::new();
     };
-    let browser_use_enabled =
-        crate::storage::profile_bindings::is_browser_use_enabled_with_root(paths.data_root());
 
     let (readiness, reason, actions) = if !summary.enabled {
         (
@@ -810,19 +806,10 @@ fn project_browser(paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
             "网络访问需要配置凭据或 endpoint".to_string(),
             vec![],
         )
-    } else if browser_use_enabled && !summary.browser_runtime_available {
-        (
-            CapabilityReadiness::MissingDependency,
-            summary.browser_runtime_message.clone(),
-            vec![CapabilityAction {
-                action_type: "install_chromium".to_string(),
-                label: "准备浏览器运行时".to_string(),
-            }],
-        )
     } else {
         (
             CapabilityReadiness::Ready,
-            "Web / Browser 已就绪".to_string(),
+            "Web Research 已就绪".to_string(),
             vec![CapabilityAction {
                 action_type: "disable".to_string(),
                 label: "停用".to_string(),
@@ -832,8 +819,8 @@ fn project_browser(paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
 
     vec![CapabilityCenterItem {
         id: "work-browser".to_string(),
-        name: "Web 与 Browser".to_string(),
-        description: "通过 Work Host 的网络、网页与浏览器自动化能力访问外部信息。".to_string(),
+        name: "Web Research".to_string(),
+        description: "通过 Work Host 搜索、读取网页、提取段落并生成来源引用。".to_string(),
         category: "browser".to_string(),
         origin: "builtin".to_string(),
         installed: true,
@@ -846,7 +833,7 @@ fn project_browser(paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
             summary.dsh_runtime_available,
             false,
         ),
-        permissions: vec!["network".to_string(), "browser".to_string()],
+        permissions: vec!["network".to_string()],
         auth: Some(CapabilityAuthInfo {
             status: if summary.configured {
                 "configured".to_string()
@@ -861,7 +848,8 @@ fn project_browser(paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
         capabilities: vec![
             "web_search".to_string(),
             "web_open".to_string(),
-            "browser".to_string(),
+            "web_extract".to_string(),
+            "web_cite".to_string(),
         ],
         actions,
     }]
@@ -1224,7 +1212,6 @@ mod tests {
             }],
             connectors: vec![],
             browser_enabled: true,
-            browser_use_enabled: false,
             browser_config: None,
             allowed_tools: vec!["read".to_string(), "write".to_string()],
             disallowed_tools: vec!["delete".to_string()],
@@ -1271,7 +1258,6 @@ mod tests {
             mcp_servers: vec![],
             connectors: vec![],
             browser_enabled: true,
-            browser_use_enabled: false,
             browser_config: None,
             allowed_tools: vec![],
             disallowed_tools: vec![],
@@ -1307,7 +1293,6 @@ mod tests {
             mcp_servers: vec![],
             connectors: vec![],
             browser_enabled: false,
-            browser_use_enabled: false,
             browser_status: "Disabled".to_string(),
             allowed_tools: vec![],
             disallowed_tools: vec![],
@@ -1361,12 +1346,6 @@ mod tests {
             pi_runtime_available: true,
             dsh_runtime_available: true,
             runtime_available: true,
-            browser_runtime_node_available: true,
-            browser_runtime_available: true,
-            playwright_installed: true,
-            chromium_installed: true,
-            browser_runtime_managed: false,
-            browser_runtime_message: String::new(),
             max_results: 5,
             endpoint_url: None,
             auth_kind: "api_key".to_string(),
@@ -1374,7 +1353,7 @@ mod tests {
         };
         assert!(!disabled_summary.enabled);
 
-        // Missing Chromium
+        // Configured Web Research
         let missing_chromium = WorkBrowserSummary {
             enabled: true,
             provider: "tavily".to_string(),
@@ -1383,18 +1362,11 @@ mod tests {
             pi_runtime_available: true,
             dsh_runtime_available: true,
             runtime_available: true,
-            browser_runtime_node_available: true,
-            browser_runtime_available: true,
-            playwright_installed: true,
-            chromium_installed: false,
-            browser_runtime_managed: false,
-            browser_runtime_message: String::new(),
             max_results: 5,
             endpoint_url: None,
             auth_kind: "api_key".to_string(),
             allowed_hosts: Vec::new(),
         };
-        assert!(!missing_chromium.chromium_installed);
     }
 
     #[test]

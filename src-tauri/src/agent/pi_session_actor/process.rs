@@ -141,13 +141,6 @@ fn build_rpc_args(
     {
         push_explicit_extension(&mut args, &mut explicit_extensions, extension);
     }
-    if let Some(browser_ext) = settings
-        .pi_browser_native_extension
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        push_explicit_extension(&mut args, &mut explicit_extensions, browser_ext);
-    }
     for source in &settings.pi_shared_extension_sources {
         if !source.trim().is_empty() {
             push_explicit_extension(&mut args, &mut explicit_extensions, source);
@@ -503,7 +496,6 @@ async fn spawn_actor_with_launch(
                 "AGENTCABIN_WORK_RUN_DIR",
                 "AGENTCABIN_WORK_BROWSER_RUN_DIR",
                 "AGENTCABIN_MANAGED_STATE_DIR",
-                "PI_AGENT_BROWSER_SOCKET_DIR",
             ] {
                 if let Some(path) = extra_env.get(key).filter(|value| !value.trim().is_empty()) {
                     writable_roots.push(PathBuf::from(path));
@@ -519,29 +511,6 @@ async fn spawn_actor_with_launch(
                 if let Some(node_dir) = PathBuf::from(node_path).parent() {
                     read_only_roots.push(node_dir.to_path_buf());
                 }
-            }
-            // Work's native Browser extension invokes the app-pinned
-            // agent-browser CLI, whose wrapper then launches a platform
-            // binary from this runtime package. Work skips the wrapper's
-            // chmod probe, so grant the pinned package read-only access and
-            // process-exec permission for the actual spawn.
-            if let Ok(browser_path) = crate::agent::runtime_locator::resolve_agent_browser() {
-                if let Some(browser_runtime_dir) = PathBuf::from(browser_path)
-                    .parent()
-                    .and_then(|bin_dir| bin_dir.parent())
-                {
-                    read_only_roots.push(browser_runtime_dir.to_path_buf());
-                }
-            }
-            // The agent-browser CLI launches a Chromium-family browser from
-            // the standard macOS install locations. The bundle must be
-            // readable and process-executable — the browser binary and its
-            // helpers both live inside it — or the browser spawn fails with
-            // EPERM even though the CLI itself starts.
-            if let Some(browser_bundle) =
-                crate::agent::runtime_locator::resolve_installed_browser_bundle()
-            {
-                read_only_roots.push(browser_bundle);
             }
             // Pi's common system packages are managed outside the isolated
             // Work profile. Work receives read-only access to that dependency
@@ -571,7 +540,6 @@ async fn spawn_actor_with_launch(
                 .chain(settings.pi_work_extension.iter())
                 .chain(settings.pi_work_mcp_adapter.iter())
                 .chain(settings.pi_work_browser_adapter.iter())
-                .chain(settings.pi_browser_native_extension.iter())
             {
                 if source.starts_with('/') {
                     read_only_roots.push(PathBuf::from(source));
@@ -824,7 +792,6 @@ mod tests {
             pi_work_extension: None,
             pi_work_mcp_adapter: None,
             pi_work_browser_adapter: None,
-            pi_browser_native_extension: None,
             pi_shared_extension_sources: vec![],
             pi_work_package_sources: vec![],
             pi_work_skill_sources: vec![],

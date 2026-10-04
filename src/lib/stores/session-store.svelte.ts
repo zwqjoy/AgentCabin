@@ -49,7 +49,6 @@ import {
 import { resolveStartupPermissionMode } from "$lib/utils/permission-mode";
 import { resolvePiStartupModel } from "$lib/utils/pi-provider-presets";
 import { resolveManagedProviderDefaultModel } from "$lib/utils/provider-routing";
-import { isInteractiveBrowserToolName } from "$lib/utils/work-browser";
 import { dedupeMcpServersByName } from "$lib/utils/mcp";
 import {
   SCHEDULING_TOOLS,
@@ -586,12 +585,6 @@ export class SessionStore {
    *  Only meaningful when `this.run` is set. Set by loadRun/startSession/resumeSession. */
   _useChatTimelineForRun = $state(false);
   /** Latest Browser tool_start received from the live event stream (never history replay). */
-  liveBrowserToolActivity = $state<{
-    runId: string;
-    toolUseId: string;
-    sequence: number;
-  } | null>(null);
-  private _liveBrowserToolSequence = 0;
 
   // Generation counter: prevents stale async loadRun from overwriting state
   private _loadGen = 0;
@@ -4634,17 +4627,6 @@ export class SessionStore {
         this._clearTimeoutError();
         if (getSeenTool().has(ev.tool_use_id)) break;
         getSeenTool().add(ev.tool_use_id);
-        if (
-          !replayOnly &&
-          this._loadingRunId !== ev.run_id &&
-          isInteractiveBrowserToolName(ev.tool_name)
-        ) {
-          this.liveBrowserToolActivity = {
-            runId: ev.run_id,
-            toolUseId: ev.tool_use_id,
-            sequence: ++this._liveBrowserToolSequence,
-          };
-        }
         if (
           !ev.parent_tool_use_id &&
           ["TodoWrite", "TaskCreate", "TaskUpdate"].includes(ev.tool_name)

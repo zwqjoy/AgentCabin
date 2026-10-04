@@ -164,7 +164,6 @@
     onStopSession?: () => void;
     onToggleInspector?: () => void;
     onOpenTasksInspector?: () => void;
-    onBrowserActivity?: (runId: string) => void;
     inspectorOpen?: boolean;
     onExportArtifact?: (artifactId: string) => Promise<void>;
   }
@@ -191,7 +190,6 @@
     onStopSession = $bindable(() => {}),
     onToggleInspector,
     onOpenTasksInspector,
-    onBrowserActivity,
     inspectorOpen = false,
     onExportArtifact,
   }: Props = $props();
@@ -298,26 +296,6 @@
   }
 
   const session = workSession.session;
-  let observedBrowserActivitySequence = 0;
-
-  // Match Code mode's live tool_start signal. Progress projections can lag
-  // behind the first Browser call, which otherwise leaves the Browser panel
-  // closed until a later snapshot (or forever if no snapshot arrives).
-  $effect(() => {
-    const activity = session.liveBrowserToolActivity;
-    const activeRunId = session.run?.id;
-    if (
-      !activity ||
-      !activeRunId ||
-      activity.runId !== activeRunId ||
-      activity.sequence === observedBrowserActivitySequence
-    ) {
-      return;
-    }
-    observedBrowserActivitySequence = activity.sequence;
-    onBrowserActivity?.(activeRunId);
-  });
-
   function parseWorkPreset(value: string | null): WorkPreset {
     return WORK_PRESETS.some((preset) => preset.id === value) ? (value as WorkPreset) : "office";
   }

@@ -22,41 +22,6 @@ const run = (cmd, args) =>
   });
 const mkdir = (dir) => mkdirSync(dir, { recursive: true });
 
-function patchAgentBrowserForReadOnlySandbox() {
-  const entrypoint = join(out, "agent-browser/node_modules/agent-browser/bin/agent-browser.js");
-  const source = readFileSync(entrypoint, "utf8");
-  const executableProbe = [
-    "  if (platform() !== 'win32') {",
-    "    try {",
-    "      accessSync(binaryPath, constants.X_OK);",
-    "    } catch {",
-    "      // Binary exists but isn't executable - fix it",
-    "      try {",
-    "        chmodSync(binaryPath, 0o755);",
-    "      } catch (chmodErr) {",
-    "        console.error(`Error: Cannot make binary executable: ${chmodErr.message}`);",
-    "        console.error('Try running: chmod +x ' + binaryPath);",
-    "        process.exit(1);",
-    "      }",
-    "    }",
-    "  }",
-  ].join("\n");
-  if (source.split(executableProbe).length !== 2) {
-    throw new Error(
-      `agent-browser ${manifest.runtimes.agentBrowser.version} executable probe changed; review its sandbox compatibility before packaging`,
-    );
-  }
-
-  // The bundled platform binary is made executable during npm's postinstall.
-  // Do not probe X_OK or chmod it at runtime: macOS Seatbelt can deny those
-  // metadata operations even when process-exec on the binary is allowed.
-  const patchedSource = source.replace(
-    executableProbe,
-    "  // AgentCabin prepares the bundled binary's executable bit at build time.",
-  );
-  writeFileSync(entrypoint, patchedSource);
-}
-
 rmSync(out, { recursive: true, force: true });
 mkdir(out);
 const nodeArchive = nodePlatform === "win" ? "zip" : "tar.gz";
@@ -101,32 +66,16 @@ const installRuntime = (name, spec, overrides = undefined) => {
   run(npm, ["install", "--prefix", prefix, "--omit=dev", "--no-audit", "--no-fund", spec]);
 };
 installRuntime("pi", `${manifest.runtimes.pi.package}@${manifest.runtimes.pi.version}`);
-if (manifest.runtimes.agentBrowser) {
-  installRuntime(
-    "agent-browser",
-    `${manifest.runtimes.agentBrowser.package}@${manifest.runtimes.agentBrowser.version}`,
-  );
-  patchAgentBrowserForReadOnlySandbox();
-}
+
 installRuntime("pnpm", `pnpm@${manifest.pnpm.version}`);
 if (process.platform !== "win32") {
-  for (const name of ["pi", "pnpm", "agent-browser"]) mkdir(join(out, name, "bin"));
+  for (const name of ["pi", "pnpm"]) mkdir(join(out, name, "bin"));
   const node = `$(CDPATH= cd -- "$(dirname -- "$0")/../../node/bin" && pwd)/node`;
   writeFileSync(
     join(out, "pi/bin/pi"),
     `#!/bin/sh\nexec "${node}" "$(dirname -- "$0")/../node_modules/${manifest.runtimes.pi.package}/${manifest.runtimes.pi.entrypoint}" "$@"\n`,
   );
-  if (manifest.runtimes.agentBrowser) {
-    cpSync(
-      join(root, "scripts/work-agent-browser-proxy.mjs"),
-      join(out, "agent-browser/work-agent-browser-proxy.mjs"),
-    );
-    writeFileSync(
-      join(out, "agent-browser/bin/agent-browser"),
-      `#!/bin/sh\nif [ "${'$'}AGENTCABIN_WORK_BROWSER_HOST_PROXY" = 1 ]; then\n  exec "${node}" "$(dirname -- "$0")/../work-agent-browser-proxy.mjs" "$@"\nfi\nexec "${node}" "$(dirname -- "$0")/../node_modules/${manifest.runtimes.agentBrowser.package}/${manifest.runtimes.agentBrowser.entrypoint}" "$@"\n`,
-    );
-    run("chmod", ["+x", join(out, "agent-browser/bin/agent-browser")]);
-  }
+
   writeFileSync(
     join(out, "pnpm/bin/pnpm"),
     `#!/bin/sh\nexec "${node}" "$(dirname -- "$0")/../node_modules/pnpm/bin/pnpm.cjs" "$@"\n`,
@@ -134,13 +83,7 @@ if (process.platform !== "win32") {
   run("chmod", ["+x", join(out, "pi/bin/pi"), join(out, "pnpm/bin/pnpm")]);
 } else {
   const runtimeBins = [["pi", manifest.runtimes.pi.package, manifest.runtimes.pi.entrypoint]];
-  if (manifest.runtimes.agentBrowser) {
-    runtimeBins.push([
-      "agent-browser",
-      manifest.runtimes.agentBrowser.package,
-      manifest.runtimes.agentBrowser.entrypoint,
-    ]);
-  }
+
   for (const [name, pkg, entry] of runtimeBins) {
     mkdir(join(out, name, "bin"));
     writeFileSync(

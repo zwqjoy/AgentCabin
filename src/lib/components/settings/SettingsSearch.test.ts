@@ -14,10 +14,10 @@ describe("Settings Search Index", () => {
     expect(results.some((r) => r.tab === "models")).toBe(true);
   });
 
-  it("finds Browser related settings", () => {
-    const results = searchSettings("Browser");
+  it("finds Web related settings", () => {
+    const results = searchSettings("Web");
     expect(results.length).toBeGreaterThan(0);
-    expect(results.some((r) => r.tab === "browser-use")).toBe(true);
+    expect(results.some((r) => r.tab === "web-access")).toBe(true);
   });
 
   it("finds MCP related settings", () => {

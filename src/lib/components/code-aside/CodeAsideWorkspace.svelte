@@ -5,7 +5,6 @@
   import CodeAsideTabBar from "./CodeAsideTabBar.svelte";
   import CodeAsideReviewView from "./views/CodeAsideReviewView.svelte";
   import CodeAsideTerminalView from "./views/CodeAsideTerminalView.svelte";
-  import CodeAsideBrowserView from "./views/CodeAsideBrowserView.svelte";
   import CodeAsideFileView from "./views/CodeAsideFileView.svelte";
   import CodeAsideLauncher from "./CodeAsideLauncher.svelte";
 
@@ -38,9 +37,6 @@
   let isMaximized = $state(false);
 
   let activeTab = $derived(tabs.find((t) => t.id === activeTabId) ?? null);
-  let browserSurfaceRunId = $derived(
-    runId || (activeTab?.type === "browser" ? "code-browser" : ""),
-  );
 
   // Handle external tab switch requests (e.g. clicking review button in chat)
   let lastHandledRequest = "";
@@ -173,11 +169,6 @@
       if (e.ctrlKey && e.key === "`") {
         e.preventDefault();
         ensureTab("terminal");
-      }
-      // Cmd+T -> Browser
-      if ((e.metaKey || e.ctrlKey) && (e.key === "T" || e.key === "t") && !e.shiftKey) {
-        e.preventDefault();
-        ensureTab("browser");
       }
       // Cmd+P -> Files
       if ((e.metaKey || e.ctrlKey) && (e.key === "P" || e.key === "p") && !e.shiftKey) {
@@ -332,19 +323,6 @@
           }
         }}
       />
-    {/if}
-    {#if browserSurfaceRunId}
-      <div
-        class="absolute inset-0 overflow-hidden {open && activeTab?.type === 'browser'
-          ? 'visible pointer-events-auto'
-          : 'invisible pointer-events-none'}"
-      >
-        <CodeAsideBrowserView
-          runId={browserSurfaceRunId}
-          url={activeTab?.type === "browser" ? activeTab.url : undefined}
-          surfaceVisible={open && activeTab?.type === "browser"}
-        />
-      </div>
     {/if}
   </div>
 </aside>

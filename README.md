@@ -53,13 +53,13 @@ AgentCabin is an open-source desktop app for Pi Coding Agent. It is a Pi desktop
 | Category | Open-source AI coding agent desktop / local-first developer workspace |
 | Agent Engine | Pi Coding Agent |
 | Modes | Code for interactive development; Work for durable tasks, approvals, recovery, artifacts, and scheduling |
-| Runtime Closure | Node.js 24.21.0, Pi 1.0.2, pnpm 10.15.0, agent-browser 0.37.0, pi-agent-browser-native 0.8.2 |
+| Runtime Closure | Node.js 24.21.0, Pi 1.0.2, pnpm 10.15.0 |
 | Stack | Electron, Svelte 5, SvelteKit, Rust, TypeScript |
 | License | Apache License 2.0 |
 
 > **Packaged builds include the application-owned runtime closure.**
 >
-> The current closure pins Node.js 24.21.0, Pi 1.0.2, pnpm 10.15.0, agent-browser 0.37.0, pi-agent-browser-native 0.8.2, and the Pi extensions required for the Code/Work experience. Development builds can also use the prepared local runtime tree.
+> The current closure pins Node.js 24.21.0, Pi 1.0.2, pnpm 10.15.0, and the Pi extensions required for the Code/Work experience. Development builds can also use the prepared local runtime tree.
 >
 > The official packaged target is **macOS on Apple Silicon** (`arm64`), with a minimum macOS version of 13.0. Windows and Linux remain source-level / community targets.
 
@@ -201,8 +201,6 @@ Electron host
 Managed runtime closure
 ├── Node.js 24.21.0 + pnpm 10.15.0
 ├── Pi 1.0.2 (RPC)
-├── agent-browser 0.37.0
-└── pi-agent-browser-native 0.8.2
 ```
 
 **Tech Stack:**

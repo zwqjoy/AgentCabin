@@ -361,14 +361,6 @@ export const SETTINGS_SEARCH_INDEX: SearchIndexItem[] = [
     group: "网络访问",
   },
   {
-    id: "tool-browser",
-    tab: "browser-use",
-    section: "main",
-    title: "浏览器自动化 (Browser Use)",
-    keywords: ["browser", "chrome", "headless", "automation", "浏览器", "自动化"],
-    group: "浏览器自动化",
-  },
-  {
     id: "tool-desktop",
     tab: "desktop-use",
     section: "main",

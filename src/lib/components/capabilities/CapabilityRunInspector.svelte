@@ -221,15 +221,12 @@
 
         <!-- Browser Access -->
         <div>
-          <h3 class="font-semibold text-foreground mb-2">Browser 运行时</h3>
+          <h3 class="font-semibold text-foreground mb-2">Web Research</h3>
           <div
             class="rounded-lg border border-border/60 bg-muted/20 p-3 flex items-center justify-between"
           >
             <div>
-              <span class="font-medium text-foreground block">Web 交互与浏览器执行</span>
-              <span class="text-[11px] text-muted-foreground">
-                Browser Use: {capabilities.browserUseEnabled ? "已启用" : "未开启"}
-              </span>
+              <span class="font-medium text-foreground block">搜索、网页读取与来源引用</span>
             </div>
             <span
               class="rounded px-2 py-0.5 text-xs font-medium {capabilities.browserEnabled

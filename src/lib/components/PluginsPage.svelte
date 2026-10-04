@@ -68,9 +68,6 @@
     getBrowserConfig,
     saveBrowserConfig,
     testBrowser,
-    getBrowserUseBinding,
-    setBrowserUseBinding,
-    prepareBrowserRuntime as prepareBrowserRuntimeApi,
     getAgentSettings,
     updateAgentSettings,
   } from "$lib/api";
@@ -120,7 +117,6 @@
   import WorkSkillDiscoverPanel from "$lib/components/work/WorkSkillDiscoverPanel.svelte";
   import WorkMcpDiscoverPanel from "$lib/components/work/WorkMcpDiscoverPanel.svelte";
   import WebAccessPanel from "$lib/components/WebAccessPanel.svelte";
-  import BrowserUsePanel from "$lib/components/BrowserUsePanel.svelte";
   import AgentPluginsPanel from "$lib/components/AgentPluginsPanel.svelte";
   import CodeGlobalRulesPanel from "$lib/components/CodeGlobalRulesPanel.svelte";
   import CapabilityCenterIcon from "$lib/components/CapabilityCenterIcon.svelte";
@@ -341,16 +337,13 @@
         } else if (item.category === "connector") {
           await startWorkConnectorAuthApi(item.id);
         }
-      } else if (actionType === "install_chromium") {
-        await prepareBrowserRuntimeApi();
-        showToast("已安装浏览器运行时", "success");
       } else if (actionType === "test") {
         if (item.category === "connector") {
           await testWorkConnectorApi(item.id);
           showToast("连接测试完成", "success");
         } else if (item.category === "browser") {
           await testBrowser();
-          showToast("浏览器测试完成", "success");
+          showToast("Web Research 测试完成", "success");
         }
       } else if (actionType === "install") {
         if (item.category === "connector") {
@@ -511,7 +504,6 @@
   let skillBindingsMap = $state<Record<string, boolean>>({});
   let connectorBindings = $state<ConnectorBinding[]>([]);
   let webAccessEnabled = $state(true);
-  let browserUseEnabled = $state(true);
   let piAgentSettings = $state<AgentSettings | null>(null);
   let grokAgentSettings = $state<AgentSettings | null>(null);
   let workResources = $state<WorkResourceSummary[]>([]);
@@ -1480,7 +1472,6 @@
         globalSkills,
         globalConn,
         globalWeb,
-        globalBrowserUse,
       ] = await Promise.all([
         withLoadTimeout(listWorkResourcesApi(), []),
         withLoadTimeout(listWorkConnectorsApi(), []),
@@ -1492,7 +1483,6 @@
         withLoadTimeout(getSkillBindings(), []),
         withLoadTimeout(getConnectorBindings(), []),
         withLoadTimeout(getWebAccessBinding(), true),
-        withLoadTimeout(getBrowserUseBinding(), true),
       ]);
       workResources = Array.isArray(resources) ? resources : [];
       workConnectors = Array.isArray(connectors) ? connectors : [];
@@ -1508,7 +1498,6 @@
         : {};
       connectorBindings = Array.isArray(globalConn) ? globalConn : [];
       webAccessEnabled = globalWeb;
-      browserUseEnabled = globalBrowserUse;
       workResourcesLoaded = true;
     } catch (cause) {
       workResourcesError = cause instanceof Error ? cause.message : String(cause);
@@ -2251,24 +2240,6 @@
     } finally {
       operationLoading = null;
     }
-  }
-
-  async function handleToggleBrowserUse(enabled: boolean): Promise<void> {
-    operationLoading = "browser-use";
-    try {
-      await setBrowserUseBinding(enabled);
-      showToast(`已全局${enabled ? "启用" : "停用"}浏览器操作`, "success");
-    } catch (e) {
-      showToast(t("plugin_errorGeneric", { error: String(e) }), "error");
-      throw e;
-    } finally {
-      operationLoading = null;
-    }
-  }
-
-  async function prepareBrowserRuntime(): Promise<WorkBrowserSummary> {
-    workBrowserConfig = await prepareBrowserRuntimeApi();
-    return workBrowserConfig;
   }
 
   async function updateSharedPiExtension(plugin: InstalledPlugin): Promise<void> {
@@ -3378,13 +3349,6 @@
                 onTest={testWorkBrowser}
               />
             </div>
-          {:else if workCapabilitySection === "browser"}
-            <BrowserUsePanel
-              runtime={workBrowserConfig}
-              enabled={browserUseEnabled}
-              onToggle={handleToggleBrowserUse}
-              onPrepare={prepareBrowserRuntime}
-            />
           {/if}
         {/if}
       </div>

@@ -545,15 +545,14 @@ impl WorkContextAssembler {
                 metadata: BTreeMap::new(),
             });
         } else {
-            // Explicitly record browser capability as unavailable when disabled
             segments.push(WorkContextSegment {
-                id: "capability:browser_use".to_string(),
-                kind: WorkContextKind::BrowserUse,
+                id: "capability:web_access".to_string(),
+                kind: WorkContextKind::WebAccess,
                 source: WorkContextSource::CapabilityCenter,
-                title: "Browser Control".to_string(),
+                title: "Web Research".to_string(),
                 required: false,
                 selection: WorkContextSelection::Unavailable,
-                reason: Some("Browser capability is disabled in environment settings".to_string()),
+                reason: Some("Web Research is disabled".to_string()),
                 render_priority: 50,
                 budget_priority: 50,
                 estimated_tokens: 15,

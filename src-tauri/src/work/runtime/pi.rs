@@ -13,9 +13,7 @@
 
 use std::collections::HashMap;
 #[cfg(unix)]
-use std::fs;
 #[cfg(unix)]
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -40,61 +38,6 @@ pub(crate) static LAST_LAUNCH_EFFORT: once_cell::sync::Lazy<
 
 pub fn get_last_launch_effort(run_id: &str) -> Option<Option<String>> {
     LAST_LAUNCH_EFFORT.lock().ok()?.get(run_id).cloned()
-}
-
-/// Prepare the short, private Unix-socket directory used by pi-agent-browser.
-/// Work Pi runs inside Seatbelt, so its default `/private/tmp/piab-<uid>` path
-/// must exist before launch and be explicitly granted as a narrow write root.
-#[cfg(unix)]
-pub(crate) fn prepare_agent_browser_socket_dir() -> Result<PathBuf, String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-
-    let uid = unsafe { libc::getuid() };
-    let temp_root = if cfg!(target_os = "macos") {
-        "/private/tmp"
-    } else {
-        "/tmp"
-    };
-    let path = PathBuf::from(format!("{temp_root}/piab-{uid}"));
-
-    match fs::create_dir(&path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(error) => {
-            return Err(format!(
-                "failed to create agent-browser socket directory {}: {error}",
-                path.display()
-            ));
-        }
-    }
-
-    let metadata = fs::symlink_metadata(&path).map_err(|error| {
-        format!(
-            "failed to inspect agent-browser socket directory {}: {error}",
-            path.display()
-        )
-    })?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Err(format!(
-            "agent-browser socket path {} is not a real directory",
-            path.display()
-        ));
-    }
-    if metadata.uid() != uid {
-        return Err(format!(
-            "agent-browser socket directory {} belongs to uid {}, expected {uid}",
-            path.display(),
-            metadata.uid()
-        ));
-    }
-
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).map_err(|error| {
-        format!(
-            "failed to secure agent-browser socket directory {}: {error}",
-            path.display()
-        )
-    })?;
-    Ok(path)
 }
 
 struct PiLaunchContext {
@@ -195,29 +138,7 @@ impl WorkRuntimeAdapter for PiWorkRuntimeAdapter {
         let cwd = request.run.cwd;
         let mut extra_env = launch.extra_env;
         extra_env.extend(request.extra_env);
-        if launch.settings.pi_browser_native_extension.is_some() {
-            #[cfg(unix)]
-            {
-                extra_env.insert(
-                    "AGENTCABIN_WORK_BROWSER_HOST_PROXY".to_string(),
-                    "1".to_string(),
-                );
-                // The first browser call may wait for a human host approval.
-                extra_env.insert(
-                    "PI_AGENT_BROWSER_PROCESS_TIMEOUT_MS".to_string(),
-                    "360000".to_string(),
-                );
-                let socket_dir = prepare_agent_browser_socket_dir().map_err(|error| {
-                    WorkRuntimeError::LaunchFailed(format!(
-                        "Failed to prepare the Pi Browser socket directory: {error}"
-                    ))
-                })?;
-                extra_env.insert(
-                    "PI_AGENT_BROWSER_SOCKET_DIR".to_string(),
-                    socket_dir.to_string_lossy().into_owned(),
-                );
-            }
-        }
+
         if let Ok(mut map) = LAST_LAUNCH_EFFORT.lock() {
             map.insert(run_id.clone(), launch.settings.effort.clone());
         }
@@ -319,12 +240,7 @@ impl PiWorkRuntimeAdapter {
         settings.pi_work_browser_adapter = runtime
             .browser_enabled
             .then(|| runtime.browser_adapter_entry.to_string_lossy().into_owned());
-        if runtime.browser_use_enabled {
-            settings.pi_browser_native_extension =
-                crate::agent::claude_stream::bundled_pi_package_path(
-                    crate::work::system_packages::PI_AGENT_BROWSER_NATIVE_PACKAGE_NAME,
-                );
-        }
+
         settings.pi_work_package_sources = runtime.package_sources.clone();
         settings.pi_shared_extension_sources =
             crate::storage::profile_bindings::list_enabled_pi_extension_sources("work")
@@ -465,12 +381,7 @@ impl PiWorkRuntimeAdapter {
                 );
             }
         }
-        if runtime.browser_use_enabled {
-            extra_env.insert(
-                "AGENTCABIN_WORK_BROWSER_USE_ENABLED".to_string(),
-                "1".to_string(),
-            );
-        }
+
         if request.desktop_use_enabled {
             extra_env.insert(
                 "AGENTCABIN_WORK_DESKTOP_USE_ENABLED".to_string(),
@@ -673,16 +584,5 @@ mod tests {
         isolate_work_pi_features(&mut resumed);
         assert!(resumed.pi_work_full_access);
         assert_eq!(resumed.permission_mode, None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn agent_browser_socket_dir_is_prepared_and_private() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let socket_dir = prepare_agent_browser_socket_dir().expect("socket dir must prepare");
-        assert!(socket_dir.is_dir());
-        let meta = std::fs::metadata(&socket_dir).expect("metadata must exist");
-        assert_eq!(meta.permissions().mode() & 0o777, 0o700);
     }
 }

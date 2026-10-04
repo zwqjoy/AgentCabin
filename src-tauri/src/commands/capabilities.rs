@@ -911,21 +911,6 @@ pub async fn test_browser() -> Result<crate::work::models::WorkBrowserHealth, St
 }
 
 #[tauri::command]
-pub fn get_browser_use_binding() -> Result<bool, String> {
-    log::debug!("[capabilities] get_browser_use_binding: global");
-    Ok(crate::storage::pi_profile_bindings::is_browser_use_enabled())
-}
-
-#[tauri::command]
-pub fn set_browser_use_binding(enabled: bool) -> Result<(), String> {
-    log::debug!(
-        "[capabilities] set_browser_use_binding: enabled={}",
-        enabled
-    );
-    crate::storage::pi_profile_bindings::set_browser_use_binding(enabled)
-}
-
-#[tauri::command]
 pub async fn get_desktop_use_status(
 ) -> Result<crate::work::desktop_operator::DesktopOperatorStatus, String> {
     Ok(crate::work::desktop_operator::desktop_operator_manager()
@@ -964,19 +949,6 @@ pub async fn open_desktop_permission_pane(kind: String) -> Result<(), String> {
     crate::work::desktop_operator::desktop_operator_manager()
         .open_permission_pane(&kind)
         .await
-}
-
-pub async fn prepare_browser_runtime_impl(
-    _emitter: std::sync::Arc<crate::web_server::broadcaster::BroadcastEmitter>,
-) -> Result<crate::work::models::WorkBrowserSummary, String> {
-    crate::work::browser::get_config()
-}
-
-#[tauri::command]
-pub async fn prepare_browser_runtime(
-    emitter: tauri::State<'_, std::sync::Arc<crate::web_server::broadcaster::BroadcastEmitter>>,
-) -> Result<crate::work::models::WorkBrowserSummary, String> {
-    prepare_browser_runtime_impl(emitter.inner().clone()).await
 }
 
 // ── Global MCP Catalog & Binding Commands ──

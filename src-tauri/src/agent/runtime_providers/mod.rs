@@ -39,7 +39,7 @@ pub(crate) fn add_code_desktop_use_env(
 pub(crate) fn code_desktop_mcp_server(
     caps: &EffectiveCapabilities,
 ) -> Result<Option<EffectiveMcpServer>, String> {
-    let browser_capability_enabled = caps.browser_enabled || caps.browser_use_enabled;
+    let browser_capability_enabled = caps.browser_enabled;
     if caps.app_mode != crate::work::models::AppMode::Code
         || caps.runtime == RuntimeProviderKind::Pi
         || (!crate::work::desktop_operator::is_enabled() && !browser_capability_enabled)

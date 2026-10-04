@@ -23,12 +23,4 @@ for (const rel of [
 ]) {
   if (!existsSync(join(runtime, rel))) throw new Error(`RuntimeClosureInvalid: missing ${rel}`);
 }
-if (m.runtimes?.agentBrowser) {
-  if (m.runtimes.agentBrowser.version !== "0.37.0") throw new Error("RuntimeVersionMismatch: agentBrowser must be 0.37.0");
-  const agentBrowserExe = process.platform === "win32" ? "agent-browser/bin/agent-browser.cmd" : "agent-browser/bin/agent-browser";
-  if (!existsSync(join(runtime, agentBrowserExe))) throw new Error(`RuntimeClosureInvalid: missing ${agentBrowserExe}`);
-  if (!existsSync(join(runtime, `agent-browser/node_modules/${m.runtimes.agentBrowser.package}/${m.runtimes.agentBrowser.entrypoint}`))) {
-    throw new Error("RuntimeClosureInvalid: missing agent-browser entrypoint");
-  }
-}
-console.log(`runtime closure valid: Pi ${m.runtimes.pi.version}, Node ${m.node.version}, pnpm ${m.pnpm.version}, agent-browser ${m.runtimes?.agentBrowser?.version}`);
+console.log(`runtime closure valid: Pi ${m.runtimes.pi.version}, Node ${m.node.version}, pnpm ${m.pnpm.version}`);

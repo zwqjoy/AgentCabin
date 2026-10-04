@@ -190,11 +190,7 @@ pub(crate) async fn pi_launch_context(
     let (browser_config, browser_api_key) = crate::work::browser::runtime(&shared_paths)?;
     let web_access_enabled =
         browser_config.enabled && crate::storage::profile_bindings::is_web_access_enabled();
-    let browser_use_enabled = crate::storage::profile_bindings::is_browser_use_enabled();
-    if browser_use_enabled {
-        extra_env.insert("AGENTCABIN_BROWSER_ENABLED".to_string(), "1".to_string());
-        extra_env.insert("AGENTCABIN_BROWSER_SESSION_ID".to_string(), run.id.clone());
-    }
+
     if web_access_enabled {
         let browser_run_dir = storage::run_dir(&run.id).join("browser");
         extra_env.insert("AGENTCABIN_WEB_ENABLED".to_string(), "1".to_string());
@@ -276,13 +272,7 @@ pub(crate) async fn pi_launch_context(
             .pi_shared_extension_sources
             .push(web_adapter.to_string_lossy().into_owned());
     }
-    if browser_use_enabled {
-        if let Some(path) = crate::agent::claude_stream::bundled_pi_package_path(
-            crate::work::system_packages::PI_AGENT_BROWSER_NATIVE_PACKAGE_NAME,
-        ) {
-            settings.pi_shared_extension_sources.push(path);
-        }
-    }
+
     if let Some(adapter) = code_desktop_adapter {
         settings
             .pi_shared_extension_sources
@@ -1609,7 +1599,6 @@ mod tests {
             mcp_servers: Vec::new(),
             connectors: Vec::new(),
             browser_enabled: false,
-            browser_use_enabled: false,
             browser_config: None,
             allowed_tools: Vec::new(),
             disallowed_tools: Vec::new(),

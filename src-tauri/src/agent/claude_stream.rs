@@ -280,9 +280,6 @@ fn bundled_path_dirs() -> Vec<PathBuf> {
         if let Some(parent) = paths.pi.parent() {
             dirs.push(parent.to_path_buf());
         }
-        if let Some(parent) = paths.agent_browser.parent() {
-            dirs.push(parent.to_path_buf());
-        }
     }
     for node_modules in crate::agent::runtime_locator::extension_node_modules_dirs() {
         let bin_dir = node_modules.join(".bin");

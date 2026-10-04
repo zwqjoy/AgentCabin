@@ -82,7 +82,7 @@ describe("Settings V2 routing & legacy tab compatibility", () => {
     expect(resolveSettingsRoute("remote")).toEqual({ tab: "remote-access" });
     expect(resolveSettingsRoute("web-server")).toEqual({ tab: "remote-access" });
     expect(resolveSettingsRoute("remote-browser")).toEqual({ tab: "remote-access" });
-    expect(resolveSettingsRoute("browser")).toEqual({ tab: "browser-use" });
+    expect(resolveSettingsRoute("browser")).toEqual({ tab: "web-access" });
     expect(resolveSettingsRoute("desktop")).toEqual({ tab: "desktop-use" });
     expect(resolveSettingsRoute("computer")).toEqual({ tab: "desktop-use" });
     expect(resolveSettingsRoute("hooks")).toEqual({ tab: "general" });

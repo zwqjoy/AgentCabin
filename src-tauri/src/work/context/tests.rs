@@ -69,7 +69,6 @@ fn fake_capabilities(runtime: RuntimeProviderKind) -> EffectiveCapabilities {
             entry_point: Some("index.js".to_string()),
         }],
         browser_enabled: true,
-        browser_use_enabled: true,
         browser_config: None,
         allowed_tools: Vec::new(),
         disallowed_tools: Vec::new(),
@@ -284,7 +283,7 @@ fn test_capability_availability() {
     let browser_seg = plan
         .segments
         .iter()
-        .find(|s| s.id == "capability:browser_use")
+        .find(|s| s.id == "capability:web_access")
         .expect("browser segment should exist");
     assert_eq!(browser_seg.selection, WorkContextSelection::Unavailable);
 
@@ -906,7 +905,6 @@ fn test_capability_observations_do_not_bloat_rendered_context() {
     assert!(WorkContextKind::Connector.is_capability());
     assert!(WorkContextKind::AgentPlugin.is_capability());
     assert!(WorkContextKind::WebAccess.is_capability());
-    assert!(WorkContextKind::BrowserUse.is_capability());
     assert!(!WorkContextKind::Artifact.is_capability());
 }
 

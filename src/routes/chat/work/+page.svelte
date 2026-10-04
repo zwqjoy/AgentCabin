@@ -23,7 +23,6 @@
   import WorkAutomationCenter from "$lib/components/work/WorkAutomationCenter.svelte";
   import WorkMaterialsCenter from "$lib/components/work/WorkMaterialsCenter.svelte";
   import ArchivedChatsView from "$lib/components/ArchivedChatsView.svelte";
-  import { getWorkBrowserInspectorAutoOpen, getWorkBrowserRunId } from "$lib/utils/work-browser";
   import type { SessionInfoData } from "$lib/types";
   import type {
     InboxItem,
@@ -64,52 +63,12 @@
   // The default surface is the goal, approval, and result. Progress, run, and
   // artifact details stay in the adjacent task panel while a run is active.
   let showConversationInspector = $state(false);
-  let conversationInspectorTab = $state<"tasks" | "browser" | "files">("tasks");
+  let conversationInspectorTab = $state<"tasks" | "files">("tasks");
   let conversationInspectorFile = $state("");
-  let browserActivityRunId = $state("");
-  let browserAutoOpenedRunId = $state("");
 
   // Artifacts shown next to an active conversation belong to that conversation's
   // run. A brand-new conversation has no run yet, so it starts with none.
   let conversationRunId = $derived(selectedRunId || sessionInfo?.runId || "");
-  let inspectorRunId = $derived(getWorkBrowserRunId(progressView?.workRunId, sessionInfo?.runId));
-  let browserActivitySeen = $derived(
-    Boolean(inspectorRunId && browserActivityRunId === inspectorRunId),
-  );
-
-  function handleBrowserActivity(runId: string) {
-    const resolvedRunId = getWorkBrowserRunId(progressView?.workRunId, runId);
-    if (!resolvedRunId) return;
-
-    browserActivityRunId = resolvedRunId;
-    if (browserAutoOpenedRunId === resolvedRunId) return;
-
-    browserAutoOpenedRunId = resolvedRunId;
-    conversationInspectorTab = "browser";
-    showConversationInspector = true;
-  }
-
-  // Keep the first Browser activity at page level. The route can replace its
-  // conversation/inspector subtree while adopting a newly started Run; opening
-  // and selecting Browser locally would then lose the mounted host.
-  $effect(() => {
-    const runId = inspectorRunId;
-    const hint = [
-      progressView?.currentActivity?.kind,
-      progressView?.currentActivity?.toolName,
-      progress?.activeToolName,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    const autoOpen = getWorkBrowserInspectorAutoOpen(runId, hint, browserAutoOpenedRunId);
-    if (!autoOpen) return;
-
-    browserActivityRunId = autoOpen.runId;
-    if (!autoOpen.shouldOpen) return;
-    browserAutoOpenedRunId = autoOpen.runId;
-    conversationInspectorTab = autoOpen.tab;
-    showConversationInspector = true;
-  });
   // Stable surface key: prevent {#key} from remounting WorkChatSurface when
   // adoptStartedRun() transitions the same conversation from no-run → run-id.
   // When a new conversation gets its first run (empty runId → runId, same workspace),
@@ -578,7 +537,6 @@
                     conversationInspectorTab = "tasks";
                     showConversationInspector = true;
                   }}
-                  onBrowserActivity={handleBrowserActivity}
                   inspectorOpen={showConversationInspector}
                 />
               {/key}
@@ -587,11 +545,9 @@
             <WorkConversationInspectorAside
               open={showConversationInspector}
               onClose={() => (showConversationInspector = false)}
-              onRequestOpenBrowser={() => (showConversationInspector = true)}
               bind:activeTab={conversationInspectorTab}
               selectedFilePath={conversationInspectorFile}
               onClearFile={() => (conversationInspectorFile = "")}
-              {browserActivitySeen}
               {sessionInfo}
               {progress}
               {progressView}
@@ -742,7 +698,6 @@
                       conversationInspectorTab = "tasks";
                       showConversationInspector = true;
                     }}
-                    onBrowserActivity={handleBrowserActivity}
                     inspectorOpen={showConversationInspector}
                     onExportArtifact={exportArtifact}
                   />
@@ -752,11 +707,9 @@
               <WorkConversationInspectorAside
                 open={showConversationInspector}
                 onClose={() => (showConversationInspector = false)}
-                onRequestOpenBrowser={() => (showConversationInspector = true)}
                 bind:activeTab={conversationInspectorTab}
                 selectedFilePath={conversationInspectorFile}
                 onClearFile={() => (conversationInspectorFile = "")}
-                {browserActivitySeen}
                 {sessionInfo}
                 {progress}
                 {progressView}
