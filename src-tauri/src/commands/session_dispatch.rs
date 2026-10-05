@@ -217,14 +217,6 @@ pub(crate) async fn pi_launch_context(
         &caps.managed_runtime_dir,
     );
     settings.pi_code_profile_dir = Some(caps.managed_runtime_dir.to_string_lossy().into_owned());
-    let code_mcp_enabled = caps
-        .mcp_servers
-        .iter()
-        .any(|server| !server.id.starts_with("agent-plugin--"));
-    let code_plugin_mcp_enabled = caps
-        .mcp_servers
-        .iter()
-        .any(|server| server.id.starts_with("agent-plugin--"));
     {
         // Reuse Code's authenticated Host bridge and per-session token for
         // Plugin MCP, including an expert selected after session startup.
@@ -255,11 +247,6 @@ pub(crate) async fn pi_launch_context(
     settings
         .pi_shared_extension_sources
         .push(context_usage_adapter.to_string_lossy().into_owned());
-    if code_mcp_enabled || code_plugin_mcp_enabled {
-        settings
-            .pi_shared_extension_sources
-            .push("builtin:tool-search".into());
-    }
     if web_access_enabled {
         let web_adapter = crate::work::browser::ensure_code_web_adapter(&shared_paths)?;
         settings

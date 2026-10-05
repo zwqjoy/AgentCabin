@@ -1,7 +1,53 @@
 import fs from "node:fs";
+import { inflateSync } from "node:zlib";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+// Validate PNGs before they enter provider context. Bad optional metadata can
+// be removed without changing pixels; damaged critical data becomes text.
+function pngCrc(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+export function sanitizeToolImages(content) {
+  if (!Array.isArray(content)) return content;
+  return content.map(part => {
+    if (part.type !== "image" || part.mimeType !== "image/png") return part;
+    try {
+      const bytes = Buffer.from(part.data, "base64");
+      if (bytes.length > 20 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error("invalid PNG signature");
+      const chunks = [bytes.subarray(0, 8)];
+      const pixels = [];
+      let offset = 8;
+      let ended = false;
+      let changed = false;
+      while (offset + 12 <= bytes.length) {
+        const size = bytes.readUInt32BE(offset);
+        const end = offset + size + 12;
+        if (end > bytes.length) throw new Error("truncated PNG");
+        const type = bytes.toString("ascii", offset + 4, offset + 8);
+        const valid = pngCrc(bytes.subarray(offset + 4, end - 4)) === bytes.readUInt32BE(end - 4);
+        if (!valid && !(bytes[offset + 4] & 32)) throw new Error("damaged PNG pixels or header");
+        if (valid) chunks.push(bytes.subarray(offset, end));
+        else changed = true;
+        if (type === "IDAT") pixels.push(bytes.subarray(offset + 8, end - 4));
+        offset = end;
+        if (type === "IEND") { ended = true; break; }
+      }
+      if (!ended || !pixels.length) throw new Error("incomplete PNG");
+      inflateSync(Buffer.concat(pixels), { maxOutputLength: 64 * 1024 * 1024 });
+      return changed ? { ...part, data: Buffer.concat(chunks).toString("base64") } : part;
+    } catch {
+      return { type: "text", text: "[工具返回的 PNG 图片已损坏，无法提供给模型；请重新获取图片。其他工具结果仍可使用。]" };
+    }
+  });
+}
 
 const xml = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 
@@ -13,7 +59,8 @@ export function applyExpertContext(systemPrompt, context) {
   const role = context.expert && context.systemPrompt
     ? context.systemPrompt
     : "## 当前会话专家\n当前未选择专家。停止遵循历史轮次中的专家角色和专家团指令；按普通助手身份处理当前任务。";
-  return `${base}\n${catalog}\n${role}`;
+  const imageGuidance = "## 工具图片展示\nMCP/工具返回的图片会显示在对应工具结果中。不要把工具运行时或临时目录中的图片路径编造成 Markdown 图片链接（这些路径在用户界面不可访问且可能被清理）。需要提及图片时，直接描述图片内容，并提示用户查看对应工具结果。";
+  return `${base}\n${catalog}\n${imageGuidance}\n${role}`;
 }
 
 export function memberArguments(argv, prompt) {
@@ -63,6 +110,11 @@ export async function runExpertMember(agent, prompt, expertId, signal, onUpdate)
 }
 
 export default async function expertExtension(pi) {
+  // Cover new tool results and old persisted history on every provider turn.
+  pi.on("tool_result", event => ({ content: sanitizeToolImages(event.content) }));
+  pi.on("context", event => ({ messages: event.messages.map(message =>
+    message.role === "toolResult" ? { ...message, content: sanitizeToolImages(message.content) } : message
+  ) }));
   const profile = path.dirname(fileURLToPath(import.meta.url));
   const contextPath = path.join(profile, "expert-context.json");
   const workProfile = process.env.AGENTCABIN_WORK_PROFILE_DIR;
@@ -81,6 +133,7 @@ export default async function expertExtension(pi) {
     const nativeMcp = await import(pathToFileURL(process.env.AGENTCABIN_PI_CODING_AGENT_ENTRY).href);
     const { loadMcpConfig } = await import(pathToFileURL(path.join(path.dirname(nativePath), "config.js")).href);
     ({ buildCodePluginMcpConfig: buildCodeConfig } = await import(pathToFileURL(path.join(profile, "code-agent-plugin-mcp.mjs")).href));
+    nativeMcp.createToolSearchExtension()(pi);
     await nativeMcp.createMcpExtension({
       loadConfig: (ctx) => {
         const loaded = loadMcpConfig({ agentDir: profile, cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() });

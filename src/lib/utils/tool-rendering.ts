@@ -24,7 +24,16 @@ export function extractOutputText(output: unknown): string {
   // Content blocks array (Anthropic API format)
   if (Array.isArray(obj.content)) {
     const text = extractTextFromBlocks(obj.content);
-    if (text) return text;
+    if (
+      text ||
+      obj.content.some(
+        (block: unknown) =>
+          typeof block === "object" &&
+          block !== null &&
+          (block as Record<string, unknown>).type === "image",
+      )
+    )
+      return text;
   }
   // Direct content string
   if (typeof obj.content === "string" && obj.content) return obj.content;
@@ -33,7 +42,16 @@ export function extractOutputText(output: unknown): string {
   // Array of content blocks at top level
   if (Array.isArray(output)) {
     const text = extractTextFromBlocks(output);
-    if (text) return text;
+    if (
+      text ||
+      output.some(
+        (block: unknown) =>
+          typeof block === "object" &&
+          block !== null &&
+          (block as Record<string, unknown>).type === "image",
+      )
+    )
+      return text;
   }
   // Last resort: JSON stringify
   try {
@@ -50,11 +68,22 @@ export function extractImageBlocks(
   if (output == null || typeof output !== "object") return [];
   const obj = output as Record<string, unknown>;
   const blocks = Array.isArray(obj.content) ? obj.content : Array.isArray(output) ? output : [];
-  return blocks.filter(
-    (b): b is { type: "image"; source: { type: string; media_type: string; data: string } } => {
-      return typeof b === "object" && b !== null && (b as Record<string, unknown>).type === "image";
-    },
-  );
+  return blocks.flatMap((block) => {
+    if (typeof block !== "object" || block === null) return [];
+    const image = block as Record<string, unknown>;
+    if (image.type !== "image") return [];
+    const source = image.source as Record<string, unknown> | undefined;
+    const mime = source?.media_type ?? image.mimeType;
+    const data = source?.data ?? image.data;
+    if (
+      typeof mime !== "string" ||
+      !/^image\/(png|jpeg|gif|webp|avif)$/.test(mime) ||
+      typeof data !== "string" ||
+      !data
+    )
+      return [];
+    return [{ type: "image" as const, source: { type: "base64", media_type: mime, data } }];
+  });
 }
 
 const EXT_LANG_MAP: Record<string, string> = {

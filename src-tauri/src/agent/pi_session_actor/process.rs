@@ -50,12 +50,15 @@ fn build_rpc_args(
     let managed_code_profile = settings.pi_code_profile_dir.is_some();
     // Managed profiles disable discovery. Retain native MCP discovery tools;
     // the expert extension hosts Pi's native MCP consumer in a fixed order.
-    if isolated_work_profile || managed_code_profile {
+    if isolated_work_profile {
         args.extend(
             ["-e", "builtin:tool-search", "-e", "builtin:codemode"]
                 .into_iter()
                 .map(str::to_string),
         );
+    }
+    if managed_code_profile {
+        args.extend(["-e", "builtin:codemode"].into_iter().map(str::to_string));
     }
     if isolated_work_profile {
         args.extend(

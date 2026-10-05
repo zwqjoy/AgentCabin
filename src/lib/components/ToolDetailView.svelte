@@ -1486,6 +1486,14 @@
     <TeamToolDetail {tool} />
   {:else}
     <!-- Default: JSON input, plain text output -->
+    {#each imageBlocks as img}
+      <img
+        src="data:{img.source.media_type};base64,{img.source.data}"
+        alt="工具返回的图片"
+        class="max-h-96 max-w-full rounded border border-border/50"
+        loading="lazy"
+      />
+    {/each}
     {#if tool.input && Object.keys(tool.input).length > 0}
       <div class="rounded bg-muted p-2 max-h-40 overflow-y-auto relative group/copy">
         <div class="text-[10px] font-medium text-muted-foreground/60 mb-1 uppercase tracking-wider">

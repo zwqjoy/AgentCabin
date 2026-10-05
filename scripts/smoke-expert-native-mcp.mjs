@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 // Exercise live expert switching against the bundled Pi, without model calls.
 const entry = resolve(process.env.AGENTCABIN_RUNTIME_ROOT || 'runtime-build', 'pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/index.js');
-const { createAgentSession, createToolSearchExtension, DefaultResourceLoader, SessionManager } = await import(pathToFileURL(entry).href);
+const { createAgentSession, DefaultResourceLoader, SessionManager } = await import(pathToFileURL(entry).href);
 const expertId = 'agent-plugin--expert.fixture--mcp--echo';
 const connectorId = 'agent-plugin--connector.fixture--mcp--echo';
 const savedEnv = { ...process.env };
@@ -76,18 +76,20 @@ try {
         paths.unshift(join(dir, 'extensions', 'agentcabin-work-mcp-adapter.mjs'));
       }
       const loader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, noExtensions: true, noSkills: true,
-        additionalExtensionPaths: paths, extensionFactories: mode === 'code' ? [createToolSearchExtension()] : [] });
+        additionalExtensionPaths: paths, extensionFactories: [] });
       await loader.reload();
       const result = await createAgentSession({ cwd: dir, agentDir: dir, resourceLoader: loader, sessionManager: SessionManager.inMemory(dir) });
       assert.deepEqual(result.extensionsResult.errors, []);
       session = result.session;
       const runner = session.extensionRunner;
+
       const execute = async (name, input) => {
         const blocked = await runner.emitToolCall({ type: 'tool_call', toolName: name, toolCallId: 'fixture-call', input });
         assert(!blocked?.block, JSON.stringify(blocked));
         return runner.getToolDefinition(name).execute('fixture-call', input, undefined, undefined, runner.createToolContext('fixture-call'));
       };
       await runner.emit({ type: 'session_start' });
+      if (mode === 'code') assert(session.getActiveToolNames().includes('tool_search'), 'Code discovery must be active before the first prompt');
       assert.equal(runner.getRegisteredCommands().filter(command => command.name === 'mcp').length, 1);
       assert(!session.getActiveToolNames().some(name => name.startsWith('mcp__')));
       if (mode === 'code') {
