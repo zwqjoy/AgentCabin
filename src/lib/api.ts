@@ -38,6 +38,7 @@ import type {
   GitWorktreeInfo,
   ConfiguredMcpServer,
   McpRegistrySearchResult,
+  McpRegistryServer,
   ProviderHealth,
   ChangelogEntry,
   RemoteTestResult,
@@ -2432,6 +2433,22 @@ export async function searchMcpRegistry(
     limit: limit ?? null,
     cursor: cursor ?? null,
   });
+}
+
+export async function searchModelScopeMcpServers(
+  query: string,
+  limit?: number,
+): Promise<McpRegistrySearchResult> {
+  dbg("api", "searchModelScopeMcpServers", { query, limit });
+  return invoke<McpRegistrySearchResult>("search_modelscope_mcp_servers", {
+    query,
+    limit: limit ?? null,
+  });
+}
+
+export async function getModelScopeMcpServer(serverId: string): Promise<McpRegistryServer> {
+  dbg("api", "getModelScopeMcpServer", { serverId });
+  return invoke<McpRegistryServer>("get_modelscope_mcp_server", { serverId });
 }
 
 // ── CLI Permissions ──

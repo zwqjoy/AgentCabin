@@ -112,6 +112,25 @@ pub async fn search_mcp_registry(
 }
 
 #[tauri::command]
+pub async fn search_modelscope_mcp_servers(
+    query: String,
+    limit: Option<u32>,
+) -> Result<McpRegistrySearchResult, String> {
+    let q = query.trim();
+    if q.len() > 200 {
+        return Err("Query too long (max 200 characters)".into());
+    }
+    crate::storage::mcp_registry::search_modelscope(q, limit.unwrap_or(30)).await
+}
+
+#[tauri::command]
+pub async fn get_modelscope_mcp_server(
+    server_id: String,
+) -> Result<crate::models::McpRegistryServer, String> {
+    crate::storage::mcp_registry::get_modelscope_server(&server_id).await
+}
+
+#[tauri::command]
 pub fn list_codex_mcp_servers(cwd: Option<String>) -> Result<Vec<ConfiguredMcpServer>, String> {
     log::debug!("[mcp] list_codex_mcp_servers: cwd={:?}", cwd);
     Ok(crate::storage::mcp_registry::list_codex_configured(

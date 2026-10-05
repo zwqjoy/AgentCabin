@@ -16,6 +16,7 @@ use tokio::time::timeout;
 // ── Constants ──
 
 const REGISTRY_BASE: &str = "https://registry.modelcontextprotocol.io/v0";
+const MODELSCOPE_MCP_BASE: &str = "https://modelscope.cn/openapi/v1/mcp/servers";
 const CACHE_TTL: Duration = Duration::from_secs(120);
 const HEALTH_TTL: Duration = Duration::from_secs(300);
 const CMD_TIMEOUT: Duration = Duration::from_secs(30);
@@ -244,6 +245,253 @@ pub async fn search(
     }
 
     Ok(result)
+}
+
+/// Search ModelScope's public MCP catalog and normalize its entries for the shared UI.
+pub async fn search_modelscope(query: &str, limit: u32) -> Result<McpRegistrySearchResult, String> {
+    let page_size = limit.clamp(1, 100);
+    let response = CLIENT
+        .put(MODELSCOPE_MCP_BASE)
+        .json(&serde_json::json!({
+            "filter": {},
+            "page_number": 1,
+            "page_size": page_size,
+            "search": query,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("ModelScope search request failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "ModelScope API returned HTTP {}",
+            response.status()
+        ));
+    }
+
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse ModelScope response: {e}"))?;
+    if body.get("success").and_then(|v| v.as_bool()) == Some(false) {
+        return Err(body
+            .pointer("/message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("ModelScope catalog request failed")
+            .to_string());
+    }
+
+    let data = body.get("data").unwrap_or(&body);
+    let entries = data
+        .get("mcp_server_list")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let servers = entries
+        .iter()
+        .filter_map(|entry| {
+            let id = entry.get("id")?.as_str()?.to_string();
+            let title = entry
+                .get("chinese_name")
+                .and_then(|v| v.as_str())
+                .filter(|v| !v.is_empty())
+                .or_else(|| entry.get("name").and_then(|v| v.as_str()))
+                .map(str::to_string);
+            Some(McpRegistryServer {
+                name: id.clone(),
+                model_scope_id: Some(id),
+                description: entry
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                title,
+                version: "ModelScope".to_string(),
+                packages: Vec::new(),
+                remotes: Vec::new(),
+                repository: entry.get("source_url").and_then(|v| v.as_str()).map(|url| {
+                    crate::models::McpRegistryRepository {
+                        url: Some(url.to_string()),
+                        source: Some("modelscope".to_string()),
+                    }
+                }),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(McpRegistrySearchResult {
+        servers,
+        next_cursor: None,
+        count: data
+            .get("total_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(entries.len() as u64) as u32,
+    })
+}
+
+/// Fetch a ModelScope entry's public connection template for the install form.
+pub async fn get_modelscope_server(server_id: &str) -> Result<McpRegistryServer, String> {
+    if server_id.len() > 300 || !server_id.starts_with('@') && !server_id.contains('/') {
+        return Err("Invalid ModelScope MCP server ID".into());
+    }
+    // ModelScope IDs are namespaced as `owner/server`; keep the namespace
+    // separator in the URL path and encode each segment independently.
+    let encoded_id = server_id
+        .split('/')
+        .map(|segment| {
+            let mut encoded = String::with_capacity(segment.len());
+            for byte in segment.bytes() {
+                if byte.is_ascii_alphanumeric() || matches!(byte, b'@' | b'-' | b'_' | b'.' | b'~')
+                {
+                    encoded.push(byte as char);
+                } else {
+                    encoded.push_str(&format!("%{byte:02X}"));
+                }
+            }
+            encoded
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    let response = CLIENT
+        .get(format!("{MODELSCOPE_MCP_BASE}/{encoded_id}"))
+        .send()
+        .await
+        .map_err(|e| format!("ModelScope detail request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "ModelScope API returned HTTP {}",
+            response.status()
+        ));
+    }
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse ModelScope detail: {e}"))?;
+    if body.get("success").and_then(|v| v.as_bool()) == Some(false) {
+        return Err("ModelScope could not find this MCP server".into());
+    }
+    let data = body.get("data").unwrap_or(&body);
+    let id = data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or(server_id)
+        .to_string();
+    let first_config = data
+        .get("server_config")
+        .and_then(|v| v.as_array())
+        .and_then(|configs| configs.first())
+        .and_then(|v| v.get("mcpServers"))
+        .and_then(|v| v.as_object())
+        .and_then(|servers| servers.iter().next());
+
+    let mut packages = Vec::new();
+    let mut remotes = Vec::new();
+    if let Some((_, config)) = first_config {
+        let env = config.get("env").and_then(|v| v.as_object());
+        let env_vars = env
+            .map(|values| {
+                values
+                    .iter()
+                    .map(|(name, value)| {
+                        let is_secret = ["key", "token", "secret", "password", "auth"]
+                            .iter()
+                            .any(|marker| name.to_lowercase().contains(marker));
+                        crate::models::McpRegistryEnvVar {
+                            name: name.clone(),
+                            description: None,
+                            is_required: Some(
+                                value.as_str().unwrap_or_default().is_empty() || is_secret,
+                            ),
+                            is_secret: Some(is_secret),
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if config.get("command").and_then(|v| v.as_str()).is_some() {
+            packages.push(crate::models::McpRegistryPackage {
+                registry_type: "modelscope".to_string(),
+                identifier: id.clone(),
+                version: None,
+                environment_variables: env_vars,
+                config: Some(config.clone()),
+            });
+        }
+        if let Some(url) = config.get("url").and_then(|v| v.as_str()) {
+            let headers = config
+                .get("headers")
+                .and_then(|v| v.as_object())
+                .map(|headers| {
+                    headers
+                        .iter()
+                        .map(|(name, value)| {
+                            let is_secret = ["key", "token", "secret", "password", "auth"]
+                                .iter()
+                                .any(|marker| name.to_lowercase().contains(marker));
+                            crate::models::McpRegistryHeader {
+                                name: name.clone(),
+                                description: None,
+                                // Public config templates sometimes include example credentials.
+                                value: None,
+                                is_required: Some(
+                                    value.as_str().unwrap_or_default().is_empty() || is_secret,
+                                ),
+                                is_secret: Some(is_secret),
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            remotes.push(crate::models::McpRegistryRemote {
+                remote_type: config
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("streamable-http")
+                    .to_string(),
+                url: url.to_string(),
+                headers,
+            });
+        }
+    }
+    if remotes.is_empty() {
+        if let Some(url) = data
+            .get("operational_urls")
+            .and_then(|v| v.as_array())
+            .and_then(|urls| urls.first())
+            .and_then(|v| v.get("url"))
+            .and_then(|v| v.as_str())
+        {
+            remotes.push(crate::models::McpRegistryRemote {
+                remote_type: "sse".to_string(),
+                url: url.to_string(),
+                headers: Vec::new(),
+            });
+        }
+    }
+
+    Ok(McpRegistryServer {
+        name: id.clone(),
+        model_scope_id: Some(id),
+        description: data
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        title: data
+            .get("chinese_name")
+            .and_then(|v| v.as_str())
+            .or_else(|| data.get("name").and_then(|v| v.as_str()))
+            .map(str::to_string),
+        version: "ModelScope".to_string(),
+        packages,
+        remotes,
+        repository: data.get("source_url").and_then(|v| v.as_str()).map(|url| {
+            crate::models::McpRegistryRepository {
+                url: Some(url.to_string()),
+                source: Some("modelscope".to_string()),
+            }
+        }),
+    })
 }
 
 /// List configured MCP servers from all config file locations.

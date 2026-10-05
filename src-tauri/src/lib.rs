@@ -578,6 +578,8 @@ pub fn run() {
             commands::mcp::get_disabled_mcp_servers,
             commands::mcp::check_mcp_registry_health,
             commands::mcp::search_mcp_registry,
+            commands::mcp::search_modelscope_mcp_servers,
+            commands::mcp::get_modelscope_mcp_server,
             commands::mcp::list_codex_mcp_servers,
             commands::mcp::list_grok_mcp_servers,
             commands::mcp::add_codex_mcp_server,

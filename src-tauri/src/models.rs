@@ -2774,6 +2774,8 @@ pub struct McpRegistrySearchResult {
 pub struct McpRegistryServer {
     pub name: String,
     #[serde(default)]
+    pub model_scope_id: Option<String>,
+    #[serde(default)]
     pub description: String,
     #[serde(default)]
     pub title: Option<String>,
@@ -2798,6 +2800,8 @@ pub struct McpRegistryPackage {
     pub version: Option<String>,
     #[serde(default)]
     pub environment_variables: Vec<McpRegistryEnvVar>,
+    #[serde(default)]
+    pub config: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

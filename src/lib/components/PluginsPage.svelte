@@ -3284,14 +3284,8 @@
                 </div>
               {/if}
               {#if workMcpSource === "discover" && pageMode === "catalog"}
-                <McpDiscoverPanel
-                  {projectCwd}
-                  visible={true}
-                  targetRealm="work"
-                  enableOnInstall={false}
-                  bind:operationLoading
-                  {showToast}
-                />
+                <!-- Work has its own Registry panel below. The shared Code MCP
+                     discovery panel queried the same catalog and duplicated it. -->
               {:else}
                 <McpConfiguredPanel
                   {projectCwd}
