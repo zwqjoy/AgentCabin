@@ -652,6 +652,7 @@ export function startWorkSession(
   attachments?: Attachment[],
   preset: WorkPreset = "office",
   runtime?: string,
+  expertId?: string | null,
 ): Promise<TaskRun> {
   return invoke<TaskRun>("work_start_session", {
     workspaceId,
@@ -660,6 +661,7 @@ export function startWorkSession(
     attachments: attachments?.map(toWorkAttachment) ?? [],
     preset,
     runtime: runtime ?? null,
+    expertId: expertId ?? null,
   });
 }
 
@@ -719,6 +721,7 @@ export function startStandaloneWorkSession(
   permissionMode?: WorkExecutionMode,
   preset: WorkPreset = "office",
   runtime?: string,
+  expertId?: string | null,
 ): Promise<TaskRun> {
   return invoke<TaskRun>("work_start_standalone_session", {
     message,
@@ -727,6 +730,7 @@ export function startStandaloneWorkSession(
     permissionMode: permissionMode ?? null,
     preset,
     runtime: runtime ?? null,
+    expertId: expertId ?? null,
   });
 }
 

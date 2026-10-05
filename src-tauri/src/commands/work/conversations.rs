@@ -45,13 +45,14 @@ pub async fn work_start_session(
     attachments: Option<Vec<AttachmentData>>,
     preset: Option<WorkPreset>,
     runtime: Option<String>,
+    expert_id: Option<String>,
 ) -> Result<TaskRun, String> {
     ensure_work_enabled()?;
     let runtime = runtime
         .as_deref()
         .map(RuntimeProviderKind::try_from_agent_str)
         .transpose()?;
-    session::start(
+    session::start_with_expert(
         emitter.inner(),
         sessions.inner(),
         spawn_locks.inner(),
@@ -62,6 +63,7 @@ pub async fn work_start_session(
         attachments,
         preset.unwrap_or_default(),
         runtime,
+        expert_id,
     )
     .await
 }
@@ -120,13 +122,14 @@ pub async fn work_start_standalone_session(
     permission_mode: Option<crate::work::models::WorkExecutionMode>,
     preset: Option<WorkPreset>,
     runtime: Option<String>,
+    expert_id: Option<String>,
 ) -> Result<TaskRun, String> {
     ensure_work_enabled()?;
     let runtime = runtime
         .as_deref()
         .map(RuntimeProviderKind::try_from_agent_str)
         .transpose()?;
-    session::start_standalone(
+    session::start_standalone_with_expert(
         emitter.inner(),
         sessions.inner(),
         spawn_locks.inner(),
@@ -137,6 +140,7 @@ pub async fn work_start_standalone_session(
         permission_mode,
         preset.unwrap_or_default(),
         runtime,
+        expert_id,
     )
     .await
 }

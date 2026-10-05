@@ -48,6 +48,15 @@ fn build_rpc_args(
     let mut args = vec!["--mode".to_string(), "rpc".to_string()];
     let isolated_work_profile = settings.pi_agent_dir.is_some();
     let managed_code_profile = settings.pi_code_profile_dir.is_some();
+    // Managed profiles disable discovery. Retain native MCP discovery tools;
+    // the expert extension hosts Pi's native MCP consumer in a fixed order.
+    if isolated_work_profile || managed_code_profile {
+        args.extend(
+            ["-e", "builtin:tool-search", "-e", "builtin:codemode"]
+                .into_iter()
+                .map(str::to_string),
+        );
+    }
     if isolated_work_profile {
         args.extend(
             [
@@ -140,6 +149,20 @@ fn build_rpc_args(
         .filter(|value| !value.trim().is_empty())
     {
         push_explicit_extension(&mut args, &mut explicit_extensions, extension);
+    }
+    if let Some(agent_dir) = settings
+        .pi_agent_dir
+        .as_deref()
+        .or(settings.pi_code_profile_dir.as_deref())
+    {
+        let extension = PathBuf::from(agent_dir).join("expert-extension.mjs");
+        if extension.is_file() {
+            push_explicit_extension(
+                &mut args,
+                &mut explicit_extensions,
+                extension.to_string_lossy().into_owned(),
+            );
+        }
     }
     for source in &settings.pi_shared_extension_sources {
         if !source.trim().is_empty() {
@@ -601,6 +624,8 @@ async fn spawn_actor_with_launch(
         .stderr(Stdio::piped())
         .env("PATH", path)
         .env_remove("PI_CODING_AGENT_DIR")
+        .env_remove("AGENTCABIN_EXPERT_MEMBER")
+        .env_remove("AGENTCABIN_EXPERT_MEMBER_PLUGIN")
         .env_remove("CLAUDECODE")
         .hide_console()
         .kill_on_drop(true);

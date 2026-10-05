@@ -130,35 +130,6 @@ pub struct EffectiveCapabilities {
 
 pub struct CapabilityResolver;
 
-fn active_expert_for_run(root: &Path, run_id: &str) -> Option<String> {
-    let run_meta_path = root.join("runs").join(run_id).join("meta.json");
-    let prompt = if run_meta_path.is_file() {
-        let content = std::fs::read_to_string(&run_meta_path).ok()?;
-        let val: serde_json::Value = serde_json::from_str(&content).ok()?;
-        val.get("prompt")
-            .and_then(|p| p.as_str())
-            .map(|s| s.to_string())
-    } else {
-        crate::storage::runs::get_run(run_id).map(|meta| meta.prompt)
-    }?;
-
-    if let Some(start) = prompt.find("[当前协作专家:") {
-        let remainder = &prompt[start + "[当前协作专家:".len()..];
-        if let Some(end) = remainder.find(']') {
-            let raw = remainder[..end].trim();
-            let cleaned = raw
-                .replace("(专家团队)", "")
-                .replace("(专家团)", "")
-                .trim()
-                .to_string();
-            if !cleaned.is_empty() {
-                return Some(cleaned);
-            }
-        }
-    }
-    None
-}
-
 impl CapabilityResolver {
     /// Compute the managed runtime root directory for a specific run:
     /// `~/.agentcabin/runtime/<mode>/<provider>/<run-id>/`
@@ -298,7 +269,8 @@ impl CapabilityResolver {
         let canonical_plugin_packages =
             std::fs::canonicalize(&plugin_packages).unwrap_or(plugin_packages);
         let all_plugins = crate::storage::agent_plugins::list_agent_plugins_with_root(root);
-        let active_expert = active_expert_for_run(root, run_id);
+        let active_expert =
+            storage::session_experts::get_with_root(root, run_id)?.map(|expert| expert.id);
         let plugin_kinds = all_plugins
             .iter()
             .map(|plugin| {
@@ -321,13 +293,7 @@ impl CapabilityResolver {
                 }
                 // 专家与专家团：通用技能全面排除！仅当用户主动选择该专家时才激活
                 if let Some(ref target) = active_expert {
-                    let t = target.trim().to_lowercase();
-                    plugin.id.to_lowercase() == t
-                        || plugin.name.to_lowercase() == t
-                        || plugin
-                            .display_name
-                            .as_deref()
-                            .is_some_and(|d| d.to_lowercase() == t)
+                    plugin.id == *target
                 } else {
                     false
                 }
@@ -335,7 +301,15 @@ impl CapabilityResolver {
             .map(|plugin| plugin.id.clone())
             .collect::<HashSet<_>>();
 
-        for skill in crate::storage::agent_plugins::list_enabled_skills_with_root(root) {
+        let mut plugin_skills = crate::storage::agent_plugins::list_enabled_skills_with_root(root);
+        let mut selected_mcp_servers = Vec::new();
+        if let Some(ref id) = active_expert {
+            let (_, skills, servers) =
+                storage::agent_plugins::selected_expert_resources_with_root(root, id)?;
+            plugin_skills.extend(skills);
+            selected_mcp_servers = servers;
+        }
+        for skill in plugin_skills {
             if !active_plugin_ids.contains(&skill.plugin_id) {
                 continue;
             }
@@ -432,7 +406,10 @@ impl CapabilityResolver {
             }
         }
 
-        for server in crate::storage::agent_plugins::list_enabled_mcp_servers_with_root(root) {
+        let mut plugin_servers =
+            crate::storage::agent_plugins::list_enabled_mcp_servers_with_root(root);
+        plugin_servers.extend(selected_mcp_servers);
+        for server in plugin_servers {
             if !active_plugin_ids.contains(&server.plugin_id) {
                 continue;
             }

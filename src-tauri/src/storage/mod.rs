@@ -21,6 +21,7 @@ pub mod prompt_index;
 pub mod prompt_templates;
 pub mod run_index;
 pub mod runs;
+pub mod session_experts;
 pub mod settings;
 pub mod skills;
 pub mod teams;

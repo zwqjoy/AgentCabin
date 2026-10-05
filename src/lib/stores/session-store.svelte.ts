@@ -2881,6 +2881,7 @@ export class SessionStore {
     skills?: Array<{ name: string; path: string }>,
     effort?: string,
     codeStandaloneTask = false,
+    expertId: string | null = null,
   ): Promise<string> {
     this.error = "";
     if (this.remoteHostName && !this.capabilities.runtime.remote) {
@@ -3028,6 +3029,7 @@ export class SessionStore {
         undefined,
         codeStandaloneTask,
       );
+      await api.setSessionExpert(run.id, expertId);
       const startupEffort = effort?.trim();
       if (startupEffort) {
         // Persist before spawning the actor. Pi reads the run-level effort while building
@@ -3142,9 +3144,13 @@ export class SessionStore {
   }
 
   /** Start a Pi actor and its RPC discovery handshake without starting a model turn. */
-  async startPiSessionShell(cwd: string, effort?: string): Promise<string> {
+  async startPiSessionShell(
+    cwd: string,
+    effort?: string,
+    expertId: string | null = null,
+  ): Promise<string> {
     if (this.agent !== "pi") throw new Error("Pi session shell requires the Pi agent");
-    return this.startSession("", cwd, [], undefined, undefined, effort);
+    return this.startSession("", cwd, [], undefined, undefined, effort, false, expertId);
   }
 
   /** Wait for Pi get_commands, not merely the earlier get_state SessionInit. */

@@ -169,6 +169,7 @@ export class WorkSessionStore {
     attachments?: Attachment[],
     permissionMode?: WorkExecutionMode,
     preset: WorkPreset = "office",
+    expertId: string | null = null,
   ): Promise<TaskRun> {
     this.invalidatePendingLoad();
     this.starting = true;
@@ -184,6 +185,7 @@ export class WorkSessionStore {
           permissionMode,
           preset,
           this.session.agent,
+          expertId,
         );
       } else {
         run = await startWorkSession(
@@ -193,6 +195,7 @@ export class WorkSessionStore {
           attachments,
           preset,
           this.session.agent,
+          expertId,
         );
       }
       this.adoptStartedRun(run, optimisticId);

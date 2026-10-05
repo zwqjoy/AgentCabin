@@ -2304,6 +2304,215 @@ pub fn list_enabled_mcp_servers_with_root(root: &Path) -> Vec<AgentPluginRuntime
         .collect()
 }
 
+/// Resolve an explicitly selected expert independently of global plugin enablement.
+/// Installation/trust remain host-owned; selection is scoped to a single conversation.
+pub fn selected_expert_resources_with_root(
+    root: &Path,
+    plugin_id: &str,
+) -> Result<
+    (
+        AgentPluginSummary,
+        Vec<AgentPluginRuntimeSkill>,
+        Vec<AgentPluginRuntimeMcpServer>,
+    ),
+    String,
+> {
+    let plugin = list_loaded_with_root(root)
+        .into_iter()
+        .find(|p| p.summary.id == plugin_id)
+        .ok_or_else(|| format!("专家未安装: {plugin_id}"))?;
+    if plugin.summary.expert_kind.is_none()
+        || !plugin.summary.trusted
+        || plugin.summary.error.is_some()
+    {
+        return Err(format!("专家不可用或尚未信任: {plugin_id}"));
+    }
+    Ok((
+        plugin.summary,
+        plugin.runtime_skills,
+        plugin.runtime_mcp_servers,
+    ))
+}
+
+/// Load the actual WorkBuddy Agent instructions and explicitly preloaded Skills.
+/// Skill resources/scripts remain on disk and are read only when needed.
+pub fn selected_expert_prompt_with_root(root: &Path, plugin_id: &str) -> Result<String, String> {
+    selected_expert_agent_prompt_with_root(root, plugin_id, None)
+}
+
+pub fn selected_expert_member_prompts_with_root(
+    root: &Path,
+    plugin_id: &str,
+) -> Result<std::collections::BTreeMap<String, String>, String> {
+    let package = package_path_with_root(root, plugin_id);
+    let mut warnings = Vec::new();
+    let manifest = parse_manifest(
+        &package_manifest_path(&package).ok_or("专家配置缺失")?,
+        &mut warnings,
+    )?;
+    let workbuddy = manifest
+        .workbuddy
+        .as_ref()
+        .ok_or("专家不是 WorkBuddy 格式")?;
+    let mut members = std::collections::BTreeMap::new();
+    if workbuddy.expert_kind == "expert-team" {
+        for member in &workbuddy.member_agents {
+            members.insert(
+                member.clone(),
+                selected_expert_agent_prompt_with_root(root, plugin_id, Some(member))?,
+            );
+        }
+    }
+    Ok(members)
+}
+
+fn selected_expert_agent_prompt_with_root(
+    root: &Path,
+    plugin_id: &str,
+    member: Option<&str>,
+) -> Result<String, String> {
+    let (summary, skills, _) = selected_expert_resources_with_root(root, plugin_id)?;
+    let package = package_path_with_root(root, plugin_id);
+    let manifest_path = package_manifest_path(&package).ok_or("专家配置缺失")?;
+    let mut warnings = Vec::new();
+    let raw: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    if let Some(connectors) = raw
+        .pointer("/dependencies/connectors")
+        .and_then(Value::as_array)
+    {
+        let catalog = profile_bindings::read_connector_catalog_with_root(root);
+        let packages = crate::work::connector_package_manager::list_with_paths(
+            &crate::work::paths::WorkPaths::new(root.to_path_buf()),
+        )?;
+        for id in connectors.iter().filter_map(Value::as_str) {
+            if !catalog.iter().any(|connector| connector.id == id)
+                || !profile_bindings::is_connector_enabled_with_root(root, id)
+            {
+                return Err(format!(
+                    "专家需要连接器 {id}，请先在能力中心完成连接并启用。"
+                ));
+            }
+            if let Some(connector) = packages
+                .iter()
+                .find(|connector| connector.manifest.id == id)
+            {
+                use crate::work::connector_package::{ConnectorAuthKind, ConnectorAuthStatus};
+                let needs_auth = !matches!(
+                    connector.manifest.auth.kind,
+                    ConnectorAuthKind::None | ConnectorAuthKind::Cli
+                );
+                if !connector.state.trusted
+                    || !connector.state.enabled
+                    || (needs_auth
+                        && connector.state.auth_status != ConnectorAuthStatus::Authenticated)
+                {
+                    return Err(format!(
+                        "专家依赖的连接器 {id} 尚未完成授权，请先在能力中心完成连接。"
+                    ));
+                }
+            }
+        }
+    }
+    let manifest = parse_manifest(&manifest_path, &mut warnings)?;
+    let workbuddy = manifest
+        .workbuddy
+        .as_ref()
+        .ok_or("专家不是 WorkBuddy 格式")?;
+    let mut agents = workbuddy
+        .agent_paths
+        .iter()
+        .flat_map(|raw| workbuddy_agent_files(&package, raw))
+        .collect::<Vec<_>>();
+    let target = member.unwrap_or(&workbuddy.lead_agent);
+    if member.is_some() && !workbuddy.member_agents.iter().any(|id| id == target) {
+        return Err("该 Agent 不属于所选专家团".into());
+    }
+    agents.retain(|file| workbuddy_agent_id(file) == target);
+    if agents.is_empty() {
+        return Err(format!("专家 Agent 未找到: {target}"));
+    }
+    let mut prompt = format!(
+        "## 当前会话专家: {}\n当前角色配置取代历史轮次的专家配置。\n",
+        summary.display_name.as_deref().unwrap_or(&summary.name)
+    );
+    let mut preload_names = std::collections::HashSet::new();
+    for (index, file) in agents.iter().enumerate() {
+        if !is_real_file(file) || !contained_in(&package, file) {
+            return Err("专家 Agent 文件不在安装包内".into());
+        }
+        let content = fs::read_to_string(file).map_err(|e| e.to_string())?;
+        if content.len() > MAX_SKILL_BYTES as usize {
+            return Err("专家 Agent 定义过大".into());
+        }
+        let (metadata, body) = split_agent_frontmatter(&content)?;
+        if let Some(names) = metadata
+            .get("skills")
+            .and_then(serde_yaml::Value::as_sequence)
+        {
+            for name in names.iter().filter_map(serde_yaml::Value::as_str) {
+                preload_names.insert(name.to_string());
+            }
+        }
+        if index == 0 {
+            prompt.push_str(body);
+        }
+    }
+    if member.is_none() && workbuddy.expert_kind == "expert-team" {
+        prompt.push_str(&format!("\n可委派的专家团成员: {}。通过 AgentTool 工具将任务交给指定成员；工具会加载该成员的角色和预加载技能，执行真实的独立 Pi 会话。可以并行委派独立任务。主理人负责汇总实际返回的结果，不能把角色模拟当作已执行的成员任务。\n", workbuddy.member_agents.join(", ")));
+    }
+    for name in preload_names {
+        let package_skill = skills.iter().find(|skill| {
+            skill.name == name
+                || summary
+                    .skills
+                    .iter()
+                    .any(|s| s.id == skill.id && s.name == name)
+        });
+        let (skill_dir, boundary) = if let Some(skill) = package_skill {
+            (skill.path.clone(), package.clone())
+        } else {
+            let shared = crate::storage::skills::list_skills_with_root(root)
+                .into_iter()
+                .find(|s| s.name == name && s.enabled)
+                .ok_or_else(|| format!("专家声明的预加载技能未找到或未启用: {name}"))?;
+            (PathBuf::from(shared.path), root.join("skills"))
+        };
+        let skill_md = skill_dir.join("SKILL.md");
+        if !is_real_file(&skill_md) || !contained_in(&boundary, &skill_md) {
+            return Err("预加载技能不在可信技能目录内".into());
+        }
+        let content = fs::read_to_string(&skill_md).map_err(|e| e.to_string())?;
+        if content.len() > MAX_SKILL_BYTES as usize {
+            return Err("预加载技能过大".into());
+        }
+        prompt.push_str(&format!(
+            "\n\n### 预加载技能: {name}\n技能目录: {}\n{}\n",
+            skill_dir.display(),
+            content
+        ));
+    }
+    Ok(prompt)
+}
+
+fn split_agent_frontmatter(content: &str) -> Result<(serde_yaml::Value, &str), String> {
+    let normalized = content.trim_start_matches('\u{feff}');
+    if !normalized.starts_with("---\n") && !normalized.starts_with("---\r\n") {
+        return Ok((serde_yaml::Value::Null, normalized));
+    }
+    let first_newline = normalized.find('\n').unwrap();
+    let remainder = &normalized[first_newline + 1..];
+    let end = remainder.find("\n---").ok_or("Agent frontmatter 未闭合")?;
+    let yaml = serde_yaml::from_str(&remainder[..end])
+        .map_err(|e| format!("Agent frontmatter 无效: {e}"))?;
+    let body_start = remainder[end + 1..]
+        .find('\n')
+        .map(|n| end + 2 + n)
+        .unwrap_or(remainder.len());
+    Ok((yaml, &remainder[body_start..]))
+}
+
 fn is_github_source(source: &str) -> bool {
     Url::parse(source)
         .ok()

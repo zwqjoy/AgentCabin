@@ -1,6 +1,6 @@
 use super::{
-    cleanup_managed_directory, ensure_real_directory, project_skills, write_managed_file,
-    RuntimeProviderAdapter, RuntimeSpawnConfig,
+    cleanup_managed_directory, ensure_real_directory, project_skills, write_atomic_managed_file,
+    write_managed_file, RuntimeProviderAdapter, RuntimeSpawnConfig,
 };
 use crate::agent::capability_resolver::{EffectiveCapabilities, RuntimeProviderKind};
 use crate::agent::claude_stream;
@@ -25,6 +25,23 @@ impl RuntimeProviderAdapter for PiRuntimeAdapter {
         // Project enabled skills into pi_home/skills
         let projected_skills_dir = pi_home.join("skills");
         project_skills(&projected_skills_dir, &caps.enabled_skills)?;
+
+        let expert = crate::storage::session_experts::get_with_root(&data_dir, &caps.run_id)?;
+        let expert_servers = expert
+            .as_ref()
+            .map(|expert| {
+                crate::storage::agent_plugins::selected_expert_resources_with_root(
+                    &data_dir, &expert.id,
+                )
+                .map(|(_, _, servers)| servers)
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let expert_server_ids = expert_servers
+            .iter()
+            .map(|server| server.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        let mut dynamic_servers = serde_json::Map::new();
 
         // Project MCP servers into pi_home/mcp.json
         let mcp_config_path = pi_home.join("mcp.json");
@@ -79,7 +96,13 @@ impl RuntimeProviderAdapter for PiRuntimeAdapter {
                 // retiring the shared adapter; keep its tools reachable without codemode.
                 obj.insert("exposure".into(), serde_json::json!("deferred"));
             }
-            servers_map.insert(server.id.clone(), serde_json::Value::Object(obj));
+            if expert_server_ids.contains(server.id.as_str()) {
+                // Expert-owned MCP services must be removable while the process remains alive.
+                obj.insert("exposure".into(), serde_json::json!("deferred"));
+                dynamic_servers.insert(server.id.clone(), serde_json::Value::Object(obj));
+            } else {
+                servers_map.insert(server.id.clone(), serde_json::Value::Object(obj));
+            }
         }
 
         let mcp_json = serde_json::json!({
@@ -88,6 +111,35 @@ impl RuntimeProviderAdapter for PiRuntimeAdapter {
         let mcp_contents = serde_json::to_string_pretty(&mcp_json)
             .map_err(|e| format!("Failed to serialize Pi MCP config: {e}"))?;
         write_managed_file(&mcp_config_path, mcp_contents, "Pi MCP config")?;
+
+        let expert_prompt = expert
+            .as_ref()
+            .map(|expert| {
+                crate::storage::agent_plugins::selected_expert_prompt_with_root(
+                    &data_dir, &expert.id,
+                )
+            })
+            .transpose()?;
+        let members = expert
+            .as_ref()
+            .map(|expert| {
+                crate::storage::agent_plugins::selected_expert_member_prompts_with_root(
+                    &data_dir, &expert.id,
+                )
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let context = serde_json::json!({ "expert": expert, "systemPrompt": expert_prompt, "skills": caps.enabled_skills, "mcpServers": dynamic_servers, "members": members });
+        write_atomic_managed_file(
+            &pi_home.join("expert-context.json"),
+            serde_json::to_vec(&context).map_err(|e| e.to_string())?,
+            "expert runtime context",
+        )?;
+        write_managed_file(
+            &pi_home.join("expert-extension.mjs"),
+            include_str!("../pi_expert_extension.mjs"),
+            "expert runtime extension",
+        )?;
 
         // Ensure per-run sessions directory exists so Pi CLI stores all session state inside
         // this per-run runtime sandbox without polluting profiles/work or profiles/code/pi.

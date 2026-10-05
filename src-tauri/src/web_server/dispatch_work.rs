@@ -280,13 +280,14 @@ async fn work_dispatch(
             let attachments: Option<Vec<crate::agent::session_actor::AttachmentData>> =
                 param(params, "attachments")?;
             let preset: Option<crate::work::models::WorkPreset> = param(params, "preset")?;
+            let expert_id: Option<String> = param(params, "expert_id")?;
             let runtime: Option<String> = param(params, "runtime")?;
             let runtime_kind = runtime
                 .as_deref()
                 .map(RuntimeProviderKind::try_from_agent_str)
                 .transpose()?;
             to_json(
-                crate::work::session::start(
+                crate::work::session::start_with_expert(
                     &rt.emitter,
                     &rt.sessions,
                     &rt.spawn_locks,
@@ -297,6 +298,7 @@ async fn work_dispatch(
                     attachments,
                     preset.unwrap_or_default(),
                     runtime_kind,
+                    expert_id,
                 )
                 .await,
             )
@@ -310,13 +312,14 @@ async fn work_dispatch(
             let permission_mode: Option<crate::work::models::WorkExecutionMode> =
                 param(params, "permission_mode")?;
             let preset: Option<crate::work::models::WorkPreset> = param(params, "preset")?;
+            let expert_id: Option<String> = param(params, "expert_id")?;
             let runtime: Option<String> = param(params, "runtime")?;
             let runtime_kind = runtime
                 .as_deref()
                 .map(RuntimeProviderKind::try_from_agent_str)
                 .transpose()?;
             to_json(
-                crate::work::session::start_standalone(
+                crate::work::session::start_standalone_with_expert(
                     &rt.emitter,
                     &rt.sessions,
                     &rt.spawn_locks,
@@ -327,6 +330,7 @@ async fn work_dispatch(
                     permission_mode,
                     preset.unwrap_or_default(),
                     runtime_kind,
+                    expert_id,
                 )
                 .await,
             )

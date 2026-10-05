@@ -340,6 +340,10 @@ pub(super) async fn run_actor(
                             ));
                             continue;
                         }
+                        if let Err(error) = crate::commands::agent_plugins::refresh_session_expert_runtime(&run_id).await {
+                            let _ = reply.send(Err(error));
+                            continue;
+                        }
                         let work_context = match work_turn_context(
                             &run_id,
                             work_context_plan.as_ref(),

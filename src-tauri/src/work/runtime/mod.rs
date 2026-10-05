@@ -58,6 +58,7 @@ pub struct WorkRuntimePrepareContext {
 /// Optional per-run launch overrides (e.g. for smoke testing without modifying user settings).
 #[derive(Debug, Clone, Default)]
 pub struct WorkLaunchOverrides {
+    pub expert_id: Option<String>,
     pub runtime: Option<RuntimeProviderKind>,
     pub model: Option<String>,
     pub effort: Option<String>,

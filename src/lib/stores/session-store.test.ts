@@ -15,6 +15,7 @@ vi.mock("$lib/api", () => ({
   getRunEvents: vi.fn(),
   startRun: vi.fn(),
   startSession: vi.fn(),
+  setSessionExpert: vi.fn().mockResolvedValue(null),
   updateRunEffort: vi.fn().mockResolvedValue(undefined),
   getUserSettings: vi.fn().mockResolvedValue({}),
   getAgentSettings: vi.fn().mockResolvedValue({}),

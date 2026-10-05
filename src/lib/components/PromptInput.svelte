@@ -25,7 +25,7 @@
   import SlashMenu from "./SlashMenu.svelte";
   import CompactModelPicker from "./CompactModelPicker.svelte";
   import WorkBuddyCascadingMenu, { type SelectedExpert } from "./WorkBuddyCascadingMenu.svelte";
-  import { dshExpertSkillName, isExpertSkill } from "$lib/utils/expert-context";
+  import { isExpertSkill } from "$lib/utils/expert-context";
   import AtMentionMenu from "./AtMentionMenu.svelte";
   import {
     filterSlashCommands,
@@ -185,6 +185,7 @@
     harness = "code",
     selectedExpert = $bindable(null),
     onExpertClear,
+    onExpertChange,
   }: {
     harness?: "code" | "work";
     sessionInfo?: import("$lib/types").SessionInfoData | null;
@@ -338,6 +339,7 @@
     onDraftChange?: (snapshot: PromptInputSnapshot) => void;
     selectedExpert?: SelectedExpert | null;
     onExpertClear?: () => void;
+    onExpertChange?: (expert: SelectedExpert | null) => Promise<void>;
   } = $props();
 
   const queueActionLabel = $derived(agent === "claude" ? "中断并发送" : "引导");
@@ -1882,22 +1884,6 @@
 
     if (bodyText) parts.push(bodyText);
     let text = parts.join("\n\n");
-    if (selectedExpert) {
-      const expertTag = `[当前协作专家: ${selectedExpert.title}${selectedExpert.isTeam ? " (专家团队)" : ""}]`;
-      if (!text.includes(expertTag)) {
-        text = `${expertTag}\n${text}`;
-      }
-      // DSH does not have a separate expert/team protocol. Its supported
-      // contract is the model-invocable Skill tool, so make the selected
-      // expert deterministic instead of relying on the model to infer the
-      // mapping from the display title alone.
-      if (agent === "dsh") {
-        const skillGesture = `/${dshExpertSkillName(selectedExpert.id)}`;
-        if (!text.includes(skillGesture)) {
-          text = `${skillGesture}\n${text}`;
-        }
-      }
-    }
     // Allow a skill-only send (a picked skill with no typed text is a valid skill turn).
     if ((!text && pendingSkills.length === 0) || disabled) return;
 
@@ -2436,6 +2422,18 @@
       e.preventDefault();
       e.stopPropagation();
       savePasteEditor();
+    }
+  }
+
+  async function changeExpert(expert: SelectedExpert | null) {
+    try {
+      if (onExpertChange) await onExpertChange(expert);
+      else {
+        selectedExpert = expert;
+        if (!expert) onExpertClear?.();
+      }
+    } catch (error) {
+      showToast(String(error), "error");
     }
   }
 
@@ -3377,9 +3375,7 @@
           goalAvailable={agent === "pi" ? goalAvailable : goalAvailable || !!onOpenGoal}
           goalActive={featureGoalActive}
           {selectedExpert}
-          onSelectExpert={(exp) => {
-            selectedExpert = exp;
-          }}
+          onSelectExpert={changeExpert}
           onSelectSkill={(skillName) => {
             handleSkillSelect(skillName);
           }}
@@ -3440,8 +3436,7 @@
               class="flex items-center justify-center text-muted-foreground/60 hover:text-destructive transition-colors cursor-pointer p-0.5 rounded-sm"
               onclick={(e) => {
                 e.stopPropagation();
-                selectedExpert = null;
-                onExpertClear?.();
+                void changeExpert(null);
               }}
               title="移除专家"
             >

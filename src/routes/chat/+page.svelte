@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores";
+  import { SessionExpertStore } from "$lib/stores/session-expert-store.svelte";
   import { goto, replaceState } from "$app/navigation";
   import { tick, onMount, untrack, getContext } from "svelte";
   import { platform } from "$lib/platform";
@@ -577,7 +578,10 @@
 
   function normalizeCodeAsideFilePath(raw: string, baseCwd?: string): string {
     let p = raw.trim().replace(/^file:\/\//, "");
-    const effectiveDir = (baseCwd || store.effectiveCwd || getProjectCwdForEditor() || "").replace(/[/\\]+$/, "");
+    const effectiveDir = (baseCwd || store.effectiveCwd || getProjectCwdForEditor() || "").replace(
+      /[/\\]+$/,
+      "",
+    );
     if (effectiveDir) {
       if (p.startsWith(effectiveDir + "/") || p.startsWith(effectiveDir + "\\")) {
         p = p.slice(effectiveDir.length + 1);
@@ -1477,6 +1481,14 @@
   // the freshly-mounted instance from this map via initialDraft (the `{#key}` forces a clean
   // remount per run). Keyed by run id; "" = the not-yet-started "new chat".
   let promptDraftsByRun = new Map<string, PromptInputSnapshot>();
+
+  const expertSelection = new SessionExpertStore();
+  $effect(() => {
+    if (expertSelection.error) store.error = expertSelection.error;
+  });
+  $effect(() => {
+    void expertSelection.load($page.url.searchParams.get("run") ?? "");
+  });
 
   function savePromptDraft(snap: PromptInputSnapshot) {
     const rid = store.run?.id ?? "";
@@ -3908,9 +3920,14 @@
             : store.permissionMode || undefined,
       }).catch(() => {});
     }
+    const selectedExpert = expertSelection.selected;
     const createdRunId =
       resolveNewSessionStartMode(options.piShell && !codeStandaloneTask) === "shell"
-        ? await store.startPiSessionShell(cwd, currentEffort || undefined)
+        ? await store.startPiSessionShell(
+            cwd,
+            currentEffort || undefined,
+            selectedExpert?.id ?? null,
+          )
         : await store.startSession(
             prompt,
             cwd,
@@ -3919,7 +3936,9 @@
             options.skills,
             currentEffort || undefined,
             codeStandaloneTask,
+            selectedExpert?.id ?? null,
           );
+    expertSelection.adopt(createdRunId, selectedExpert);
     const routeBase = isPiCodeRoute || effectiveAgent === "pi" ? "/chat/pi" : "/chat";
     await goto(`${routeBase}?run=${createdRunId}`, { replaceState: true });
     window.dispatchEvent(new Event("agentcabin:runs-changed"));
@@ -7417,6 +7436,8 @@
                     {#key store.run?.id ?? ""}
                       <PromptInput
                         bind:this={promptRef}
+                        selectedExpert={expertSelection.selected}
+                        onExpertChange={(expert) => expertSelection.select(expert)}
                         harness={currentHarness}
                         projectPicker={currentHarness === "code" ? codeProjectPickerConfig : null}
                         agent={effectiveAgent}
@@ -7425,7 +7446,10 @@
                         capabilities={effectiveCapabilities}
                         planModeActive={store.planModeActive}
                         running={store.isActivelyRunning}
-                        disabled={inputBlockedByPermission}
+                        disabled={inputBlockedByPermission ||
+                          expertSelection.loading ||
+                          expertSelection.changing ||
+                          !!expertSelection.error}
                         pendingPermission={store.hasInlinePermission}
                         hasRun={!!store.run || store.timeline.length > 0}
                         sessionAlive={store.sessionAlive}
@@ -8321,6 +8345,8 @@
                permission-mode controls while Pi capabilities are loading. -->
             <PromptInput
               bind:this={promptRef}
+              selectedExpert={expertSelection.selected}
+              onExpertChange={(expert) => expertSelection.select(expert)}
               harness={currentHarness}
               projectPicker={currentHarness === "code" ? codeProjectPickerConfig : null}
               agent={effectiveAgent}
@@ -8329,7 +8355,11 @@
               capabilities={effectiveCapabilities}
               planModeActive={store.planModeActive}
               running={store.isActivelyRunning}
-              disabled={isLegacyDshRun || inputBlockedByPermission}
+              disabled={isLegacyDshRun ||
+                inputBlockedByPermission ||
+                expertSelection.loading ||
+                expertSelection.changing ||
+                !!expertSelection.error}
               pendingPermission={store.hasInlinePermission}
               hasRun={!!store.run || store.timeline.length > 0}
               sessionAlive={store.sessionAlive}

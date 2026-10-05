@@ -1,12 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import {
-    listAgentPlugins,
-    listPromptTemplates,
-    listSkills,
-    setAgentPluginBinding,
-  } from "$lib/api";
+  import { listAgentPlugins, listPromptTemplates, listSkills } from "$lib/api";
   import {
     listWorkConnectorPackages as listWorkConnectorPackagesApi,
     enableWorkConnectorPackage as enableWorkConnectorPackageApi,
@@ -284,8 +279,6 @@
     if (selectedExpert?.id === exp.id) {
       onSelectExpert?.(null);
     } else {
-      // 开启对应 plugin binding
-      void setAgentPluginBinding(exp.id, true).catch(() => {});
       onSelectExpert?.({
         id: exp.id,
         name: exp.name,

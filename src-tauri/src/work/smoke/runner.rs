@@ -268,6 +268,7 @@ pub async fn run_smoke_mode(app: AppHandle, config_path: String) -> i32 {
 
     // 3. Launch WorkTaskRun with Overrides
     let overrides = WorkLaunchOverrides {
+        expert_id: None,
         runtime: Some(RuntimeProviderKind::Pi),
         model: Some(config.model.clone()),
         effort: Some(config.effort.clone()),

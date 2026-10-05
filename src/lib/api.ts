@@ -1671,6 +1671,25 @@ export async function setAgentPluginBinding(pluginId: string, enabled: boolean):
   return invoke<void>("set_agent_plugin_binding", { pluginId, enabled });
 }
 
+export function getSessionExpert(
+  runId: string,
+): Promise<import("./components/WorkBuddyCascadingMenu.svelte").SelectedExpert | null> {
+  return invoke("get_session_expert", { runId });
+}
+
+export function resolveSessionExpert(
+  pluginId: string,
+): Promise<import("./components/WorkBuddyCascadingMenu.svelte").SelectedExpert> {
+  return invoke("resolve_session_expert", { pluginId });
+}
+
+export function setSessionExpert(
+  runId: string,
+  pluginId: string | null,
+): Promise<import("./components/WorkBuddyCascadingMenu.svelte").SelectedExpert | null> {
+  return invoke("set_session_expert", { runId, pluginId });
+}
+
 // Backward-compatible aliases
 export const listPiSkills = listSkills;
 export const createPiSkill = createSharedSkill;

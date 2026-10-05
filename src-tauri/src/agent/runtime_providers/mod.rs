@@ -161,6 +161,22 @@ pub(crate) fn write_managed_file(
     Ok(())
 }
 
+/// Commit a dynamic runtime projection atomically so a live extension never reads half a file.
+pub(crate) fn write_atomic_managed_file(
+    path: &Path,
+    contents: impl AsRef<[u8]>,
+    label: &str,
+) -> Result<(), String> {
+    if fs::symlink_metadata(path)
+        .is_ok_and(|metadata| metadata.file_type().is_symlink() || !metadata.is_file())
+    {
+        return Err(format!("Managed {label} is not a regular file"));
+    }
+    let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+    write_managed_file(&temporary, contents, label)?;
+    fs::rename(&temporary, path).map_err(|e| format!("Cannot commit {label}: {e}"))
+}
+
 /// Remove a per-run managed directory without ever following a symlink.
 ///
 /// Runtime cleanup is normally called for a path AgentCabin created itself, but

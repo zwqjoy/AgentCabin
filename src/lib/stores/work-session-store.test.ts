@@ -178,6 +178,7 @@ describe("Work Session Store & State Transitions", () => {
       undefined,
       "office",
       "pi",
+      null,
     );
     expect(store.session.timeline.some((e) => e.kind === "user" && e.content === "1")).toBe(true);
 

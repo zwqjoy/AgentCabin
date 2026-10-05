@@ -22,7 +22,7 @@
   } from "$lib/work/pi-work-runtime";
   import ConversationMessage from "$lib/components/ConversationMessage.svelte";
   import AssistantTurnHeader from "$lib/components/AssistantTurnHeader.svelte";
-  import type { SelectedExpert } from "$lib/components/WorkBuddyCascadingMenu.svelte";
+  import { SessionExpertStore } from "$lib/stores/session-expert-store.svelte";
   import {
     parseExpertFromText,
     isExpertSkill,
@@ -219,47 +219,13 @@
   let assignDialog = $state<HTMLDivElement>();
   let historySearchOpen = $state(false);
   let searchToolbarRef = $state<ReturnType<typeof ChatSearchToolbar>>();
-  let selectedExpert = $state<SelectedExpert | null>(null);
-  let userDismissedExpert = $state(false);
-  let lastRestoredRunId = $state<string | null | undefined>(undefined);
-
+  const expertSelection = new SessionExpertStore();
   $effect(() => {
-    const currentRun = runId || "new";
-    if (lastRestoredRunId !== currentRun) {
-      lastRestoredRunId = currentRun;
-      userDismissedExpert = false;
-    }
-    if (userDismissedExpert) return;
-    if (untrack(() => selectedExpert)) return;
-
-    for (let i = visibleTimeline.length - 1; i >= 0; i--) {
-      const entry = visibleTimeline[i];
-      if (entry.kind === "user") {
-        const parsed = parseExpertFromText(entry.content).expert;
-        if (parsed) {
-          selectedExpert = {
-            id: parsed.id || parsed.title,
-            name: parsed.id || parsed.title,
-            title: parsed.title,
-            isTeam: parsed.isTeam,
-            icon: parsed.avatarChar || (parsed.title || "专").slice(0, 1),
-          };
-          break;
-        }
-      }
-    }
+    if (expertSelection.error) workSession.error = expertSelection.error;
   });
-
   $effect(() => {
-    if (selectedExpert) {
-      userDismissedExpert = false;
-    }
+    void expertSelection.load(runId || "");
   });
-
-  function handleExpertClear() {
-    userDismissedExpert = true;
-    selectedExpert = null;
-  }
 
   $effect(() => {
     if (!assignModalOpen || !assignDialog) return;
@@ -1391,6 +1357,9 @@
       !["completed", "failed", "stopped"].includes(run.status) ||
       booting ||
       workSession.loading ||
+      expertSelection.loadFailed ||
+      expertSelection.loading ||
+      expertSelection.changing ||
       workSession.starting ||
       session.phase === "loading" ||
       transcriptRecoveryRunId === run.id
@@ -1719,7 +1688,10 @@
   // connection is still being established.
   let waitingForFirstResponse = $derived(
     !hasTranscript &&
-      (workSession.starting ||
+      (expertSelection.loadFailed ||
+        expertSelection.loading ||
+        expertSelection.changing ||
+        workSession.starting ||
         workSession.sending ||
         Boolean(session.run?.id && session.isRunning)),
   );
@@ -2106,14 +2078,21 @@
       (!text && attachments.length === 0) ||
       booting ||
       workSession.loading ||
+      expertSelection.loadFailed ||
+      expertSelection.loading ||
+      expertSelection.changing ||
       workSession.starting ||
       workSession.sending ||
-      isInteractionBlocked
+      isInteractionBlocked ||
+      expertSelection.loadFailed ||
+      expertSelection.loading ||
+      expertSelection.changing
     ) {
       return;
     }
 
     try {
+      const expert = expertSelection.selected;
       const prompt = text || "请处理这些附件。";
       const wsKey = workspace?.id ?? "standalone";
       if (canSend) {
@@ -2121,6 +2100,7 @@
       } else if (canResume) {
         try {
           const run = await workSession.resume(prompt, attachments);
+          expertSelection.adopt(run.id, expert);
           adoptStartedRun(run, wsKey);
         } catch (cause) {
           if (!isMissingPiWorkSessionError(cause)) throw cause;
@@ -2130,7 +2110,9 @@
             attachments,
             currentExecutionMode,
             activeWorkPreset,
+            expert?.id ?? null,
           );
+          expertSelection.adopt(run.id, expert);
           adoptStartedRun(run, wsKey);
         }
       } else {
@@ -2140,7 +2122,9 @@
           attachments,
           currentExecutionMode,
           activeWorkPreset,
+          expert?.id ?? null,
         );
+        expertSelection.adopt(run.id, expert);
         adoptStartedRun(run, wsKey);
       }
     } catch {
@@ -2923,8 +2907,8 @@
             {/if}
             <PromptInput
               bind:this={promptRef}
-              bind:selectedExpert
-              onExpertClear={handleExpertClear}
+              selectedExpert={expertSelection.selected}
+              onExpertChange={(expert) => expertSelection.select(expert)}
               harness="work"
               agent="pi"
               capabilities={workComposerCapabilities}
@@ -2936,6 +2920,9 @@
               customPlaceholder="今天帮你做些什么？ @ 引用对话文件，/ 调用技能与指令"
               disabled={booting ||
                 workSession.loading ||
+                expertSelection.loadFailed ||
+                expertSelection.loading ||
+                expertSelection.changing ||
                 workSession.starting ||
                 workSession.sending ||
                 workSession.stopping ||
@@ -3378,8 +3365,8 @@
           <PromptInput
             bind:this={promptRef}
             harness="work"
-            bind:selectedExpert
-            onExpertClear={handleExpertClear}
+            selectedExpert={expertSelection.selected}
+            onExpertChange={(expert) => expertSelection.select(expert)}
             agent="pi"
             capabilities={workComposerCapabilities}
             queueAvailable={workSession.canFollowUp}
@@ -3390,6 +3377,9 @@
             customPlaceholder="继续描述下一步，Work 会沿用当前任务上下文…"
             disabled={booting ||
               workSession.loading ||
+              expertSelection.loadFailed ||
+              expertSelection.loading ||
+              expertSelection.changing ||
               workSession.starting ||
               workSession.sending ||
               workSession.stopping ||
@@ -3423,6 +3413,9 @@
             pendingPermission={session.hasPendingPermission}
             interruptDisabled={booting ||
               workSession.loading ||
+              expertSelection.loadFailed ||
+              expertSelection.loading ||
+              expertSelection.changing ||
               workSession.starting ||
               workSession.stopping ||
               conversationReadOnly}

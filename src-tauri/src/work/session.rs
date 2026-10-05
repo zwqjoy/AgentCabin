@@ -541,6 +541,11 @@ pub async fn start_work_session_with_overrides(
         launch_overrides.effort = target.default_effort.clone();
     }
     let effective_model = launch_overrides.model.clone();
+    let selected_expert = launch_overrides
+        .expert_id
+        .as_deref()
+        .map(|id| storage::session_experts::resolve_with_root(&storage::data_dir(), id))
+        .transpose()?;
     let effective_policy = if let Some(task_id) = task_id {
         let task = crate::work::tasks::TaskManager::new(paths.clone())
             .get_task(task_id)
@@ -576,6 +581,7 @@ pub async fn start_work_session_with_overrides(
     meta.permission_mode = Some(permission_mode.to_string());
     storage::runs::save_meta(&meta)?;
 
+    storage::session_experts::save_with_root(&storage::data_dir(), &id, selected_expert.as_ref())?;
     let run = meta.to_task_run(None, None, None);
     session_dispatch::start_session_impl_with_overrides(
         emitter,
@@ -610,6 +616,36 @@ pub async fn start(
     preset: WorkPreset,
     runtime: Option<RuntimeProviderKind>,
 ) -> Result<TaskRun, String> {
+    start_with_expert(
+        emitter,
+        sessions,
+        spawn_locks,
+        cancel_token,
+        workspace_id,
+        message,
+        model,
+        attachments,
+        preset,
+        runtime,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn start_with_expert(
+    emitter: &Arc<BroadcastEmitter>,
+    sessions: &ActorSessionMap,
+    spawn_locks: &SpawnLocks,
+    cancel_token: &CancellationToken,
+    workspace_id: &str,
+    message: &str,
+    model: Option<String>,
+    attachments: Option<Vec<AttachmentData>>,
+    preset: WorkPreset,
+    runtime: Option<RuntimeProviderKind>,
+    expert_id: Option<String>,
+) -> Result<TaskRun, String> {
     let normalized = normalize_message(message)?;
     let paths = WorkPaths::app();
     paths.ensure_layout()?;
@@ -626,7 +662,7 @@ pub async fn start(
     };
     runtime_check?;
 
-    start_work_session(
+    start_work_session_with_overrides(
         emitter,
         sessions,
         spawn_locks,
@@ -639,7 +675,11 @@ pub async fn start(
         model,
         attachments,
         preset,
-        runtime,
+        Some(crate::work::runtime::WorkLaunchOverrides {
+            runtime,
+            expert_id,
+            ..Default::default()
+        }),
     )
     .await
 }
@@ -662,6 +702,36 @@ pub async fn start_standalone(
     permission_mode: Option<crate::work::models::WorkExecutionMode>,
     preset: WorkPreset,
     runtime: Option<RuntimeProviderKind>,
+) -> Result<TaskRun, String> {
+    start_standalone_with_expert(
+        emitter,
+        sessions,
+        spawn_locks,
+        cancel_token,
+        message,
+        model,
+        attachments,
+        permission_mode,
+        preset,
+        runtime,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn start_standalone_with_expert(
+    emitter: &Arc<BroadcastEmitter>,
+    sessions: &ActorSessionMap,
+    spawn_locks: &SpawnLocks,
+    cancel_token: &CancellationToken,
+    message: &str,
+    model: Option<String>,
+    attachments: Option<Vec<AttachmentData>>,
+    permission_mode: Option<crate::work::models::WorkExecutionMode>,
+    preset: WorkPreset,
+    runtime: Option<RuntimeProviderKind>,
+    expert_id: Option<String>,
 ) -> Result<TaskRun, String> {
     let paths = WorkPaths::app();
     paths.ensure_layout()?;
@@ -696,6 +766,11 @@ pub async fn start_standalone(
     meta.permission_mode = Some(cli_perm_mode.to_string());
     storage::runs::save_meta(&meta)?;
 
+    let selected = expert_id
+        .as_deref()
+        .map(|id| storage::session_experts::resolve_with_root(&storage::data_dir(), id))
+        .transpose()?;
+    storage::session_experts::save_with_root(&storage::data_dir(), &id, selected.as_ref())?;
     let run = meta.to_task_run(None, None, None);
     session_dispatch::start_session_impl(
         emitter,

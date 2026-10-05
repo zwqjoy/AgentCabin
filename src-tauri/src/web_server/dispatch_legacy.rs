@@ -2007,6 +2007,33 @@ pub async fn dispatch_command(
         "get_agent_plugin_bindings" => {
             to_json(crate::commands::agent_plugins::get_agent_plugin_bindings()?)
         }
+        "resolve_session_expert" => {
+            let plugin_id = extract_str(&params, "plugin_id")?;
+            Ok(
+                serde_json::to_value(crate::commands::agent_plugins::resolve_session_expert(
+                    plugin_id,
+                )?)
+                .map_err(|e| e.to_string())?,
+            )
+        }
+        "get_session_expert" => {
+            let run_id = extract_str(&params, "run_id")?;
+            Ok(
+                serde_json::to_value(crate::commands::agent_plugins::get_session_expert(run_id)?)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        "set_session_expert" => {
+            let run_id = extract_str(&params, "run_id")?;
+            let plugin_id = params
+                .get("plugin_id")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            Ok(serde_json::to_value(
+                crate::commands::agent_plugins::set_session_expert(run_id, plugin_id).await?,
+            )
+            .map_err(|e| e.to_string())?)
+        }
         "set_agent_plugin_binding" => {
             let plugin_id = extract_str(&params, "plugin_id")?;
             let enabled = extract_bool(&params, "enabled")?;

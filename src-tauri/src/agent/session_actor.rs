@@ -1358,6 +1358,16 @@ impl SessionActor {
         attachments: &[AttachmentData],
         skills: &[CodexSkillRef],
     ) -> Result<String, String> {
+        let expert_context = crate::storage::session_experts::prompt_for_run(&self.run_id)?;
+        let effective_text = match expert_context {
+            Some(context) => {
+                format!("<current_session_expert>\n{context}\n</current_session_expert>\n\n{text}")
+            }
+            None => {
+                format!("当前会话未选择专家。停止遵循历史轮次的专家角色和专家团指令。\n\n{text}")
+            }
+        };
+        let text = effective_text.as_str();
         // Codex app-server: frame the user message as turn/start instead of stream-json.
         // Codex takes attachments as local file *paths* (not base64 blocks like Claude):
         // images become `localImage` input items (real vision input), and every attachment
