@@ -1984,6 +1984,10 @@ pub async fn dispatch_command(
 
         // ── Agent Plugins (WorkBuddy Experts & Teams) ──
         "list_agent_plugins" => to_json(crate::commands::agent_plugins::list_agent_plugins()?),
+        "discover_workbuddy_experts" => {
+            let root = opt_typed::<String>(&params, "root")?;
+            to_json(crate::commands::agent_plugins::discover_workbuddy_experts(root).await?)
+        }
         "install_agent_plugin" => {
             let source = extract_str(&params, "source")?;
             to_json(crate::commands::agent_plugins::install_agent_plugin(source).await?)

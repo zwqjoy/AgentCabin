@@ -1221,6 +1221,29 @@ export interface WorkBuddyExpertMemberSummary {
   role: "lead" | "member" | string;
 }
 
+export interface WorkBuddyDiscoveredExpert {
+  id: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  profession?: string;
+  expertKind: "expert" | "expert-team";
+  path: string;
+  version?: string;
+  members: WorkBuddyExpertMemberSummary[];
+  skillCount: number;
+  mcpCount: number;
+  alreadyInstalled: boolean;
+  warnings: string[];
+}
+
+export interface WorkBuddyDiscoveryResult {
+  available: boolean;
+  root?: string;
+  packages: WorkBuddyDiscoveredExpert[];
+  warnings: string[];
+}
+
 export interface AgentPluginSummary {
   id: string;
   name: string;

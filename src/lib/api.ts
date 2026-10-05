@@ -1637,6 +1637,14 @@ export async function listAgentPlugins(): Promise<import("./types").AgentPluginS
   return invoke<import("./types").AgentPluginSummary[]>("list_agent_plugins");
 }
 
+export async function discoverWorkBuddyExperts(
+  root?: string,
+): Promise<import("./types").WorkBuddyDiscoveryResult> {
+  return invoke<import("./types").WorkBuddyDiscoveryResult>("discover_workbuddy_experts", {
+    root: root ?? null,
+  });
+}
+
 export async function installAgentPlugin(
   source: string,
 ): Promise<import("./types").AgentPluginSummary> {

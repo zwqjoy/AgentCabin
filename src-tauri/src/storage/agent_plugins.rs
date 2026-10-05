@@ -29,6 +29,7 @@ const MAX_MCP_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_SKILL_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_PACKAGE_FILES: usize = 4096;
 const MAX_PACKAGE_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_WORKBUDDY_DISCOVERY_PACKAGES: usize = 2048;
 const MAX_COMPONENT_ID_PART: usize = 96;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -95,6 +96,42 @@ pub struct WorkBuddyExpertMemberSummary {
     #[serde(default)]
     pub profession: String,
     pub role: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkBuddyDiscoveredExpert {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profession: Option<String>,
+    pub expert_kind: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub members: Vec<WorkBuddyExpertMemberSummary>,
+    pub skill_count: usize,
+    pub mcp_count: usize,
+    pub already_installed: bool,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkBuddyDiscoveryResult {
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
+    #[serde(default)]
+    pub packages: Vec<WorkBuddyDiscoveredExpert>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -926,7 +963,10 @@ fn dsh_skill_segment(plugin_id: &str) -> String {
     segment.trim_matches('-').to_string()
 }
 
-fn materialize_workbuddy_mcp(root: &Path, manifest: &WorkBuddyManifest) -> Result<(), String> {
+fn workbuddy_mcp_config(
+    root: &Path,
+    manifest: &WorkBuddyManifest,
+) -> Result<Option<Value>, String> {
     let mut merged = Map::new();
     for raw in &manifest.mcp_paths {
         let raw = raw.trim().trim_start_matches("./");
@@ -988,12 +1028,18 @@ fn materialize_workbuddy_mcp(root: &Path, manifest: &WorkBuddyManifest) -> Resul
         }
     }
     if merged.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
-    let value = serde_json::json!({
+    Ok(Some(serde_json::json!({
         "$schema": MCP_SCHEMA,
         "mcpServers": merged,
-    });
+    })))
+}
+
+fn materialize_workbuddy_mcp(root: &Path, manifest: &WorkBuddyManifest) -> Result<(), String> {
+    let Some(value) = workbuddy_mcp_config(root, manifest)? else {
+        return Ok(());
+    };
     fs::write(
         root.join("mcp.json"),
         format!(
@@ -2227,6 +2273,302 @@ fn load_plugin_with_root(root: &Path, package_dir: &Path, state: &PluginState) -
     }
 }
 
+fn validate_workbuddy_discovery_package(package_dir: &Path) -> Result<(), String> {
+    if !is_real_dir(package_dir) {
+        return Err("package root is not a real directory".into());
+    }
+    let mut pending = vec![package_dir.to_path_buf()];
+    let mut file_count = 0usize;
+    let mut byte_count = 0u64;
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).map_err(|_| "package directory could not be read")? {
+            let entry = entry.map_err(|_| "package directory entry could not be read")?;
+            let name = entry.file_name();
+            if name == ".git" || name == "node_modules" {
+                continue;
+            }
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path)
+                .map_err(|_| "package entry metadata could not be read")?;
+            if metadata.file_type().is_symlink() {
+                return Err("package contains a symbolic link".into());
+            }
+            if metadata.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            if !metadata.is_file() {
+                return Err("package contains an unsupported filesystem entry".into());
+            }
+            file_count = file_count.saturating_add(1);
+            byte_count = byte_count.saturating_add(metadata.len());
+            if file_count > MAX_PACKAGE_FILES {
+                return Err("package contains too many files".into());
+            }
+            if metadata.len() > MAX_PACKAGE_BYTES || byte_count > MAX_PACKAGE_BYTES {
+                return Err("package exceeds the size limit".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_safe_package_relative_path(raw: &str) -> bool {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return false;
+    }
+    let path = Path::new(raw);
+    !path.is_absolute()
+        && path.components().all(|component| {
+            matches!(
+                component,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+}
+
+fn workbuddy_discovery_candidates(root: &Path) -> (Vec<PathBuf>, Vec<String>) {
+    let mut candidates = Vec::new();
+    let mut warnings = Vec::new();
+    let is_expert_package = |directory: &Path| {
+        let marker_dir = directory.join(".codebuddy-plugin");
+        match fs::symlink_metadata(&marker_dir) {
+            Ok(metadata) if metadata.file_type().is_symlink() => true,
+            Ok(metadata) if metadata.is_dir() => {
+                fs::symlink_metadata(marker_dir.join("plugin.json")).is_ok()
+            }
+            _ => false,
+        }
+    };
+    if is_expert_package(root) {
+        candidates.push(root.to_path_buf());
+    }
+    for parent in [root.to_path_buf(), root.join("plugins")] {
+        if !is_real_dir(&parent) {
+            if fs::symlink_metadata(&parent).is_ok_and(|metadata| metadata.file_type().is_symlink())
+            {
+                warnings.push("Skipped a symbolic link in the WorkBuddy discovery path.".into());
+            }
+            continue;
+        }
+        if !contained_in(root, &parent) {
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(&parent) else {
+            warnings.push("A WorkBuddy discovery directory could not be read.".into());
+            continue;
+        };
+        let mut children = Vec::new();
+        for entry in entries {
+            let Ok(entry) = entry else { continue };
+            let path = entry.path();
+            let Ok(metadata) = fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if metadata.file_type().is_symlink() {
+                warnings.push(format!(
+                    "Skipped symbolic-link directory '{}' during WorkBuddy discovery.",
+                    entry.file_name().to_string_lossy()
+                ));
+                continue;
+            }
+            if metadata.is_dir() && contained_in(root, &path) {
+                children.push(path);
+            }
+        }
+        children.sort();
+        if children.len() > MAX_WORKBUDDY_DISCOVERY_PACKAGES {
+            children.truncate(MAX_WORKBUDDY_DISCOVERY_PACKAGES);
+            warnings.push(format!(
+                "Only the first {MAX_WORKBUDDY_DISCOVERY_PACKAGES} directories at one level were scanned."
+            ));
+        }
+        for child in children {
+            if candidates.len() >= MAX_WORKBUDDY_DISCOVERY_PACKAGES {
+                warnings.push(format!(
+                    "Only the first {MAX_WORKBUDDY_DISCOVERY_PACKAGES} WorkBuddy packages were scanned."
+                ));
+                break;
+            }
+            if is_expert_package(&child) {
+                candidates.push(child);
+            }
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    (candidates, warnings)
+}
+
+fn inspect_workbuddy_expert_source(
+    package_dir: &Path,
+    installed_ids: &std::collections::HashSet<String>,
+) -> Result<WorkBuddyDiscoveredExpert, String> {
+    validate_workbuddy_discovery_package(package_dir)?;
+    let manifest_path = package_dir.join(".codebuddy-plugin").join("plugin.json");
+    if !is_real_file(&manifest_path) || !contained_in(package_dir, &manifest_path) {
+        return Err("WorkBuddy plugin.json is not a real in-package file".into());
+    }
+    let mut warnings = Vec::new();
+    let manifest = parse_manifest(&manifest_path, &mut warnings)?;
+    let Some(workbuddy) = manifest.workbuddy.as_ref() else {
+        return Err("package is not a WorkBuddy expert or expert team".into());
+    };
+    for raw in workbuddy.agent_paths.iter().chain(&workbuddy.mcp_paths) {
+        if !is_safe_package_relative_path(raw) {
+            return Err("WorkBuddy manifest contains an unsafe package path".into());
+        }
+        let target = package_dir.join(raw.trim().trim_start_matches("./"));
+        if let Ok(metadata) = fs::symlink_metadata(&target) {
+            if metadata.file_type().is_symlink() || !contained_in(package_dir, &target) {
+                return Err(
+                    "WorkBuddy manifest path leaves the package or uses a symbolic link".into(),
+                );
+            }
+        }
+    }
+    let agent_files = workbuddy
+        .agent_paths
+        .iter()
+        .flat_map(|raw| workbuddy_agent_files(package_dir, raw))
+        .collect::<Vec<_>>();
+    if agent_files.is_empty() {
+        return Err("WorkBuddy expert package has no in-package agent Markdown".into());
+    }
+
+    let skill_summaries = discover_skills(package_dir, &manifest.name, &mut warnings);
+    let mut mcp_warnings = Vec::new();
+    let normalized_mcp = workbuddy_mcp_config(package_dir, workbuddy)?;
+    let mcp_count = normalized_mcp
+        .as_ref()
+        .map(|value| {
+            normalize_mcp_servers(
+                package_dir,
+                &manifest.name,
+                package_dir,
+                false,
+                value,
+                &mut mcp_warnings,
+            )
+            .len()
+        })
+        .unwrap_or(0);
+    warnings.extend(mcp_warnings);
+    let plugin_id = manifest.name.clone();
+
+    Ok(WorkBuddyDiscoveredExpert {
+        id: plugin_id.clone(),
+        name: plugin_id.clone(),
+        display_name: (!workbuddy.display_name.is_empty()).then(|| workbuddy.display_name.clone()),
+        description: (!manifest.description.is_empty()).then(|| manifest.description.clone()),
+        profession: (!workbuddy.profession.is_empty()).then(|| workbuddy.profession.clone()),
+        expert_kind: workbuddy.expert_kind.clone(),
+        path: package_dir.to_string_lossy().into_owned(),
+        version: (!manifest.version.is_empty()).then(|| manifest.version.clone()),
+        members: workbuddy_members(package_dir, workbuddy),
+        // The installed package materializes one additional expert instruction Skill.
+        skill_count: skill_summaries.len().saturating_add(1),
+        mcp_count,
+        already_installed: installed_ids.contains(&plugin_id),
+        warnings,
+    })
+}
+
+fn discover_workbuddy_experts_with_roots(
+    data_root: &Path,
+    requested_root: Option<&Path>,
+) -> Result<WorkBuddyDiscoveryResult, String> {
+    let default_root = || {
+        storage::home_dir().map(PathBuf::from).map(|home| {
+            home.join(".workbuddy")
+                .join("plugins")
+                .join("marketplaces")
+                .join("experts")
+                .join("plugins")
+        })
+    };
+    let root = match requested_root {
+        Some(root) => root.to_path_buf(),
+        None => match default_root() {
+            Some(root) => root,
+            None => {
+                return Ok(WorkBuddyDiscoveryResult {
+                    available: false,
+                    root: None,
+                    packages: Vec::new(),
+                    warnings: Vec::new(),
+                })
+            }
+        },
+    };
+    if !root.exists() {
+        return Ok(WorkBuddyDiscoveryResult {
+            available: false,
+            root: Some(root.to_string_lossy().into_owned()),
+            packages: Vec::new(),
+            warnings: Vec::new(),
+        });
+    }
+    let canonical_root = fs::canonicalize(&root)
+        .map_err(|_| "WorkBuddy discovery root could not be resolved".to_string())?;
+    if !is_real_dir(&canonical_root) {
+        return Err("WorkBuddy discovery root must be a directory".into());
+    }
+
+    let installed_packages = agent_plugin_packages_dir_with_root(data_root);
+    let installed_ids = if is_real_dir(&installed_packages) {
+        fs::read_dir(&installed_packages)
+            .ok()
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().into_owned();
+                (is_real_dir(&path) && is_valid_plugin_name(&name)).then_some(name)
+            })
+            .collect::<std::collections::HashSet<_>>()
+    } else {
+        std::collections::HashSet::new()
+    };
+
+    let (candidates, mut warnings) = workbuddy_discovery_candidates(&canonical_root);
+    let mut packages = Vec::new();
+    for candidate in candidates {
+        match inspect_workbuddy_expert_source(&candidate, &installed_ids) {
+            Ok(package) => packages.push(package),
+            Err(error) => {
+                let name = candidate
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("package");
+                warnings.push(format!("Skipped WorkBuddy package '{name}': {error}"));
+            }
+        }
+    }
+    packages.sort_by(|left, right| {
+        left.display_name
+            .as_deref()
+            .unwrap_or(&left.name)
+            .cmp(right.display_name.as_deref().unwrap_or(&right.name))
+    });
+    Ok(WorkBuddyDiscoveryResult {
+        available: true,
+        root: Some(canonical_root.to_string_lossy().into_owned()),
+        packages,
+        warnings,
+    })
+}
+
+pub fn discover_workbuddy_experts(root: Option<&str>) -> Result<WorkBuddyDiscoveryResult, String> {
+    let requested_root = root
+        .map(str::trim)
+        .filter(|root| !root.is_empty())
+        .map(Path::new);
+    discover_workbuddy_experts_with_roots(&storage::data_dir(), requested_root)
+}
+
 fn list_loaded_with_root(root: &Path) -> Vec<LoadedPlugin> {
     let packages = agent_plugin_packages_dir_with_root(root);
     if !is_real_dir(&packages) {
@@ -3050,6 +3392,202 @@ pub fn sync_runtime_configs() -> Result<(), String> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    fn write_workbuddy_expert(
+        root: &Path,
+        id: &str,
+        expert_type: &str,
+        with_skill: bool,
+        with_mcp: bool,
+    ) -> PathBuf {
+        let package = root.join(id);
+        fs::create_dir_all(package.join(".codebuddy-plugin")).unwrap();
+        fs::create_dir_all(package.join("agents")).unwrap();
+        let agent_paths = if expert_type == "team" {
+            vec!["./agents/lead.md", "./agents/researcher.md"]
+        } else {
+            vec!["./agents/lead.md"]
+        };
+        let mut manifest = serde_json::json!({
+            "name": id,
+            "version": "1.2.3",
+            "expertType": expert_type,
+            "displayName": {"zh": format!("{id} 展示名")},
+            "profession": {"zh": "WorkBuddy 专家"},
+            "agentName": "lead",
+            "agents": agent_paths,
+        });
+        if expert_type == "team" {
+            manifest["teamInfo"] = serde_json::json!({
+                "leadAgent": "lead",
+                "memberAgents": ["researcher"],
+            });
+        }
+        if with_mcp {
+            manifest["dependencies"] = serde_json::json!({"mcpServers": ".mcp.json"});
+            fs::write(
+                package.join(".mcp.json"),
+                r#"{"mcpServers":{"docs":{"type":"streamable-http","url":"https://example.com/mcp","headers":{"Authorization":"secret-must-not-reach-ui"}}}}"#,
+            )
+            .unwrap();
+        }
+        fs::write(
+            package.join(".codebuddy-plugin/plugin.json"),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            package.join("agents/lead.md"),
+            "---\nname: lead\nprofession: Lead strategist\n---\nLead the work.\n",
+        )
+        .unwrap();
+        if expert_type == "team" {
+            fs::write(
+                package.join("agents/researcher.md"),
+                "---\nname: researcher\nprofession: Research specialist\n---\nResearch.\n",
+            )
+            .unwrap();
+        }
+        if with_skill {
+            fs::create_dir_all(package.join("skills/research")).unwrap();
+            fs::write(
+                package.join("skills/research/SKILL.md"),
+                "---\nname: research\ndescription: Research workflow\n---\nResearch.\n",
+            )
+            .unwrap();
+        }
+        package
+    }
+
+    #[test]
+    fn workbuddy_discovery_handles_missing_root_without_creating_install_state() {
+        let temp = TempDir::new().unwrap();
+        let data_root = temp.path().join("data");
+        let missing_root = temp.path().join("missing-workbuddy");
+
+        let result =
+            discover_workbuddy_experts_with_roots(&data_root, Some(&missing_root)).unwrap();
+
+        assert!(!result.available);
+        assert!(result.packages.is_empty());
+        assert!(!agent_plugins_root_with_root(&data_root).exists());
+    }
+
+    #[test]
+    fn workbuddy_discovery_detects_experts_teams_skills_and_mcp_without_exposing_values() {
+        let temp = TempDir::new().unwrap();
+        let scan_root = temp.path().join("experts");
+        let packages_root = scan_root.join("plugins");
+        let data_root = temp.path().join("data");
+        fs::create_dir_all(&packages_root).unwrap();
+        write_workbuddy_expert(&packages_root, "solo-expert", "agent", true, true);
+        write_workbuddy_expert(&packages_root, "research-team", "team", true, false);
+
+        let result = discover_workbuddy_experts_with_roots(&data_root, Some(&scan_root)).unwrap();
+
+        assert!(result.available);
+        assert_eq!(result.packages.len(), 2);
+        let solo = result
+            .packages
+            .iter()
+            .find(|item| item.id == "solo-expert")
+            .unwrap();
+        assert_eq!(solo.expert_kind, "expert");
+        assert_eq!(solo.skill_count, 2, "includes the generated expert Skill");
+        assert_eq!(solo.mcp_count, 1);
+        assert!(!solo.already_installed);
+        let team = result
+            .packages
+            .iter()
+            .find(|item| item.id == "research-team")
+            .unwrap();
+        assert_eq!(team.expert_kind, "expert-team");
+        assert_eq!(team.members.len(), 2);
+        assert_eq!(team.members[0].role, "lead");
+        let serialized = serde_json::to_string(&result).unwrap();
+        assert!(!serialized.contains("secret-must-not-reach-ui"));
+        assert!(!agent_plugins_root_with_root(&data_root).exists());
+    }
+
+    #[test]
+    fn workbuddy_discovery_skips_corrupt_oversized_and_traversal_packages_independently() {
+        let temp = TempDir::new().unwrap();
+        let scan_root = temp.path().join("plugins");
+        fs::create_dir_all(&scan_root).unwrap();
+        write_workbuddy_expert(&scan_root, "good-expert", "agent", false, false);
+
+        let corrupt = scan_root.join("corrupt");
+        fs::create_dir_all(corrupt.join(".codebuddy-plugin")).unwrap();
+        fs::write(corrupt.join(".codebuddy-plugin/plugin.json"), "{").unwrap();
+
+        let oversized = write_workbuddy_expert(&scan_root, "oversized", "agent", false, false);
+        fs::write(
+            oversized.join(".codebuddy-plugin/plugin.json"),
+            vec![b' '; (MAX_MANIFEST_BYTES + 1) as usize],
+        )
+        .unwrap();
+
+        let traversal = scan_root.join("traversal");
+        fs::create_dir_all(traversal.join(".codebuddy-plugin")).unwrap();
+        fs::write(
+            traversal.join(".codebuddy-plugin/plugin.json"),
+            r#"{"name":"traversal","expertType":"agent","agents":["../outside.md"]}"#,
+        )
+        .unwrap();
+
+        let result =
+            discover_workbuddy_experts_with_roots(&temp.path().join("data"), Some(&scan_root))
+                .unwrap();
+
+        assert_eq!(result.packages.len(), 1);
+        assert_eq!(result.packages[0].id, "good-expert");
+        assert!(result.warnings.len() >= 3);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workbuddy_discovery_skips_packages_containing_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TempDir::new().unwrap();
+        let scan_root = temp.path().join("plugins");
+        fs::create_dir_all(&scan_root).unwrap();
+        write_workbuddy_expert(&scan_root, "good-expert", "agent", false, false);
+        let linked = write_workbuddy_expert(&scan_root, "linked-expert", "agent", false, false);
+        let external = temp.path().join("external.md");
+        fs::write(&external, "must not be read").unwrap();
+        symlink(&external, linked.join("agents/linked.md")).unwrap();
+
+        let result =
+            discover_workbuddy_experts_with_roots(&temp.path().join("data"), Some(&scan_root))
+                .unwrap();
+
+        assert_eq!(result.packages.len(), 1);
+        assert_eq!(result.packages[0].id, "good-expert");
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("symbolic link")));
+    }
+
+    #[test]
+    fn workbuddy_import_uses_existing_install_path_and_stays_untrusted_and_disabled() {
+        let temp = TempDir::new().unwrap();
+        let scan_root = temp.path().join("plugins");
+        fs::create_dir_all(&scan_root).unwrap();
+        let source = write_workbuddy_expert(&scan_root, "import-me", "team", true, true);
+
+        let before = discover_workbuddy_experts_with_roots(temp.path(), Some(&scan_root)).unwrap();
+        assert!(!before.packages[0].already_installed);
+        let installed =
+            install_agent_plugin_with_root(temp.path(), source.to_str().unwrap()).unwrap();
+        assert!(!installed.trusted);
+        assert!(!installed.enabled);
+        assert_eq!(installed.expert_kind.as_deref(), Some("expert-team"));
+
+        let after = discover_workbuddy_experts_with_roots(temp.path(), Some(&scan_root)).unwrap();
+        assert!(after.packages[0].already_installed);
+    }
 
     #[test]
     fn acceptance_plugin_skill_and_mcp_share_trust_and_binding_lifecycle() {

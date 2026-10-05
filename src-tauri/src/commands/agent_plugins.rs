@@ -1,10 +1,21 @@
-use crate::storage::agent_plugins::{self, AgentPluginBinding, AgentPluginSummary};
+use crate::storage::agent_plugins::{
+    self, AgentPluginBinding, AgentPluginSummary, WorkBuddyDiscoveryResult,
+};
 
 static EXPERT_CONFIG_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tauri::command]
 pub fn list_agent_plugins() -> Result<Vec<AgentPluginSummary>, String> {
     Ok(agent_plugins::list_agent_plugins())
+}
+
+#[tauri::command]
+pub async fn discover_workbuddy_experts(
+    root: Option<String>,
+) -> Result<WorkBuddyDiscoveryResult, String> {
+    tokio::task::spawn_blocking(move || agent_plugins::discover_workbuddy_experts(root.as_deref()))
+        .await
+        .map_err(|error| format!("WorkBuddy discovery task failed: {error}"))?
 }
 
 #[tauri::command]
