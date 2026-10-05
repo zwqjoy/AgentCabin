@@ -57,10 +57,10 @@
 
   function statusLabel(item: ConnectorPackageSummary): string {
     if (!item.state.trusted) return "需要信任";
+    if (!item.state.enabled) return "已停用";
     if (needsCredentialAuth(item) && !isCredentialAuthenticated(item)) {
       return item.state.authStatus === "pending" ? "认证中" : "未配置凭据";
     }
-    if (!item.state.enabled) return "已停用";
     if (item.state.runtimeStatus === "ready") return "已就绪";
     if (item.state.runtimeStatus === "failed") return "运行时失败";
     return "已启用 · 等待运行时";
@@ -69,11 +69,9 @@
   async function handleToggleEnable(item: ConnectorPackageSummary) {
     if (!item.state.enabled && needsCredentialAuth(item) && !isCredentialAuthenticated(item)) {
       if (item.manifest.auth.kind === "oauth2") {
-        await run(item.manifest.id, onAuthorize);
+        error = `连接器“${item.manifest.displayName}”尚未完成认证，请先连接认证后再启用`;
       } else {
-        if (editingTokenId !== item.manifest.id) {
-          beginTokenSetup(item);
-        }
+        if (editingTokenId !== item.manifest.id) beginTokenSetup(item);
         error = `连接器“${item.manifest.displayName}”尚未配置凭据，请先配置凭据后再启用`;
       }
       return;

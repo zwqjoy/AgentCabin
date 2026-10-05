@@ -246,9 +246,9 @@ pub async fn work_start_connector_auth(
         connector_package_manager::ensure_builtin_feishu_package(&paths)?;
     }
     let package = connector_package_manager::get_with_paths(&paths, &package_id)?;
-    if !package.state.trusted || !package.state.enabled {
+    if !package.state.trusted {
         return Err(format!(
-            "Connector Package '{}' must be trusted and enabled before authentication",
+            "Connector Package '{}' must be trusted before authentication",
             package.manifest.display_name
         ));
     }
