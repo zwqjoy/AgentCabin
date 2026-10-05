@@ -10,7 +10,9 @@ pub const WORK_MCP_SECRET_PLACEHOLDER: &str = "__AGENTCABIN_WORK_SECRET__";
 const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_SECRETS_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_NAME_CHARS: usize = 80;
+static LEGACY_MCP_MIGRATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+#[cfg(test)]
 struct ConnectorInput<'a> {
     name: &'a str,
     transport: &'a str,
@@ -24,7 +26,8 @@ struct ConnectorInput<'a> {
 pub fn list() -> Result<Vec<WorkConnectorSummary>, String> {
     let paths = WorkPaths::app();
     paths.ensure_layout()?;
-    list_with_paths(&paths)
+    migrate_legacy_to_global(&paths)?;
+    list_global(&paths)
 }
 
 pub fn upsert(
@@ -38,34 +41,73 @@ pub fn upsert(
 ) -> Result<WorkConnectorSummary, String> {
     let paths = WorkPaths::app();
     paths.ensure_layout()?;
-    upsert_with_paths(
-        &paths,
-        ConnectorInput {
-            name,
-            transport,
-            command,
-            args,
-            url,
-            env_vars,
-            headers,
-        },
-    )
+    migrate_legacy_to_global(&paths)?;
+    let name = normalize_name(name)?;
+    let transport = normalize_transport(transport)?.to_string();
+    let command = command.map(str::trim).filter(|value| !value.is_empty());
+    let url = url.map(str::trim).filter(|value| !value.is_empty());
+    if transport == "stdio" && command.is_none() {
+        return Err("stdio connector requires a command".into());
+    }
+    if transport != "stdio" && url.is_none() {
+        return Err("HTTP connector requires a URL".into());
+    }
+    if args.len() > 100 || args.iter().any(|arg| arg.chars().count() > 4_000) {
+        return Err("Connector arguments are too large".into());
+    }
+    let env = normalize_map(env_vars, "environment variable")?;
+    let headers = normalize_map(headers, "header")?;
+    let secret_ref = format!("work-mcp-{name}");
+    let secret_map = env
+        .iter()
+        .chain(headers.iter())
+        .filter_map(|(key, value)| value.as_str().map(|value| (key.clone(), value.to_string())))
+        .collect::<HashMap<_, _>>();
+    let catalog = crate::storage::profile_bindings::McpCatalogServer {
+        id: name.clone(),
+        name: name.clone(),
+        description: None,
+        transport: transport.clone(),
+        command: command.map(str::to_string),
+        args: args.to_vec(),
+        url: url.map(str::to_string),
+        env_schema: HashMap::new(),
+        headers_schema: HashMap::new(),
+    };
+    let bindings = crate::storage::profile_bindings::read_mcp_bindings();
+    let enabled = bindings
+        .iter()
+        .find(|binding| binding.server_id.eq_ignore_ascii_case(&name))
+        .map(|binding| binding.enabled)
+        .unwrap_or(true);
+    crate::storage::profile_bindings::save_mcp_catalog_server(&catalog)?;
+    if secret_map.is_empty() {
+        crate::storage::profile_bindings::delete_host_secret(&secret_ref)?;
+        crate::storage::profile_bindings::set_mcp_binding(&name, enabled, Some(None))?;
+    } else {
+        crate::storage::profile_bindings::set_host_secret(&secret_ref, secret_map)?;
+        crate::storage::profile_bindings::set_mcp_binding(&name, enabled, Some(Some(secret_ref)))?;
+    }
+    sync_global_projections(&paths)?;
+    list_global(&paths)?
+        .into_iter()
+        .find(|connector| connector.name == name)
+        .ok_or_else(|| format!("Work connector '{}' disappeared after save", name))
 }
 
 pub fn toggle(name: &str, enabled: bool) -> Result<WorkConnectorSummary, String> {
     let paths = WorkPaths::app();
     paths.ensure_layout()?;
-    let mut root = read_root(&paths)?;
-    let servers = server_map_mut(&mut root)?;
-    let server = servers
-        .get_mut(name.trim())
-        .ok_or_else(|| format!("Work connector '{}' not found", name.trim()))?;
-    let object = server
-        .as_object_mut()
-        .ok_or_else(|| "Work connector configuration must be an object".to_string())?;
-    object.insert("disabled".into(), Value::Bool(!enabled));
-    write_root(&paths, &root)?;
-    list_with_paths(&paths)?
+    migrate_legacy_to_global(&paths)?;
+    if !crate::storage::profile_bindings::read_mcp_catalog()
+        .iter()
+        .any(|server| server.id.eq_ignore_ascii_case(name.trim()))
+    {
+        return Err(format!("Work connector '{}' not found", name.trim()));
+    }
+    crate::storage::profile_bindings::set_mcp_binding(name.trim(), enabled, None)?;
+    sync_global_projections(&paths)?;
+    list_global(&paths)?
         .into_iter()
         .find(|connector| connector.name == name.trim())
         .ok_or_else(|| format!("Work connector '{}' disappeared after update", name.trim()))
@@ -74,13 +116,218 @@ pub fn toggle(name: &str, enabled: bool) -> Result<WorkConnectorSummary, String>
 pub fn remove(name: &str) -> Result<(), String> {
     let paths = WorkPaths::app();
     paths.ensure_layout()?;
-    let mut root = read_root(&paths)?;
-    let servers = server_map_mut(&mut root)?;
-    if servers.remove(name.trim()).is_none() {
+    migrate_legacy_to_global(&paths)?;
+    if !crate::storage::profile_bindings::read_mcp_catalog()
+        .iter()
+        .any(|server| server.id.eq_ignore_ascii_case(name.trim()))
+    {
         return Err(format!("Work connector '{}' not found", name.trim()));
     }
+    let secret_ref = format!("work-mcp-{}", name.trim());
+    crate::storage::profile_bindings::delete_mcp_catalog_server(name.trim())?;
+    crate::storage::profile_bindings::delete_host_secret(&secret_ref)?;
+    let mut root = read_root(&paths)?;
+    server_map_mut(&mut root)?.remove(name.trim());
     write_root(&paths, &root)?;
-    remove_secret_connector(&paths, name.trim())
+    remove_secret_connector(&paths, name.trim())?;
+    sync_global_projections(&paths)
+}
+
+fn list_global(paths: &WorkPaths) -> Result<Vec<WorkConnectorSummary>, String> {
+    let (servers, _) =
+        crate::storage::profile_bindings::project_mcp_bindings_from_catalog(paths.data_root());
+    let pi_runtime_available = crate::agent::runtime_locator::pi_coding_agent_entry().is_ok();
+    let mut result = Vec::new();
+    for server in servers {
+        let mut config = serde_json::Map::new();
+        if !server.enabled {
+            config.insert("disabled".into(), Value::Bool(true));
+        }
+        config.insert("type".into(), Value::String(server.transport));
+        if let Some(command) = server.command {
+            config.insert("command".into(), Value::String(command));
+        }
+        config.insert(
+            "args".into(),
+            Value::Array(server.args.into_iter().map(Value::String).collect()),
+        );
+        if let Some(url) = server.url {
+            config.insert("url".into(), Value::String(url));
+        }
+        if !server.env.is_empty() || !server.secret_env.is_empty() {
+            let mut keys = server
+                .env
+                .keys()
+                .chain(server.secret_env.keys())
+                .cloned()
+                .collect::<Vec<_>>();
+            keys.sort();
+            keys.dedup();
+            config.insert(
+                "env".into(),
+                Value::Object(
+                    keys.into_iter()
+                        .map(|key| (key, Value::String(WORK_MCP_SECRET_PLACEHOLDER.into())))
+                        .collect(),
+                ),
+            );
+        }
+        if !server.headers.is_empty() || !server.secret_headers.is_empty() {
+            let mut keys = server
+                .headers
+                .keys()
+                .chain(server.secret_headers.keys())
+                .cloned()
+                .collect::<Vec<_>>();
+            keys.sort();
+            keys.dedup();
+            config.insert(
+                "headers".into(),
+                Value::Object(
+                    keys.into_iter()
+                        .map(|key| (key, Value::String(WORK_MCP_SECRET_PLACEHOLDER.into())))
+                        .collect(),
+                ),
+            );
+        }
+        result.push(summarize(
+            &server.server_id,
+            &Value::Object(config),
+            pi_runtime_available,
+            pi_runtime_available,
+            false,
+        )?);
+    }
+    result.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(result)
+}
+
+fn sync_global_projections(paths: &WorkPaths) -> Result<(), String> {
+    crate::storage::profile_bindings::sync_pi_code_mcp_from_catalog_and_bindings_with_root(
+        paths.data_root(),
+        None,
+    )?;
+    sync_mcp_from_catalog_and_bindings(paths)
+}
+
+/// Import existing Work-only MCP entries once, then let the global catalog own them.
+pub fn migrate_legacy_to_global(paths: &WorkPaths) -> Result<(), String> {
+    let _guard = LEGACY_MCP_MIGRATION_LOCK
+        .lock()
+        .map_err(|_| "MCP migration lock poisoned".to_string())?;
+    let marker = paths
+        .data_root()
+        .join("mcp")
+        .join("legacy-work-import.json");
+    if marker.is_file() {
+        return Ok(());
+    }
+    let root = read_runtime_root(paths)?;
+    let Some(servers) = root
+        .get("mcpServers")
+        .or_else(|| root.get("mcp_servers"))
+        .and_then(Value::as_object)
+    else {
+        return Ok(());
+    };
+    let catalog = crate::storage::profile_bindings::read_mcp_catalog_with_root(paths.data_root());
+    let mut imported = false;
+    for (name, value) in servers {
+        if catalog
+            .iter()
+            .any(|server| server.id.eq_ignore_ascii_case(name))
+        {
+            continue;
+        }
+        let name = normalize_name(name)?;
+        let Some(config) = value.as_object() else {
+            continue;
+        };
+        let transport = normalize_transport(
+            config
+                .get("type")
+                .or_else(|| config.get("transport"))
+                .and_then(Value::as_str)
+                .unwrap_or("stdio"),
+        )?
+        .to_string();
+        let command = config
+            .get("command")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let url = config
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let args = config
+            .get("args")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        let mut secrets = HashMap::new();
+        for field in ["env", "headers"] {
+            if let Some(values) = config.get(field).and_then(Value::as_object) {
+                for (key, value) in values {
+                    if let Some(value) = value.as_str() {
+                        secrets.insert(key.clone(), value.to_string());
+                    }
+                }
+            }
+        }
+        let catalog_server = crate::storage::profile_bindings::McpCatalogServer {
+            id: name.clone(),
+            name: name.clone(),
+            description: None,
+            transport,
+            command,
+            args,
+            url,
+            env_schema: HashMap::new(),
+            headers_schema: HashMap::new(),
+        };
+        let secret_ref = format!("work-mcp-{name}");
+        crate::storage::profile_bindings::save_mcp_catalog_server_with_root(
+            paths.data_root(),
+            &catalog_server,
+        )?;
+        let enabled = !config
+            .get("disabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let secret_ref = if secrets.is_empty() {
+            None
+        } else {
+            crate::storage::profile_bindings::set_host_secret_with_root(
+                paths.data_root(),
+                &secret_ref,
+                secrets,
+            )?;
+            Some(secret_ref)
+        };
+        crate::storage::profile_bindings::set_mcp_binding_with_root(
+            paths.data_root(),
+            &name,
+            enabled,
+            Some(secret_ref),
+        )?;
+        imported = true;
+    }
+    if imported {
+        sync_global_projections(paths)?;
+    }
+    crate::storage::profile_bindings::ensure_managed_directory(
+        marker.parent().unwrap(),
+        "MCP migration directory",
+    )?;
+    crate::storage::profile_bindings::write_managed_file(
+        &marker,
+        "{\"version\":1}\n",
+        "MCP migration marker",
+    )?;
+    Ok(())
 }
 
 /// Return the Work-only runtime configuration with secret placeholders resolved in memory.
@@ -139,13 +386,11 @@ pub fn has_enabled(paths: &WorkPaths) -> Result<bool, String> {
 }
 
 pub fn sync_mcp_from_catalog_and_bindings(paths: &WorkPaths) -> Result<(), String> {
-    let (projected_servers, catalog) =
+    let (projected_servers, _) =
         crate::storage::profile_bindings::project_mcp_bindings_from_catalog(paths.data_root());
-    if projected_servers.is_empty() && catalog.is_empty() {
-        return Ok(());
-    }
-    let mut root = read_root(paths).unwrap_or_else(|_| empty_root());
-    let mut secrets = read_secrets(paths).unwrap_or_default();
+    // These files are runtime projections, never a second capability inventory.
+    let mut root = empty_root();
+    let mut secrets = empty_secrets();
 
     let servers = server_map_mut(&mut root)?;
     for server in &projected_servers {
@@ -229,6 +474,7 @@ pub fn ensure_config(paths: &WorkPaths) -> Result<(), String> {
     if !paths.work_mcp_config_path().is_file() {
         write_root(paths, &empty_root())?;
     }
+    migrate_legacy_to_global(paths)?;
     let catalog = crate::storage::profile_bindings::read_mcp_catalog_with_root(paths.data_root());
     let bindings = crate::storage::profile_bindings::read_mcp_bindings_with_root(paths.data_root());
     if !catalog.is_empty() || !bindings.is_empty() {
@@ -262,6 +508,7 @@ pub fn sync_pi_settings(
     Ok(())
 }
 
+#[cfg(test)]
 fn upsert_with_paths(
     paths: &WorkPaths,
     input: ConnectorInput<'_>,
@@ -562,6 +809,7 @@ fn ensure_no_secret_placeholder(
     Ok(())
 }
 
+#[cfg(test)]
 fn placeholder_map(values: &Map<String, Value>) -> Value {
     Value::Object(
         values
@@ -695,6 +943,51 @@ mod tests {
         let paths = WorkPaths::new(temp.path().join("data"));
         paths.ensure_layout().unwrap();
         paths
+    }
+
+    #[test]
+    fn legacy_work_mcp_migrates_once_and_deleted_servers_are_not_reimported() {
+        let temp = TempDir::new().unwrap();
+        let paths = paths(&temp);
+        let env = HashMap::from([("API_TOKEN".into(), "host-secret".into())]);
+        upsert_with_paths(
+            &paths,
+            ConnectorInput {
+                name: "everything",
+                transport: "stdio",
+                command: Some("npx"),
+                args: &["-y".into(), "fixture".into()],
+                url: None,
+                env_vars: Some(&env),
+                headers: None,
+            },
+        )
+        .unwrap();
+        migrate_legacy_to_global(&paths).unwrap();
+        let catalog =
+            crate::storage::profile_bindings::read_mcp_catalog_with_root(paths.data_root());
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].id, "everything");
+        assert!(catalog[0].env_schema.is_empty());
+        assert_eq!(
+            read_runtime_root(&paths).unwrap()["mcpServers"]["everything"]["env"]["API_TOKEN"],
+            "host-secret"
+        );
+        crate::storage::profile_bindings::delete_mcp_catalog_server_with_root(
+            paths.data_root(),
+            "everything",
+        )
+        .unwrap();
+        migrate_legacy_to_global(&paths).unwrap();
+        assert!(
+            crate::storage::profile_bindings::read_mcp_catalog_with_root(paths.data_root())
+                .is_empty()
+        );
+        sync_mcp_from_catalog_and_bindings(&paths).unwrap();
+        assert_eq!(
+            read_runtime_root(&paths).unwrap()["mcpServers"],
+            serde_json::json!({})
+        );
     }
 
     #[test]

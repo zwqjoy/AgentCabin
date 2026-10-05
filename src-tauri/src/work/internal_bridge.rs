@@ -229,10 +229,12 @@ const PACKAGE_MCP_SERVER_PREFIX: &str = "__agentcabin_package__";
 // (up to 64 chars), a separator, and a source server name (up to 80 chars).
 const MAX_MCP_SERVER_NAME_LENGTH: usize = 168;
 
-fn validate_mcp_server_name(name: &str) -> Result<&str, String> {
+pub(crate) fn validate_mcp_server_name(name: &str) -> Result<&str, String> {
     let name = name.trim();
     let max_length = if name.starts_with(PACKAGE_MCP_SERVER_PREFIX) {
         MAX_MCP_SERVER_NAME_LENGTH
+    } else if name.starts_with("agent-plugin--") {
+        180
     } else {
         80
     };
@@ -1767,6 +1769,10 @@ mod tests {
         assert_eq!(validate_mcp_server_name(&name), Ok(name.as_str()));
         assert!(validate_mcp_server_name(&format!("{name}x")).is_err());
         assert!(validate_mcp_server_name(&"s".repeat(81)).is_err());
+        let expert = format!("agent-plugin--{}--mcp--{}", "e".repeat(64), "s".repeat(64));
+        assert!(expert.len() > 80);
+        assert_eq!(validate_mcp_server_name(&expert), Ok(expert.as_str()));
+        assert!(validate_mcp_server_name(&format!("agent-plugin--{}", "e".repeat(180))).is_err());
     }
 
     #[test]

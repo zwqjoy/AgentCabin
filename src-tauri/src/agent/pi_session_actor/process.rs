@@ -156,7 +156,7 @@ fn build_rpc_args(
         .or(settings.pi_code_profile_dir.as_deref())
     {
         let extension = PathBuf::from(agent_dir).join("expert-extension.mjs");
-        if extension.is_file() {
+        if !isolated_work_profile && extension.is_file() {
             push_explicit_extension(
                 &mut args,
                 &mut explicit_extensions,
@@ -194,6 +194,17 @@ fn build_rpc_args(
             .filter(|value| !value.trim().is_empty())
         {
             push_explicit_extension(&mut args, &mut explicit_extensions, adapter);
+        }
+        // Work's Host MCP consumer must handle service changes before the
+        // expert reconciliation hook acknowledges connection completion.
+        let extension =
+            PathBuf::from(settings.pi_agent_dir.as_deref().unwrap()).join("expert-extension.mjs");
+        if extension.is_file() {
+            push_explicit_extension(
+                &mut args,
+                &mut explicit_extensions,
+                extension.to_string_lossy().into_owned(),
+            );
         }
     }
     for source in &settings.pi_work_skill_sources {

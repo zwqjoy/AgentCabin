@@ -257,7 +257,7 @@
           Object.entries(headerValues).filter(([, value]) => value.trim().length > 0),
         ),
       });
-      success = `已把“${server.title || server.name}”添加到 Work，下次会话生效。`;
+      success = `已添加“${server.title || server.name}”，Code 和 Work 共用，下次会话生效。`;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -435,7 +435,7 @@
                 ? "暂无接入配置"
                 : installing
                   ? "添加中…"
-                  : "添加到 Work"}
+                  : "添加 MCP 服务器"}
         </button>
       </div>
     </div>

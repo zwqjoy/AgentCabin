@@ -3283,20 +3283,6 @@
                   </button>
                 </div>
               {/if}
-              {#if workMcpSource === "discover" && pageMode === "catalog"}
-                <!-- Work has its own Registry panel below. The shared Code MCP
-                     discovery panel queried the same catalog and duplicated it. -->
-              {:else}
-                <McpConfiguredPanel
-                  {projectCwd}
-                  visible={true}
-                  targetRealm="work"
-                  canToggle={true}
-                  bind:operationLoading
-                  {showToast}
-                  bind:confirmAction
-                />
-              {/if}
               {#if pageMode === "catalog" && workMcpSource === "discover"}
                 <WorkMcpDiscoverPanel connectors={workConnectors} onSave={saveWorkConnector} />
               {/if}

@@ -63,12 +63,37 @@ export async function runExpertMember(agent, prompt, expertId, signal, onUpdate)
 }
 
 export default async function expertExtension(pi) {
+  const profile = path.dirname(fileURLToPath(import.meta.url));
+  const contextPath = path.join(profile, "expert-context.json");
+  const workProfile = process.env.AGENTCABIN_WORK_PROFILE_DIR;
+  let buildWorkConfig;
+  let buildCodeConfig;
+  if (workProfile) {
+    const adapterPath = path.join(workProfile, "extensions", "agentcabin-work-mcp-adapter.mjs");
+    ({ buildWorkNativeMcpConfig: buildWorkConfig } = await import(pathToFileURL(adapterPath).href));
+  }
   // Use Pi's native consumer in this extension, before our reconciliation
   // handlers. Pi orders built-ins after file extensions regardless of -e order.
   const nativePath = path.join(path.dirname(process.argv[1]), path.basename(path.dirname(process.argv[1])) === "bundle" ? "../extensions/mcp/index.js" : "extensions/mcp/index.js");
-  const nativeMcp = await import(pathToFileURL(nativePath).href);
-  await nativeMcp.default(pi);
-  const contextPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "expert-context.json");
+  if (!workProfile) {
+    // Use the same bundled module as the managed tool-search extension.
+    // Loading MCP from dist creates distinct tool identity symbols.
+    const nativeMcp = await import(pathToFileURL(process.env.AGENTCABIN_PI_CODING_AGENT_ENTRY).href);
+    const { loadMcpConfig } = await import(pathToFileURL(path.join(path.dirname(nativePath), "config.js")).href);
+    ({ buildCodePluginMcpConfig: buildCodeConfig } = await import(pathToFileURL(path.join(profile, "code-agent-plugin-mcp.mjs")).href));
+    await nativeMcp.createMcpExtension({
+      loadConfig: (ctx) => {
+        const loaded = loadMcpConfig({ agentDir: profile, cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() });
+        const file = path.join(profile, "agent-plugin-mcp.json");
+        const raw = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+        const plugins = Object.keys(raw.mcpServers ?? {}).length ? buildCodeConfig(raw, {
+          baseUrl: `http://127.0.0.1:${process.env.AGENTCABIN_CODE_CONNECTOR_BRIDGE_PORT}`,
+          token: process.env.AGENTCABIN_CODE_CONNECTOR_BRIDGE_TOKEN,
+        }).servers : [];
+        return { ...loaded, servers: [...loaded.servers, ...plugins], autoEnableCodemode: false };
+      },
+    })(pi);
+  }
   const registered = new Map();
   let sessionActive = false;
   const serviceChanges = [];
@@ -78,7 +103,18 @@ export default async function expertExtension(pi) {
   pi.on("mcp_servers_change", async () => { serviceChanges.shift()?.(); });
   async function syncServices(context) {
     const track = () => sessionActive ? new Promise(resolve => serviceChanges.push(resolve)) : Promise.resolve();
-    const next = context.mcpServers ?? {};
+    const metadata = context.mcpServers ?? {};
+    let next = metadata;
+    if (Object.keys(metadata).length) {
+      const projected = buildWorkConfig ? buildWorkConfig({ mcpServers: metadata }, {}, {
+        baseUrl: `http://127.0.0.1:${process.env.AGENTCABIN_WORK_BRIDGE_PORT}`,
+        token: process.env.AGENTCABIN_WORK_BRIDGE_TOKEN,
+      }) : buildCodeConfig({ mcpServers: metadata }, {
+        baseUrl: `http://127.0.0.1:${process.env.AGENTCABIN_CODE_CONNECTOR_BRIDGE_PORT}`,
+        token: process.env.AGENTCABIN_CODE_CONNECTOR_BRIDGE_TOKEN,
+      });
+      next = Object.fromEntries(projected.servers.map(server => [server.name, server.config]));
+    }
     for (const name of registered.keys()) {
       if (!Object.hasOwn(next, name)) {
         const changed = track();

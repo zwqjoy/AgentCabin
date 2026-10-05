@@ -340,7 +340,16 @@ impl CapabilityResolver {
             }
         }
 
-        // 2. Resolve MCP Servers from global ~/.agentcabin/mcp/catalog
+        // Import old Work-only MCP entries before resolving the shared catalog.
+        let work_paths = crate::work::paths::WorkPaths::new(root.to_path_buf());
+        if let Err(error) = crate::work::connectors::migrate_legacy_to_global(&work_paths) {
+            log::warn!(
+                "[capability_resolver] legacy Work MCP migration failed: {}",
+                error
+            );
+        }
+
+        // 2. Resolve MCP Servers from the global ~/.agentcabin/mcp/catalog
         let mcp_catalog = profile_bindings::read_mcp_catalog_with_root(root);
         let mcp_bindings = profile_bindings::read_mcp_bindings_with_root(root);
         let mut mcp_servers = Vec::new();
@@ -357,16 +366,13 @@ impl CapabilityResolver {
                         if let Some(secret_dict) =
                             profile_bindings::get_host_secret_with_root(root, secret_ref)
                         {
-                            for (k, v) in secret_dict {
-                                if k.eq_ignore_ascii_case("authorization")
-                                    || k.eq_ignore_ascii_case("token")
-                                    || k.eq_ignore_ascii_case("apiKey")
-                                    || k.to_lowercase().contains("header")
-                                {
-                                    secret_headers.insert(k, v);
-                                } else {
-                                    secret_env.insert(k, v);
-                                }
+                            if matches!(
+                                server.transport.as_str(),
+                                "http" | "sse" | "streamable-http"
+                            ) {
+                                secret_headers.extend(secret_dict);
+                            } else {
+                                secret_env.extend(secret_dict);
                             }
                         }
                     }

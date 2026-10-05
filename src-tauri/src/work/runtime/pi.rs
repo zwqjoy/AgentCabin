@@ -230,8 +230,7 @@ impl PiWorkRuntimeAdapter {
         let agent_dir = caps.managed_runtime_dir.to_string_lossy().into_owned();
         settings.pi_agent_dir = Some(agent_dir.clone());
         settings.pi_work_extension = Some(runtime.extension_entry.to_string_lossy().into_owned());
-        settings.pi_work_mcp_adapter = runtime
-            .mcp_enabled
+        settings.pi_work_mcp_adapter = (runtime.mcp_enabled || !caps.mcp_servers.is_empty())
             .then(|| runtime.mcp_adapter_entry.to_string_lossy().into_owned());
         settings.pi_work_browser_adapter = runtime
             .browser_enabled

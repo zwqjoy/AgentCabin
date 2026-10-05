@@ -102,6 +102,18 @@ pub async fn call_with_paths(
     call_with_config(paths, &name, &config, tool_name, arguments, proxy_url).await
 }
 
+pub(crate) async fn call_for_run(
+    paths: &WorkPaths,
+    run_id: &str,
+    name: &str,
+    tool_name: &str,
+    arguments: &Value,
+    proxy_url: Option<&str>,
+) -> Result<Value, String> {
+    let (name, config) = read_connector_for_run(paths, name, Some(run_id))?;
+    call_with_config(paths, &name, &config, tool_name, arguments, proxy_url).await
+}
+
 /// Execute a tool from a Host-resolved MCP server configuration.
 /// Callers must load the configuration from a trusted Host store and resolve
 /// any plugin placeholders before passing it here.
@@ -161,6 +173,16 @@ pub async fn list_tools_with_paths(
     list_tools_with_config(paths, &name, &config, proxy_url).await
 }
 
+pub(crate) async fn list_tools_for_run(
+    paths: &WorkPaths,
+    run_id: &str,
+    name: &str,
+    proxy_url: Option<&str>,
+) -> Result<Value, String> {
+    let (name, config) = read_connector_for_run(paths, name, Some(run_id))?;
+    list_tools_with_config(paths, &name, &config, proxy_url).await
+}
+
 /// Discover tools from a Host-resolved MCP server configuration.
 pub(crate) async fn list_tools_with_config(
     paths: &WorkPaths,
@@ -204,11 +226,30 @@ fn health(
 }
 
 fn read_connector(paths: &WorkPaths, name: &str) -> Result<(String, Map<String, Value>), String> {
+    read_connector_for_run(paths, name, None)
+}
+
+fn read_connector_for_run(
+    paths: &WorkPaths,
+    name: &str,
+    run_id: Option<&str>,
+) -> Result<(String, Map<String, Value>), String> {
     let name = name.trim();
     if name.is_empty() {
         return Err("MCP 连接器名称不能为空".into());
     }
-    let root = read_runtime_root(paths).map_err(|error| format!("Work MCP 配置无效: {error}"))?;
+    let mut root =
+        read_runtime_root(paths).map_err(|error| format!("Work MCP 配置无效: {error}"))?;
+    if let Some(run_id) = run_id {
+        if let Some(config) = crate::storage::agent_plugins::selected_expert_mcp_config_with_root(
+            paths.data_root(),
+            run_id,
+            name,
+        )? {
+            root["mcpServers"][name] = config;
+            resolve_agent_plugin_environment(&mut root, &|key| std::env::var_os(key))?;
+        }
+    }
     let config = root
         .get("mcpServers")
         .or_else(|| root.get("mcp_servers"))
@@ -458,6 +499,12 @@ async fn call_stdio(
         ("PATH".into(), augmented_path()),
     ];
     envs.extend(configured_environment(config)?);
+    // This is a Host-owned MCP server, not the Pi worker. Configured servers
+    // need network access for package startup and their upstream services.
+    envs.push((
+        super::sandbox::WORK_NETWORK_POLICY_ENV.into(),
+        "inherit".into(),
+    ));
     let (current_dir, writable_roots, read_only_roots, read_only_cwd) =
         mcp_execution_context(paths, config)?;
     let raw_command = ExecutionCommand {
@@ -656,6 +703,12 @@ async fn list_stdio(paths: &WorkPaths, config: &Map<String, Value>) -> Result<Va
         ("PATH".into(), augmented_path()),
     ];
     envs.extend(configured_environment(config)?);
+    // This is a Host-owned MCP server, not the Pi worker. Configured servers
+    // need network access for package startup and their upstream services.
+    envs.push((
+        super::sandbox::WORK_NETWORK_POLICY_ENV.into(),
+        "inherit".into(),
+    ));
     let (current_dir, writable_roots, read_only_roots, read_only_cwd) =
         mcp_execution_context(paths, config)?;
     let raw_command = ExecutionCommand {
@@ -1259,6 +1312,33 @@ mod tests {
         let health = test_with_paths(&paths, "disabled").await.unwrap();
         assert_eq!(health.status, WorkConnectorHealthStatus::Disabled);
         assert_eq!(health.tool_count, 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires bundled Node and network access for the real configured MCP package"]
+    async fn real_everything_host_discovery_and_echo() {
+        let temp = TempDir::new().unwrap();
+        let paths = paths(&temp);
+        fs::write(paths.work_mcp_config_path(), json!({"mcpServers": {
+            "everything": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-everything"]}
+        }}).to_string()).unwrap();
+        let health = test_with_paths(&paths, "everything").await.unwrap();
+        assert_eq!(
+            health.status,
+            WorkConnectorHealthStatus::Healthy,
+            "{health:?}"
+        );
+        assert!(health.tool_names.iter().any(|name| name == "echo"));
+        let result = call_with_paths(
+            &paths,
+            "everything",
+            "echo",
+            &json!({"message":"AgentCabin MCP works"}),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(result.to_string().contains("AgentCabin MCP works"));
     }
 
     #[cfg(unix)]

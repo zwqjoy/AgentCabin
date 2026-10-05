@@ -109,6 +109,9 @@ pub(crate) async fn pi_launch_context(
         prompt.push_str(
             "\n\n## Todo 完成状态\n多步任务使用 Pi 的 todo 工具维护可见进度。创建任务后立即开始第一项：调用 todo(action=\"update\", id=<任务ID>, status=\"in_progress\")；每项工作完成后立即调用 todo(action=\"update\", id=<任务ID>, status=\"completed\")，再开始下一项。所有工作和成果写入完成后、发送最终答复之前，必须调用 todo(action=\"list\") 读取当前任务及 ID，再逐项把确已完成的任务更新为 completed，最后再次 list 核对；不要仅凭文字汇报完成。仍未完成或受阻的任务保持 pending/in_progress，并说明原因。不要把 Work 计划工具 work_update_step 当成 Pi Todo 状态更新。",
         );
+        prompt.push_str(
+            "\n\n## MCP 工具发现\nMCP 工具使用 Pi 原生延迟发现，已配置的服务器工具可能不会预先出现在当前工具列表中。当用户要求使用某个 MCP 服务器或工具，而目标工具未出现在当前列表时，先调用 Pi 原生 tool_search，按服务器名和工具用途搜索；找到后立即调用返回的 mcp__<server>__<tool> 工具。不能仅因当前列表里暂时没有 MCP 工具就回答未加载。只有 tool_search 明确找不到目标，或搜索/调用返回连接错误时，才说明该 MCP 工具当前不可用，并如实报告搜索或调用结果。",
+        );
     }
     let mut extra_env = HashMap::new();
     let shared_skills_root = crate::storage::profile_bindings::shared_skills_dir();
@@ -165,12 +168,6 @@ pub(crate) async fn pi_launch_context(
             "1".to_string(),
         );
     }
-    let code_mcp_enabled = crate::storage::profile_bindings::project_mcp_bindings_from_catalog(
-        &crate::storage::data_dir(),
-    )
-    .0
-    .iter()
-    .any(|server| server.enabled);
     let (browser_config, browser_api_key) = crate::work::browser::runtime(&shared_paths)?;
     let web_access_enabled =
         browser_config.enabled && crate::storage::profile_bindings::is_web_access_enabled();
@@ -220,13 +217,17 @@ pub(crate) async fn pi_launch_context(
         &caps.managed_runtime_dir,
     );
     settings.pi_code_profile_dir = Some(caps.managed_runtime_dir.to_string_lossy().into_owned());
+    let code_mcp_enabled = caps
+        .mcp_servers
+        .iter()
+        .any(|server| !server.id.starts_with("agent-plugin--"));
     let code_plugin_mcp_enabled = caps
         .mcp_servers
         .iter()
         .any(|server| server.id.starts_with("agent-plugin--"));
-    if code_plugin_mcp_enabled {
+    {
         // Reuse Code's authenticated Host bridge and per-session token for
-        // Plugin MCP. The Pi extension receives only logical server names.
+        // Plugin MCP, including an expert selected after session startup.
         extra_env.insert("AGENTCABIN_CODE_CONNECTOR_ENABLED".into(), "1".into());
         extra_env.insert(
             "AGENTCABIN_PI_CODING_AGENT_ENTRY".into(),
@@ -254,21 +255,10 @@ pub(crate) async fn pi_launch_context(
     settings
         .pi_shared_extension_sources
         .push(context_usage_adapter.to_string_lossy().into_owned());
-    if code_plugin_mcp_enabled {
-        settings.pi_shared_extension_sources.push(
-            caps.managed_runtime_dir
-                .join("code-agent-plugin-mcp.mjs")
-                .to_string_lossy()
-                .into_owned(),
-        );
-    }
     if code_mcp_enabled || code_plugin_mcp_enabled {
         settings
             .pi_shared_extension_sources
             .push("builtin:tool-search".into());
-        settings
-            .pi_shared_extension_sources
-            .push("builtin:mcp".into());
     }
     if web_access_enabled {
         let web_adapter = crate::work::browser::ensure_code_web_adapter(&shared_paths)?;
