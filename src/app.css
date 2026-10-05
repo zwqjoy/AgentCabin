@@ -2843,6 +2843,18 @@ body {
   font-size: var(--ui-font-size-heading) !important;
 }
 
+.settings-content [class*="text-[13px]"] {
+  font-size: var(--ui-font-size) !important;
+}
+
+.settings-sidebar .text-xs {
+  font-size: var(--ui-font-size) !important;
+}
+
+.settings-sidebar [class*="text-[11px]"] {
+  font-size: var(--ui-font-size-micro) !important;
+}
+
 .app-shell-sidebar-header .text-sm {
   font-size: var(--ui-font-size) !important;
 }
@@ -2868,15 +2880,51 @@ body {
 }
 
 .app-shell-sidebar-tabs > button {
-  font-size: 13px !important;
+  font-size: var(--ui-font-size) !important;
 }
 
 .chat-sidebar-panel .chat-project-header {
-  font-size: 12px !important;
+  font-size: var(--ui-font-size) !important;
 }
 
 .chat-sidebar-panel .chat-conversation-title {
-  font-size: 13px !important;
+  font-size: var(--ui-font-size) !important;
+}
+
+.chat-sidebar-panel .chat-conversation-time,
+.chat-sidebar-panel .chat-conversation-preview,
+.chat-sidebar-panel .chat-conversation-meta {
+  font-size: var(--ui-font-size) !important;
+}
+
+.app-shell-sidebar .text-sm,
+.app-shell-sidebar-panel .text-sm {
+  font-size: var(--ui-font-size) !important;
+}
+
+.app-shell-sidebar .text-xs,
+.app-shell-sidebar-panel .text-xs {
+  font-size: var(--ui-font-size) !important;
+}
+
+.app-shell-sidebar [class*="text-[10px]"],
+.app-shell-sidebar-panel [class*="text-[10px]"] {
+  font-size: var(--ui-font-size) !important;
+}
+
+.app-shell-sidebar [class*="text-[11px]"],
+.app-shell-sidebar-panel [class*="text-[11px]"] {
+  font-size: var(--ui-font-size) !important;
+}
+
+.app-shell-sidebar [class*="text-[12px]"],
+.app-shell-sidebar-panel [class*="text-[12px]"] {
+  font-size: var(--ui-font-size) !important;
+}
+
+.app-shell-sidebar [class*="text-[13px]"],
+.app-shell-sidebar-panel [class*="text-[13px]"] {
+  font-size: var(--ui-font-size) !important;
 }
 
 .prompt-composer > div:last-child button:not(.fixed *):not([role="menu"] *):not([role="dialog"] *),
@@ -2933,12 +2981,16 @@ body {
 }
 
 /* Pi Work renders its own navigation and workspace tree inside the shared
- * shell. Keep its hierarchy intact instead of flattening every text utility
- * into the body size. */
+ * shell. Keep its sizing tied to the same user-controlled UI base as Code. */
 .work-mode-sidebar {
   font-family: var(--font-ui-override, var(--font-ui));
-  font-size: var(--ui-font-size-secondary);
+  font-size: var(--ui-font-size);
   line-height: 1.45;
+}
+
+.work-mode-sidebar .text-xs,
+.work-mode-sidebar [class*="text-[12px]"] {
+  font-size: var(--ui-font-size) !important;
 }
 
 .work-sidebar-nav {
@@ -2950,7 +3002,7 @@ body {
   padding: 0 10px !important;
   border-radius: 8px !important;
   font-family: inherit;
-  font-size: 13px !important;
+  font-size: var(--ui-font-size) !important;
   line-height: 20px !important;
 }
 
@@ -2980,7 +3032,7 @@ body {
 
 .work-sidebar-section-label {
   min-height: 24px;
-  font-size: 10.5px !important;
+  font-size: var(--ui-font-size) !important;
   letter-spacing: 0.02em;
   line-height: 1.35 !important;
   text-transform: none;
@@ -2994,7 +3046,7 @@ body {
 
 .chat-project-workspace-button,
 .work-sidebar-workspace-button {
-  font-size: 13px !important;
+  font-size: var(--ui-font-size) !important;
   font-weight: 500;
   line-height: 1.4 !important;
 }
@@ -3004,35 +3056,34 @@ body {
 .work-sidebar-add-workspace {
   min-height: 32px;
   padding: 0 10px !important;
-  font-size: 13px !important;
+  font-size: var(--ui-font-size) !important;
   line-height: 20px !important;
 }
 
-/* ConversationItem is shared with Code and normally follows the 14px shell
- * title token. Work's tree needs one quieter step so workspace names and
- * sessions do not compete with the primary navigation. */
+/* ConversationItem is shared with Code; keep Work titles and metadata on the
+ * same user-controlled base size as the rest of the sidebar. */
 .work-mode-sidebar .chat-conversation-title {
-  font-size: 13px !important;
+  font-size: var(--ui-font-size) !important;
   line-height: 1.35 !important;
 }
 
 .work-mode-sidebar .chat-conversation-time,
 .work-mode-sidebar .chat-conversation-preview,
 .work-mode-sidebar .chat-conversation-meta {
-  font-size: 10px !important;
+  font-size: var(--ui-font-size) !important;
   line-height: 1.3 !important;
 }
 
 .work-mode-sidebar [class*="text-[10px]"] {
-  font-size: var(--ui-font-size-caption) !important;
+  font-size: var(--ui-font-size) !important;
 }
 
 .work-mode-sidebar [class*="text-[11px]"] {
-  font-size: var(--ui-font-size-micro) !important;
+  font-size: var(--ui-font-size) !important;
 }
 
 .work-mode-sidebar [class*="text-[9px]"] {
-  font-size: var(--ui-font-size-tiny) !important;
+  font-size: var(--ui-font-size) !important;
 }
 
 /* Shared active navigation state. Settings and chat use this semantic class,

@@ -70,7 +70,7 @@
 </script>
 
 <aside
-  class="flex h-full w-[250px] shrink-0 flex-col border-r border-border/60 bg-sidebar-background/65 backdrop-blur-md select-none"
+  class="settings-sidebar flex h-full w-[250px] shrink-0 flex-col border-r border-border/60 bg-sidebar-background/65 backdrop-blur-md select-none"
 >
   <!-- macOS window controls area clearance (traffic lights) -->
   <div class="h-9 shrink-0 pt-3 px-3"></div>
