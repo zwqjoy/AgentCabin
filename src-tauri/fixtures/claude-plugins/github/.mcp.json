@@ -1,1 +1,16 @@
-{"mcpServers":{"github.enterprise":{"command":"node","args":[],"env":{"TOKEN":"fixture-secret"}},"remote":{"url":"https://example.com/mcp","headers":{"Authorization":"fixture-secret"}}}}
+{
+  "github": {
+    "type": "http",
+    "url": "https://api.githubcopilot.com/mcp/",
+    "headers": {
+      "Authorization": "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"
+    }
+  },
+  "github.enterprise": {
+    "command": "node",
+    "args": [],
+    "env": {
+      "TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+    }
+  }
+}

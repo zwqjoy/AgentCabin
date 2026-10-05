@@ -216,7 +216,76 @@ fn read_runtime_root(paths: &WorkPaths) -> Result<Value, String> {
         "WorkBuddy expert",
         256 * 1024,
     )?;
+    resolve_agent_plugin_environment(&mut root, &|name| std::env::var_os(name))?;
     Ok(root)
+}
+
+fn resolve_agent_plugin_environment(
+    root: &mut Value,
+    lookup: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+) -> Result<(), String> {
+    let key = if root.get("mcpServers").is_some() {
+        "mcpServers"
+    } else {
+        "mcp_servers"
+    };
+    let Some(servers) = root.get_mut(key).and_then(Value::as_object_mut) else {
+        return Ok(());
+    };
+    for server in servers.values_mut() {
+        let Some(config) = server.as_object_mut() else {
+            continue;
+        };
+        // Ordinary MCP entries are unchanged. Plugin placeholders are only
+        // resolved in this Host-owned execution projection, never during
+        // import, summary generation, or Pi config generation.
+        if !config.contains_key("_agentcabinPluginRoot") {
+            continue;
+        }
+        for field in ["env", "headers"] {
+            let Some(values) = config.get_mut(field).and_then(Value::as_object_mut) else {
+                continue;
+            };
+            for value in values.values_mut() {
+                let Some(raw) = value.as_str() else {
+                    continue;
+                };
+                *value = Value::String(resolve_host_env_placeholders(raw, &lookup)?);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn resolve_host_env_placeholders(
+    value: &str,
+    lookup: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+) -> Result<String, String> {
+    let mut resolved = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(start) = rest.find("${") {
+        resolved.push_str(&rest[..start]);
+        let placeholder = &rest[start + 2..];
+        let end = placeholder
+            .find('}')
+            .ok_or_else(|| "Invalid environment variable placeholder".to_string())?;
+        let name = &placeholder[..end];
+        let mut chars = name.chars();
+        let valid = chars
+            .next()
+            .is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
+            && chars.all(|character| character == '_' || character.is_ascii_alphanumeric());
+        if !valid || matches!(name, "CLAUDE_PLUGIN_ROOT" | "PLUGIN_ROOT" | "PLUGIN_DATA") {
+            return Err("Invalid environment variable placeholder".into());
+        }
+        let secret = lookup(name)
+            .and_then(|value| value.into_string().ok())
+            .ok_or_else(|| format!("Missing required environment variable: {name}"))?;
+        resolved.push_str(&secret);
+        rest = &placeholder[end + 1..];
+    }
+    resolved.push_str(rest);
+    Ok(resolved)
 }
 
 fn merge_generated_mcp_config(
@@ -1068,6 +1137,62 @@ mod tests {
         let paths = WorkPaths::new(temp.path().join("data"));
         paths.ensure_layout().unwrap();
         paths
+    }
+
+    #[test]
+    fn resolves_plugin_placeholders_only_in_host_execution_projection() {
+        let mut root = serde_json::json!({
+            "mcpServers": {
+                "agent-plugin--github--mcp--github": {
+                    "_agentcabinPluginRoot": "/trusted/plugin",
+                    "headers": {
+                        "Authorization": "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"
+                    },
+                    "env": { "TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}" },
+                    "command": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+                },
+                "ordinary": {
+                    "headers": { "Authorization": "${GITHUB_PERSONAL_ACCESS_TOKEN}" }
+                }
+            }
+        });
+        let lookup = |name: &str| {
+            (name == "GITHUB_PERSONAL_ACCESS_TOKEN")
+                .then(|| std::ffi::OsString::from("test-secret"))
+        };
+        resolve_agent_plugin_environment(&mut root, &lookup).unwrap();
+        assert_eq!(
+            root["mcpServers"]["agent-plugin--github--mcp--github"]["headers"]["Authorization"],
+            "Bearer test-secret"
+        );
+        assert_eq!(
+            root["mcpServers"]["agent-plugin--github--mcp--github"]["env"]["TOKEN"],
+            "test-secret"
+        );
+        // Arbitrary placeholders outside env/headers are never expanded, and
+        // ordinary MCP entries do not gain access to Agent Plugin Host env.
+        assert_eq!(
+            root["mcpServers"]["agent-plugin--github--mcp--github"]["command"],
+            "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+        );
+        assert_eq!(
+            root["mcpServers"]["ordinary"]["headers"]["Authorization"],
+            "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+        );
+        root["mcpServers"]["agent-plugin--github--mcp--github"]["headers"]["Authorization"] =
+            Value::String("Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}".into());
+        fn missing(_: &str) -> Option<std::ffi::OsString> {
+            None
+        }
+        let error = resolve_agent_plugin_environment(
+            &mut root,
+            &missing as &dyn Fn(&str) -> Option<std::ffi::OsString>,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "Missing required environment variable: GITHUB_PERSONAL_ACCESS_TOKEN"
+        );
     }
 
     #[test]

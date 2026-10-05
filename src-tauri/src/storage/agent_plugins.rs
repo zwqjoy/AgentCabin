@@ -1227,6 +1227,53 @@ fn safe_root_values(value: &Value, root: &Path) -> bool {
     }
 }
 
+fn mask_env_placeholders(value: &str) -> Option<String> {
+    let mut masked = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(start) = rest.find("${") {
+        masked.push_str(&rest[..start]);
+        let placeholder = &rest[start + 2..];
+        let end = placeholder.find('}')?;
+        let name = &placeholder[..end];
+        if name == "CLAUDE_PLUGIN_ROOT" || name == "PLUGIN_ROOT" || name == "PLUGIN_DATA" {
+            masked.push_str("${");
+            masked.push_str(name);
+            masked.push('}');
+        } else {
+            let mut chars = name.chars();
+            let valid = chars
+                .next()
+                .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
+                && chars.all(|c| c == '_' || c.is_ascii_alphanumeric());
+            if !valid {
+                return None;
+            }
+            // Keep the value safe for path validation without resolving the
+            // Host-owned variable during package import.
+            masked.push_str("HOST_ENV_PLACEHOLDER");
+        }
+        rest = &placeholder[end + 1..];
+    }
+    masked.push_str(rest);
+    Some(masked)
+}
+
+fn safe_claude_secret_map(value: Option<&Value>, root: &Path) -> bool {
+    let Some(value) = value else {
+        return true;
+    };
+    let Some(values) = value.as_object() else {
+        return false;
+    };
+    values.values().all(|value| {
+        let Some(value) = value.as_str() else {
+            return false;
+        };
+        mask_env_placeholders(value)
+            .is_some_and(|masked| safe_root_values(&Value::String(masked), root))
+    })
+}
+
 fn valid_http_url(value: &str) -> bool {
     let Ok(url) = Url::parse(value) else {
         return false;
@@ -1340,25 +1387,51 @@ fn normalize_mcp_servers(
         ));
         return Vec::new();
     }
-    let servers = match object.get("mcpServers").and_then(Value::as_object) {
-        Some(servers) => servers,
-        None => {
+    let servers = if let Some(wrapped) = object.get("mcpServers") {
+        let Some(servers) = wrapped.as_object() else {
             warnings.push(
                 "mcp.json must contain an mcpServers object; MCP components were ignored"
                     .to_string(),
             );
             return Vec::new();
+        };
+        for key in object.keys() {
+            if key != "$schema" && key != "mcpServers" {
+                warnings.push(format!(
+                    "mcp.json unknown top-level field '{key}'; MCP components were ignored"
+                ));
+                return Vec::new();
+            }
         }
+        servers
+    } else if claude {
+        // Claude Code's native .mcp.json shape maps server names directly at
+        // the top level. Keep $schema metadata out of that server map.
+        let servers = object
+            .iter()
+            .filter(|(key, _)| key.as_str() != "$schema")
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<Map<_, _>>();
+        // The owned map lives through normalization below.
+        return normalize_mcp_server_map(root, plugin_id, data_dir, claude, &servers, warnings);
+    } else {
+        warnings.push(
+            "mcp.json must contain an mcpServers object; MCP components were ignored".to_string(),
+        );
+        return Vec::new();
     };
-    for key in object.keys() {
-        if key != "$schema" && key != "mcpServers" {
-            warnings.push(format!(
-                "mcp.json unknown top-level field '{key}'; MCP components were ignored"
-            ));
-            return Vec::new();
-        }
-    }
 
+    normalize_mcp_server_map(root, plugin_id, data_dir, claude, servers, warnings)
+}
+
+fn normalize_mcp_server_map(
+    root: &Path,
+    plugin_id: &str,
+    data_dir: &Path,
+    claude: bool,
+    servers: &Map<String, Value>,
+    warnings: &mut Vec<String>,
+) -> Vec<(AgentPluginMcpServerSummary, AgentPluginRuntimeMcpServer)> {
     let mut result = Vec::new();
     for (original_name, entry) in servers {
         let skip = |reason: String, warnings: &mut Vec<String>| {
@@ -1424,9 +1497,16 @@ fn normalize_mcp_servers(
             continue;
         }
 
-        if claude && !safe_root_values(&Value::Object(entry.clone()), root) {
+        let mut non_secret_fields = entry.clone();
+        non_secret_fields.remove("env");
+        non_secret_fields.remove("headers");
+        if claude
+            && (!safe_root_values(&Value::Object(non_secret_fields), root)
+                || !safe_claude_secret_map(entry.get("env"), root)
+                || !safe_claude_secret_map(entry.get("headers"), root))
+        {
             skip(
-                "contains a plugin-root path escape or unresolved variable".into(),
+                "contains a plugin-root path escape or invalid variable placeholder".into(),
                 warnings,
             );
             continue;
@@ -1566,13 +1646,17 @@ fn normalize_mcp_servers(
                 );
                 continue;
             }
-            let headers = match parse_string_map(entry.get("headers"), "HTTP headers") {
-                Ok(values) => values,
-                Err(error) => {
-                    skip(error, warnings);
-                    continue;
-                }
-            };
+            let headers: HashMap<String, String> =
+                match parse_string_map(entry.get("headers"), "HTTP headers") {
+                    Ok(values) => values
+                        .iter()
+                        .map(|(key, value)| (key.clone(), expand_value(value, root, data_dir)))
+                        .collect(),
+                    Err(error) => {
+                        skip(error, warnings);
+                        continue;
+                    }
+                };
             let summary = AgentPluginMcpServerSummary {
                 id: id.clone(),
                 name: original_name.clone(),
@@ -2805,6 +2889,49 @@ mod tests {
             assert!(list_enabled_skills_with_root(temp.path()).is_empty());
             assert!(list_enabled_mcp_servers_with_root(temp.path()).is_empty());
         }
+    }
+
+    #[test]
+    fn claude_env_placeholders_are_preserved_only_in_secret_maps() {
+        let temp = TempDir::new().unwrap();
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/claude-plugins/github");
+        let summary =
+            install_agent_plugin_with_root(temp.path(), source.to_str().unwrap()).unwrap();
+        assert_eq!(summary.mcp_servers.len(), 2);
+        let summary_json = serde_json::to_string(&summary).unwrap();
+        assert!(!summary_json.contains("GITHUB_PERSONAL_ACCESS_TOKEN"));
+        set_agent_plugin_trust_with_root(temp.path(), "github", true).unwrap();
+        set_agent_plugin_binding_with_root(temp.path(), "github", true).unwrap();
+        let server = list_enabled_mcp_servers_with_root(temp.path())
+            .into_iter()
+            .find(|server| server.original_name == "github")
+            .unwrap();
+        assert_eq!(
+            server.headers.get("Authorization").map(String::as_str),
+            Some("Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}")
+        );
+        let config = fs::read_to_string(
+            agent_plugin_mcp_config_path_with_root(temp.path(), "work").unwrap(),
+        )
+        .unwrap();
+        assert!(config.contains("${GITHUB_PERSONAL_ACCESS_TOKEN}"));
+        assert!(!config.contains("fixture-secret"));
+
+        let package = temp.path().join("unsafe");
+        fs::create_dir_all(package.join(".claude-plugin")).unwrap();
+        fs::write(
+            package.join(".claude-plugin/plugin.json"),
+            r#"{"name":"unsafe"}"#,
+        )
+        .unwrap();
+        fs::write(
+            package.join(".mcp.json"),
+            r#"{"bad":{"command":"${GITHUB_PERSONAL_ACCESS_TOKEN}"},"good":{"command":"node","env":{"TOKEN":"${GITHUB_PERSONAL_ACCESS_TOKEN}"}}}"#,
+        )
+        .unwrap();
+        let loaded = load_plugin_with_root(temp.path(), &package, &PluginState::default());
+        assert_eq!(loaded.runtime_mcp_servers.len(), 1);
+        assert_eq!(loaded.runtime_mcp_servers[0].original_name, "good");
     }
 
     #[test]
