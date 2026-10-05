@@ -1,6 +1,33 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
+
+const PI_MCP_SERVER_NAME = /^[A-Za-z0-9_-]{1,80}$/;
+
+function piServerNames(hostNames) {
+  const names = new Map();
+  const reserved = new Set(hostNames.filter((name) => PI_MCP_SERVER_NAME.test(name)));
+  const used = new Set(reserved);
+  for (const hostName of hostNames) {
+    if (PI_MCP_SERVER_NAME.test(hostName)) {
+      names.set(hostName, hostName);
+      continue;
+    }
+    const slug = hostName.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^[_-]+|[_-]+$/g, "") || "server";
+    for (let attempt = 0; ; attempt += 1) {
+      const digest = createHash("sha256").update(`${hostName}\0${attempt}`).digest("hex");
+      const suffix = digest.slice(0, 16);
+      const alias = `ac_${slug.slice(0, 60)}_${suffix}`;
+      if (!used.has(alias)) {
+        names.set(hostName, alias);
+        used.add(alias);
+        break;
+      }
+    }
+  }
+  return names;
+}
 
 function configuredServers(raw) {
   const servers = raw?.mcpServers ?? raw?.mcp_servers;
@@ -17,6 +44,7 @@ export function buildWorkNativeMcpConfig(raw, packages, bridge) {
     throw new Error("Work MCP requires an authenticated loopback Host bridge");
   }
   const entries = new Map([...Object.entries(configuredServers(raw)), ...Object.entries(configuredServers(packages))]);
+  const projectedNames = piServerNames([...entries.keys()]);
   return {
     servers: [...entries].map(([name, server]) => {
       if (!name || /[\u0000-\u001f\u007f]/.test(name) || name.length > 200 ||
@@ -26,7 +54,7 @@ export function buildWorkNativeMcpConfig(raw, packages, bridge) {
       // Free-form connector descriptions can embed credentials or endpoints.
       // Use a bounded Host-owned label until metadata has an explicit safe-text contract.
       return {
-        name, source: "agentcabin-work-host", scope: "extension",
+        name: projectedNames.get(name), source: "agentcabin-work-host", scope: "extension",
         config: {
           type: "http", url: `${url.origin}/internal/work/mcp/${encodeURIComponent(name)}`,
           headers: { Authorization: `Bearer ${bridge.token}` },

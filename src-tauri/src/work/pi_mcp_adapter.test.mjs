@@ -31,6 +31,30 @@ test('projection fails closed on non-loopback targets and invalid tokens', () =>
   for (const token of ['', 'x\n', 'x'.repeat(513)]) assert.throws(() => buildWorkNativeMcpConfig({}, {}, { baseUrl: 'http://127.0.0.1:1234', token }));
 });
 
+test('package connector names get stable Pi aliases while Host routes keep original identities', () => {
+  const hostNames = [
+    '__agentcabin_package__remote.connector__default',
+    '__agentcabin_package__remote..connector__default',
+    `__agentcabin_package__${'x'.repeat(64)}__${'y'.repeat(80)}`,
+    'ordinary-server_1',
+  ];
+  const packages = { mcpServers: Object.fromEntries(hostNames.map((name) => [name, {}])) };
+  const bridge = { baseUrl: 'http://127.0.0.1:49321', token: 'run-token' };
+  const config = buildWorkNativeMcpConfig({}, packages, bridge);
+  const repeated = buildWorkNativeMcpConfig({}, packages, bridge);
+  const byHostName = new Map(config.servers.map((server) => [server.config.url.split('/').at(-1), server]));
+
+  assert.deepEqual(config.servers.map((server) => server.name), repeated.servers.map((server) => server.name));
+  assert.equal(new Set(config.servers.map((server) => server.name)).size, hostNames.length);
+  for (const hostName of hostNames.slice(0, 3)) {
+    const projected = byHostName.get(hostName);
+    assert.notEqual(projected.name, hostName);
+    assert.match(projected.name, /^[A-Za-z0-9_-]{1,80}$/);
+    assert.equal(projected.config.url, `http://127.0.0.1:49321/internal/work/mcp/${encodeURIComponent(hostName)}`);
+  }
+  assert.equal(byHostName.get('ordinary-server_1').name, 'ordinary-server_1');
+});
+
 test('shim injects custom native loadConfig and refuses persistence', async () => {
   const fs = await import('node:fs');
   const { tmpdir } = await import('node:os');

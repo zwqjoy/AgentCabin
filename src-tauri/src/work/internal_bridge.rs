@@ -224,11 +224,20 @@ fn error_result(status: &str, message: impl Into<String>) -> Json<serde_json::Va
 }
 
 const MCP_PROXY_WAIT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const PACKAGE_MCP_SERVER_PREFIX: &str = "__agentcabin_package__";
+// Connector Package identities combine a 22-character prefix, a package id
+// (up to 64 chars), a separator, and a source server name (up to 80 chars).
+const MAX_MCP_SERVER_NAME_LENGTH: usize = 168;
 
 fn validate_mcp_server_name(name: &str) -> Result<&str, String> {
     let name = name.trim();
+    let max_length = if name.starts_with(PACKAGE_MCP_SERVER_PREFIX) {
+        MAX_MCP_SERVER_NAME_LENGTH
+    } else {
+        80
+    };
     if name.is_empty()
-        || name.chars().count() > 80
+        || name.chars().count() > max_length
         || !name
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || ".-_".contains(character))
@@ -1746,6 +1755,19 @@ async fn internal_web_fetch(
 mod tests {
     use super::*;
     use crate::work::executor::{WorkExecutionResult, WorkExecutionStatus};
+
+    #[test]
+    fn package_mcp_identity_fits_host_bridge_route_limit() {
+        let name = format!(
+            "__agentcabin_package__{}__{}",
+            "p".repeat(64),
+            "s".repeat(80)
+        );
+        assert_eq!(name.chars().count(), MAX_MCP_SERVER_NAME_LENGTH);
+        assert_eq!(validate_mcp_server_name(&name), Ok(name.as_str()));
+        assert!(validate_mcp_server_name(&format!("{name}x")).is_err());
+        assert!(validate_mcp_server_name(&"s".repeat(81)).is_err());
+    }
 
     #[test]
     fn native_mcp_request_ids_are_stable_only_within_a_process_scope() {
