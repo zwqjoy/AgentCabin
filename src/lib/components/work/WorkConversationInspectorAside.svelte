@@ -74,10 +74,6 @@
     onArtifactsChanged,
   }: Props = $props();
 
-  // Browser sessions in Work are owned by the WorkRun, which may differ from
-  // the parent Pi/session run. Bind the visible WebContentsView to the same ID
-  // used by ToolPipeline or the agent can control one page while this panel
-  // attaches a blank surface for the parent session.
   let resolvedFilePath = $state("");
   let filePreviewError = $state("");
   let resolvingFilePath = $state(false);
@@ -271,36 +267,37 @@
   {/if}
 
   <div
-    class="shrink-0 border-b border-border/60 px-3 py-2 flex items-center justify-between bg-muted/20"
+    class="flex h-9 shrink-0 items-center justify-between border-b border-border/60 bg-muted/20 px-2 select-none"
   >
-    <!-- Tabs matching Code mode / modern IDE style -->
-    <div class="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/60">
+    <!-- Left: Tab items -->
+    <div class="flex items-center gap-1 min-w-0 overflow-x-auto scrollbar-hide">
       <button
         type="button"
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors {activeTab ===
+        class="flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors border {activeTab ===
         'tasks'
-          ? 'bg-background text-foreground shadow-xs'
-          : 'text-muted-foreground hover:text-foreground'}"
+          ? 'bg-background text-foreground shadow-xs border-border/80'
+          : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted/40 hover:text-foreground'}"
         onclick={() => (activeTab = "tasks")}
       >
         <span>任务与成果</span>
       </button>
       <button
         type="button"
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors {activeTab ===
+        class="flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors border {activeTab ===
         'files'
-          ? 'bg-background text-foreground shadow-xs'
-          : 'text-muted-foreground hover:text-foreground'}"
+          ? 'bg-background text-foreground shadow-xs border-border/80'
+          : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted/40 hover:text-foreground'}"
         onclick={() => (activeTab = "files")}
       >
         <span>文件</span>
       </button>
     </div>
 
-    <div class="flex items-center gap-1">
+    <!-- Right: Window controls -->
+    <div class="flex items-center gap-1 shrink-0">
       <button
         type="button"
-        class="rounded p-1 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
+        class="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         onclick={() => (isMaximized = !isMaximized)}
         title={isMaximized ? "还原面板" : "最大化面板"}
         aria-label={isMaximized ? "还原面板" : "最大化面板"}
@@ -330,10 +327,10 @@
       </button>
       <button
         type="button"
-        class="rounded p-1 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
+        class="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         onclick={onClose}
         aria-label="关闭侧边栏"
-        title="关闭"
+        title="关闭侧边栏"
       >
         <svg
           viewBox="0 0 24 24"
