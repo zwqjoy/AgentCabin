@@ -46,7 +46,15 @@ impl RuntimeProviderAdapter for PiRuntimeAdapter {
         // Project MCP servers into pi_home/mcp.json
         let mcp_config_path = pi_home.join("mcp.json");
         let mut servers_map = serde_json::Map::new();
+        let mut code_plugin_servers = serde_json::Map::new();
         for server in &caps.mcp_servers {
+            let is_agent_plugin = server.id.starts_with("agent-plugin--");
+            if caps.app_mode == crate::work::models::AppMode::Code && is_agent_plugin {
+                // Plugin MCP configuration stays Host-owned. Pi receives only
+                // the logical server name for the authenticated loopback adapter.
+                code_plugin_servers.insert(server.id.clone(), serde_json::json!({}));
+                continue;
+            }
             let mut obj = serde_json::Map::new();
             if server.transport == "stdio" {
                 if let Some(cmd) = &server.command {
@@ -111,6 +119,19 @@ impl RuntimeProviderAdapter for PiRuntimeAdapter {
         let mcp_contents = serde_json::to_string_pretty(&mcp_json)
             .map_err(|e| format!("Failed to serialize Pi MCP config: {e}"))?;
         write_managed_file(&mcp_config_path, mcp_contents, "Pi MCP config")?;
+        if caps.app_mode == crate::work::models::AppMode::Code {
+            let plugin_config = serde_json::json!({ "mcpServers": code_plugin_servers });
+            write_managed_file(
+                &pi_home.join("agent-plugin-mcp.json"),
+                serde_json::to_string_pretty(&plugin_config).map_err(|e| e.to_string())?,
+                "Pi Agent Plugin MCP config",
+            )?;
+            write_managed_file(
+                &pi_home.join("code-agent-plugin-mcp.mjs"),
+                include_str!("../../work/pi_code_agent_plugin_mcp.mjs"),
+                "Pi Agent Plugin MCP adapter",
+            )?;
+        }
 
         let expert_prompt = expert
             .as_ref()

@@ -99,6 +99,20 @@ pub async fn call_with_paths(
     proxy_url: Option<&str>,
 ) -> Result<Value, String> {
     let (name, config) = read_connector(paths, name)?;
+    call_with_config(paths, &name, &config, tool_name, arguments, proxy_url).await
+}
+
+/// Execute a tool from a Host-resolved MCP server configuration.
+/// Callers must load the configuration from a trusted Host store and resolve
+/// any plugin placeholders before passing it here.
+pub(crate) async fn call_with_config(
+    paths: &WorkPaths,
+    name: &str,
+    config: &Map<String, Value>,
+    tool_name: &str,
+    arguments: &Value,
+    proxy_url: Option<&str>,
+) -> Result<Value, String> {
     if config
         .get("disabled")
         .and_then(Value::as_bool)
@@ -115,10 +129,10 @@ pub async fn call_with_paths(
         return Err("MCP 工具名称包含非法控制字符".into());
     }
 
-    let result = match connector_transport(&config) {
-        "stdio" => call_stdio(paths, &config, tool_name, arguments).await,
-        "streamable-http" => call_streamable_http(&config, tool_name, arguments, proxy_url).await,
-        "sse" => call_sse(&config, tool_name, arguments, proxy_url).await,
+    let result = match connector_transport(config) {
+        "stdio" => call_stdio(paths, config, tool_name, arguments).await,
+        "streamable-http" => call_streamable_http(config, tool_name, arguments, proxy_url).await,
+        "sse" => call_sse(config, tool_name, arguments, proxy_url).await,
         _ => Err("不支持的 MCP 连接器传输类型".into()),
     }?;
 
@@ -144,6 +158,16 @@ pub async fn list_tools_with_paths(
     proxy_url: Option<&str>,
 ) -> Result<Value, String> {
     let (name, config) = read_connector(paths, name)?;
+    list_tools_with_config(paths, &name, &config, proxy_url).await
+}
+
+/// Discover tools from a Host-resolved MCP server configuration.
+pub(crate) async fn list_tools_with_config(
+    paths: &WorkPaths,
+    name: &str,
+    config: &Map<String, Value>,
+    proxy_url: Option<&str>,
+) -> Result<Value, String> {
     if config
         .get("disabled")
         .and_then(Value::as_bool)
@@ -152,10 +176,10 @@ pub async fn list_tools_with_paths(
         return Err(format!("MCP 连接器 '{name}' 已停用"));
     }
 
-    match connector_transport(&config) {
-        "stdio" => list_stdio(paths, &config).await,
-        "streamable-http" => list_streamable_http(&config, proxy_url).await,
-        "sse" => list_sse(&config, proxy_url).await,
+    match connector_transport(config) {
+        "stdio" => list_stdio(paths, config).await,
+        "streamable-http" => list_streamable_http(config, proxy_url).await,
+        "sse" => list_sse(config, proxy_url).await,
         _ => Err("不支持的 MCP 连接器传输类型".into()),
     }
 }
@@ -220,7 +244,7 @@ fn read_runtime_root(paths: &WorkPaths) -> Result<Value, String> {
     Ok(root)
 }
 
-fn resolve_agent_plugin_environment(
+pub(crate) fn resolve_agent_plugin_environment(
     root: &mut Value,
     lookup: &dyn Fn(&str) -> Option<std::ffi::OsString>,
 ) -> Result<(), String> {

@@ -7,7 +7,7 @@
 //! operation validation, process execution, authentication state, and output
 //! redaction in both modes.
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Json;
 use axum::routing::post;
@@ -27,6 +27,7 @@ const BRIDGE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Debug, Clone)]
 struct CodeConnectorSession {
     run_id: String,
+    plugin_mcp_servers: std::collections::HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -76,6 +77,12 @@ pub async fn register_session(run_id: &str) -> Result<(u16, String), String> {
     let token = format!("cct-{}", Uuid::new_v4());
     let session = CodeConnectorSession {
         run_id: run_id.to_string(),
+        plugin_mcp_servers: crate::storage::agent_plugins::list_enabled_mcp_servers_with_root(
+            &crate::storage::data_dir(),
+        )
+        .into_iter()
+        .map(|server| server.id)
+        .collect(),
     };
     let mut tokens = runtime.tokens.write().await;
     tokens.retain(|_, existing| existing.run_id != run_id);
@@ -124,6 +131,10 @@ pub async fn start_bridge() -> Result<u16, String> {
 
     let router = Router::new()
         .route("/internal/code/connector_cli", post(call_connector_cli))
+        .route(
+            "/internal/code/mcp/:server_name",
+            post(call_agent_plugin_mcp),
+        )
         .with_state(runtime.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -142,6 +153,179 @@ pub async fn start_bridge() -> Result<u16, String> {
         }
     });
     Ok(port)
+}
+
+fn mcp_rpc_result(id: Value, result: Value) -> Json<Value> {
+    Json(json!({"jsonrpc":"2.0", "id":id, "result":result}))
+}
+
+fn mcp_rpc_error(id: Value, code: i64, message: impl Into<String>) -> Json<Value> {
+    let mut message = message.into().chars().take(2000).collect::<String>();
+    if message.chars().count() == 2000 {
+        message.push('…');
+    }
+    Json(json!({"jsonrpc":"2.0", "id":id, "error":{"code":code,"message":message}}))
+}
+
+async fn call_agent_plugin_mcp(
+    State(runtime): State<CodeConnectorRuntimeState>,
+    headers: HeaderMap,
+    Path(server_name): Path<String>,
+    axum::Json(request): axum::Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let session = authenticate(&runtime, &headers).await?;
+    if !server_name.starts_with("agent-plugin--")
+        || server_name.len() > 180
+        || !server_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".-_".contains(c))
+    {
+        return Ok(mcp_rpc_error(
+            Value::Null,
+            -32602,
+            "Invalid Agent Plugin MCP server name",
+        ));
+    }
+    if !session.plugin_mcp_servers.contains(&server_name) {
+        return Ok(mcp_rpc_error(
+            Value::Null,
+            -32602,
+            "Agent Plugin MCP server is not enabled for this session",
+        ));
+    }
+    let Some(object) = request.as_object() else {
+        return Ok(mcp_rpc_error(
+            Value::Null,
+            -32600,
+            "MCP request must be an object",
+        ));
+    };
+    let id = object.get("id").cloned().unwrap_or(Value::Null);
+    let method = object
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let params = object.get("params").cloned().unwrap_or_else(|| json!({}));
+    match method {
+        "initialize" => Ok(mcp_rpc_result(
+            id,
+            json!({
+                "protocolVersion":"2024-11-05",
+                "capabilities":{"tools":{"listChanged":false}},
+                "serverInfo":{"name":"AgentCabin Code Plugin MCP bridge","version":"1.0.0"}
+            }),
+        )),
+        "notifications/initialized" => Ok(mcp_rpc_result(id, json!({}))),
+        "tools/list" | "tools/call" => {
+            let paths = crate::work::paths::WorkPaths::app();
+            let config_path =
+                crate::storage::agent_plugins::agent_plugin_mcp_config_path_with_root(
+                    paths.data_root(),
+                    "code",
+                )
+                .map_err(|error| bridge_error(StatusCode::INTERNAL_SERVER_ERROR, error))?;
+            let metadata = std::fs::symlink_metadata(&config_path).map_err(|_| {
+                bridge_error(
+                    StatusCode::NOT_FOUND,
+                    "Agent Plugin MCP config is unavailable",
+                )
+            })?;
+            if metadata.file_type().is_symlink()
+                || !metadata.is_file()
+                || metadata.len() > 256 * 1024
+            {
+                return Err(bridge_error(
+                    StatusCode::BAD_REQUEST,
+                    "Agent Plugin MCP config is invalid",
+                ));
+            }
+            let root: Value =
+                serde_json::from_slice(&std::fs::read(&config_path).map_err(|error| {
+                    bridge_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+                })?)
+                .map_err(|error| bridge_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+            let Some(servers) = root.get("mcpServers").and_then(Value::as_object) else {
+                return Ok(mcp_rpc_error(
+                    id,
+                    -32602,
+                    "Agent Plugin MCP server is unavailable",
+                ));
+            };
+            let Some(selected) = servers.get(&server_name).cloned() else {
+                return Ok(mcp_rpc_error(
+                    id,
+                    -32602,
+                    "Agent Plugin MCP server is unavailable",
+                ));
+            };
+            let mut selected_root = json!({ "mcpServers": { server_name.clone(): selected } });
+            crate::work::mcp::resolve_agent_plugin_environment(&mut selected_root, &|name| {
+                std::env::var_os(name)
+            })
+            .map_err(|error| bridge_error(StatusCode::BAD_REQUEST, error))?;
+            let Some(config) = selected_root
+                .get("mcpServers")
+                .and_then(Value::as_object)
+                .and_then(|servers| servers.get(&server_name))
+                .and_then(Value::as_object)
+            else {
+                return Ok(mcp_rpc_error(
+                    id,
+                    -32602,
+                    "Agent Plugin MCP server is unavailable",
+                ));
+            };
+            let config = config.clone();
+            let result = if method == "tools/list" {
+                crate::work::mcp::list_tools_with_config(&paths, &server_name, &config, None).await
+            } else {
+                let Some(call) = params.as_object() else {
+                    return Ok(mcp_rpc_error(
+                        id,
+                        -32602,
+                        "tools/call params must be an object",
+                    ));
+                };
+                let Some(tool) = call.get("name").and_then(Value::as_str).filter(|name| {
+                    !name.trim().is_empty()
+                        && name.len() <= 200
+                        && !name.chars().any(char::is_control)
+                }) else {
+                    return Ok(mcp_rpc_error(
+                        id,
+                        -32602,
+                        "tools/call requires a valid tool name",
+                    ));
+                };
+                let arguments = call.get("arguments").cloned().unwrap_or_else(|| json!({}));
+                if !arguments.is_object() {
+                    return Ok(mcp_rpc_error(
+                        id,
+                        -32602,
+                        "tools/call arguments must be an object",
+                    ));
+                }
+                crate::work::mcp::call_with_config(
+                    &paths,
+                    &server_name,
+                    &config,
+                    tool,
+                    &arguments,
+                    None,
+                )
+                .await
+            };
+            match result {
+                Ok(value) => Ok(mcp_rpc_result(id, value)),
+                Err(error) => Ok(mcp_rpc_error(id, -32000, error)),
+            }
+        }
+        _ => Ok(mcp_rpc_error(
+            id,
+            -32601,
+            format!("Unsupported MCP method: {method}"),
+        )),
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

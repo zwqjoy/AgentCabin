@@ -220,6 +220,21 @@ pub(crate) async fn pi_launch_context(
         &caps.managed_runtime_dir,
     );
     settings.pi_code_profile_dir = Some(caps.managed_runtime_dir.to_string_lossy().into_owned());
+    let code_plugin_mcp_enabled = caps
+        .mcp_servers
+        .iter()
+        .any(|server| server.id.starts_with("agent-plugin--"));
+    if code_plugin_mcp_enabled {
+        // Reuse Code's authenticated Host bridge and per-session token for
+        // Plugin MCP. The Pi extension receives only logical server names.
+        extra_env.insert("AGENTCABIN_CODE_CONNECTOR_ENABLED".into(), "1".into());
+        extra_env.insert(
+            "AGENTCABIN_PI_CODING_AGENT_ENTRY".into(),
+            crate::agent::runtime_locator::pi_coding_agent_entry()?
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
     settings.pi_shared_extension_sources =
         crate::storage::profile_bindings::list_enabled_pi_extension_sources("code")
             .into_iter()
@@ -239,7 +254,15 @@ pub(crate) async fn pi_launch_context(
     settings
         .pi_shared_extension_sources
         .push(context_usage_adapter.to_string_lossy().into_owned());
-    if code_mcp_enabled {
+    if code_plugin_mcp_enabled {
+        settings.pi_shared_extension_sources.push(
+            caps.managed_runtime_dir
+                .join("code-agent-plugin-mcp.mjs")
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+    if code_mcp_enabled || code_plugin_mcp_enabled {
         settings
             .pi_shared_extension_sources
             .push("builtin:tool-search".into());

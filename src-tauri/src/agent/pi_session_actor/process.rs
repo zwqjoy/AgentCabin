@@ -454,7 +454,11 @@ async fn spawn_actor_with_launch(
     let is_work = settings.pi_workspace_root.is_some();
     let path = augmented_path();
     let mut launch_env = vec![("PATH".to_string(), path.clone())];
-    if let Some(agent_dir) = settings.pi_agent_dir.as_deref() {
+    if let Some(agent_dir) = settings
+        .pi_agent_dir
+        .as_deref()
+        .or(settings.pi_code_profile_dir.as_deref())
+    {
         launch_env.push(("PI_CODING_AGENT_DIR".to_string(), agent_dir.to_string()));
     }
     if is_work && (settings.pi_provider.is_some() || !settings.global_providers.is_empty()) {
