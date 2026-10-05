@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { buildWorkNativeMcpConfig } from '../src-tauri/src/work/pi_mcp_adapter.mjs';
 import { createServer } from 'node:http';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -18,6 +18,7 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
   const dir = mkdtempSync(join(tmpdir(), 'agentcabin-native-mcp-'));
   const saved = { ...process.env };
   const calls = [];
+  let nextFailure = null;
   const tools = [
     ['search_docs', 'Search documentation'], ['get_doc', 'Retrieve documentation'], ['create_item', 'Create an item'],
     ...Array.from({ length: 55 }, (_, i) => [`fixture_unrelated_${i}`, `Unrelated operation ${i}`]),
@@ -30,6 +31,16 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     if (body.id === undefined) { res.writeHead(202); res.end(); return; }
+    if (body.method === 'tools/call' && nextFailure) {
+      const failure = nextFailure;
+      nextFailure = null;
+      if (failure === 'closed') { res.destroy(); return; }
+      if (failure === 'malformed') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{ malformed JSON-RPC');
+        return;
+      }
+    }
     let result;
     switch (body.method) {
       case 'initialize': result = { protocolVersion: '2024-11-05', capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'Host-fixture', version: '1' } }; break;
@@ -54,6 +65,16 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
       command: 'NEVER_EXECUTE', args: ['SECRET'], env: { API_KEY: 'SECRET' }, cwd: '/SECRET',
       url: 'https://SECRET.invalid', headers: { Authorization: 'SECRET' }, oauth: { token: 'SECRET' },
     } } }));
+    const projected = buildWorkNativeMcpConfig(
+      JSON.parse(readFileSync(join(dir, 'mcp.json'), 'utf8')),
+      {},
+      { baseUrl: `http://127.0.0.1:${server.address().port}`, token: 'run-scoped-fixture' },
+    );
+    const projectedText = JSON.stringify(projected);
+    assert(projectedText.includes('http://127.0.0.1:'));
+    for (const secret of ['NEVER_EXECUTE', 'SECRET', 'API_KEY', '/SECRET', 'https://SECRET.invalid']) {
+      assert(!projectedText.includes(secret), `Pi MCP projection leaked ${secret}`);
+    }
     if (packageFixture) {
       const packages = { mcpServers: { [logicalId]: { command: 'NEVER_EXECUTE', env: { TOKEN: 'SECRET' }, url: 'https://SECRET.invalid' } } };
       writeFileSync(join(dir, 'mcp.json'), JSON.stringify({ mcpServers: {} }));
@@ -94,6 +115,22 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
     const result = await ctx.executeTool(nativeSearchTool, {});
     assert(!result.isError, JSON.stringify(result));
     if (!externalPort) assert.equal(calls[0].name, 'search_docs');
+    if (!externalPort) {
+      for (const failure of ['closed', 'malformed']) {
+        nextFailure = failure;
+        let rejected = false;
+        try {
+          const failed = await ctx.executeTool(nativeSearchTool, {});
+          rejected = Boolean(failed?.isError);
+        } catch {
+          rejected = true;
+        }
+        assert(rejected, `Native MCP ${failure} failure was not surfaced`);
+        const recovered = await ctx.executeTool(nativeSearchTool, {});
+        assert(!recovered.isError, `Pi session did not recover after ${failure}: ${JSON.stringify(recovered)}`);
+      }
+      console.log('✓ Native MCP server-close and malformed-response failures surface; session recovers');
+    }
     if (externalPort) {
       await ctx.executeTool('tool_search', { query: 'create item', limit: 1 });
       const mutation = await ctx.executeTool('mcp__fixture__create_item', {});
@@ -113,7 +150,7 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
     assert(session.getActiveToolNames().includes(nativeSearchTool));
     const resumed = await ctx.executeTool(nativeSearchTool, {});
     assert(!resumed.isError, JSON.stringify(resumed));
-    if (!externalPort) assert.equal(calls.length, 2);
+    if (!externalPort) assert.equal(calls.length, 4);
     console.log(`✓ Native Work MCP${packageFixture ? ' Claude package' : ''}: deferred 58 tools, search activation, core preservation, direct loopback call and resume`);
   } finally {
     if (session) { await session.extensionRunner.emit({ type: 'session_shutdown' }); session.dispose(); }

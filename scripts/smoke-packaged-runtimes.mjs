@@ -244,26 +244,33 @@ async function testPiExtensionInstall() {
   };
   writeFileSync(join(tempDir, "settings.json"), JSON.stringify(settings, null, 2) + "\n");
 
-  console.log("Installing 'npm:is-sorted' via Pi CLI using bundled npmCommand...");
-  runSync(piBin, ["install", "npm:is-sorted"], {
+  const extensionFixture = join(root, "scripts/fixtures/pi-extension-local");
+  const extensionSource = `./${extensionFixture.slice(root.length + 1).replaceAll("\\", "/")}`;
+  console.log("Installing the local acceptance extension via bundled Pi/npm...");
+  runSync(piBin, ["install", extensionSource], {
     env: {
       PI_CODING_AGENT_DIR: tempDir,
     },
   });
 
-  const installedPkg = join(tempDir, "npm/node_modules/is-sorted/package.json");
-  if (!existsSync(installedPkg)) {
-    throw new Error(`Pi extension failed to install to ${installedPkg}`);
+  const settingsPath = join(tempDir, "settings.json");
+  const installedSettings = JSON.parse(readFileSync(settingsPath, "utf8"));
+  if (!installedSettings.packages?.some((entry) => entry.includes("scripts/fixtures/pi-extension-local"))) {
+    throw new Error(`Pi extension source was not registered in ${settingsPath}`);
   }
-  console.log("✓ Pi extension installed package bytes successfully");
+  console.log("✓ Pi registered the local extension package");
 
-  console.log("Removing 'npm:is-sorted' via Pi CLI...");
-  runSync(piBin, ["remove", "npm:is-sorted"], {
+  console.log("Removing the local acceptance extension via Pi CLI...");
+  runSync(piBin, ["remove", extensionSource], {
     env: {
       PI_CODING_AGENT_DIR: tempDir,
     },
   });
-  console.log("✓ Pi extension removed successfully");
+  const removedSettings = JSON.parse(readFileSync(settingsPath, "utf8"));
+  if (removedSettings.packages?.some((entry) => entry.includes("scripts/fixtures/pi-extension-local"))) {
+    throw new Error("Pi did not remove the local extension package registration");
+  }
+  console.log("✓ Pi removed the local extension registration successfully");
 }
 
 async function testWorkActiveToolsSmoke() {

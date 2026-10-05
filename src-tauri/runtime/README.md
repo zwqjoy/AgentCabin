@@ -19,4 +19,25 @@ npm run electron:package:dir
 
 The deterministic smoke uses 58 fixture tools to verify the initial deferred surface, native search activation, preservation through Work's next agent-start event, direct calls, absence of resource tools, and resume. The explicit Cargo integration test runs bundled Node/Pi against the authenticated production Host bridge and real ToolPipeline, with exactly one Inbox approval for mutation before the real server is called. The regular Cargo suite also covers Host-only read and approval/resume behavior.
 
+## Capability acceptance
+
+`npm run verify` remains the daily development gate. Run capability acceptance after Skill, Agent Plugin, MCP, Host security, Code/Work session, or runtime changes:
+
+```sh
+npm run acceptance
+```
+
+Suites can also run independently:
+
+```sh
+npm run acceptance:capabilities
+npm run acceptance:code
+npm run acceptance:work
+npm run acceptance:runtime
+```
+
+`acceptance:work` runs Work approval, denial, resume, recovery, and the bundled Pi native MCP flow through the authenticated Host bridge and Inbox. `acceptance:runtime` checks and exercises an already prepared `runtime-build` (or `AGENTCABIN_RUNTIME_ROOT`) without downloading a runtime. Prepare that closure separately when needed with `npm run prepare:pi-extensions` and `npm run prepare:runtimes`; those preparation commands may access package or runtime distribution services. Before packaging, use `npm run acceptance:package` to build the unpacked Electron application. Runtime smoke installs only the repository-local empty Pi extension fixture.
+
+No default acceptance command invokes a live model provider. `npm run test:work:smoke` remains an explicit model-backed smoke and is not part of acceptance.
+
 Pi 1.0.2's SDK initializes its default active-tool loadout when opening a session. Resume is tested by reopening Pi's native transcript, discovering tools again through native search, and calling them through the current bridge. AgentCabin does not add a tool-state cache or patch Pi to change this behavior. Work's core retains native tool activations within a running session. Host call IDs include the hashed process-scoped bridge token so the native client's restarted JSON-RPC counter does not collide with a previous Pi launch; retries within one process retain their identity.

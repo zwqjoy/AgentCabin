@@ -48,7 +48,13 @@
     "release": "node scripts/release.mjs",
     "prepare:pi-extensions": "node scripts/prepare-pi-extensions.mjs",
     "prepare": "git config core.hooksPath .githooks",
-    "test:pi:rpc": "node scripts/test-pi-rpc.mjs"
+    "test:pi:rpc": "node scripts/test-pi-rpc.mjs",
+    "acceptance": "node scripts/acceptance.mjs all",
+    "acceptance:capabilities": "node scripts/acceptance.mjs capabilities",
+    "acceptance:code": "node scripts/acceptance.mjs code",
+    "acceptance:work": "node scripts/acceptance.mjs work",
+    "acceptance:runtime": "node scripts/acceptance.mjs runtime",
+    "acceptance:package": "npm run electron:package:dir"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

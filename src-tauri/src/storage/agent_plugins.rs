@@ -3052,6 +3052,55 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn acceptance_plugin_skill_and_mcp_share_trust_and_binding_lifecycle() {
+        let temp = TempDir::new().unwrap();
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/acceptance/agent-plugin-basic");
+
+        let installed = install_agent_plugin_with_root(temp.path(), fixture.to_str().unwrap())
+            .expect("install local acceptance fixture");
+        assert_eq!(installed.name, "acceptance-plugin");
+        assert_eq!(
+            installed.skills.len(),
+            1,
+            "plugin summary includes its Skill"
+        );
+        assert_eq!(
+            installed.mcp_servers.len(),
+            1,
+            "plugin summary includes its MCP"
+        );
+        assert!(!installed.trusted && !installed.enabled);
+        assert!(list_agent_plugins_with_root(temp.path())
+            .iter()
+            .any(|plugin| plugin.id == installed.id));
+        assert!(list_enabled_general_skills_with_root(temp.path()).is_empty());
+        assert!(list_enabled_mcp_servers_with_root(temp.path()).is_empty());
+
+        assert!(set_agent_plugin_binding_with_root(temp.path(), &installed.id, true).is_err());
+        set_agent_plugin_trust_with_root(temp.path(), &installed.id, true).unwrap();
+        assert!(list_enabled_general_skills_with_root(temp.path()).is_empty());
+        assert!(list_enabled_mcp_servers_with_root(temp.path()).is_empty());
+
+        set_agent_plugin_binding_with_root(temp.path(), &installed.id, true).unwrap();
+        assert_eq!(list_enabled_general_skills_with_root(temp.path()).len(), 1);
+        assert_eq!(list_enabled_mcp_servers_with_root(temp.path()).len(), 1);
+
+        set_agent_plugin_binding_with_root(temp.path(), &installed.id, false).unwrap();
+        assert!(list_enabled_general_skills_with_root(temp.path()).is_empty());
+        assert!(list_enabled_mcp_servers_with_root(temp.path()).is_empty());
+
+        set_agent_plugin_binding_with_root(temp.path(), &installed.id, true).unwrap();
+        assert_eq!(list_enabled_general_skills_with_root(temp.path()).len(), 1);
+        assert_eq!(list_enabled_mcp_servers_with_root(temp.path()).len(), 1);
+
+        uninstall_agent_plugin_with_root(temp.path(), &installed.id).unwrap();
+        assert!(list_agent_plugins_with_root(temp.path()).is_empty());
+        assert!(list_enabled_general_skills_with_root(temp.path()).is_empty());
+        assert!(list_enabled_mcp_servers_with_root(temp.path()).is_empty());
+    }
+
+    #[test]
     fn claude_offline_smoke_matrix() {
         for (name, level, skills, mcp) in [
             ("frontend-design", "full", 1, 0),

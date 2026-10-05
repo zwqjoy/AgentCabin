@@ -1,0 +1,9 @@
+{
+  "name": "agentcabin-acceptance-extension",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "pi": {
+    "extensions": ["./index.js"]
+  }
+}
