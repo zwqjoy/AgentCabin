@@ -613,6 +613,8 @@
   // Work capabilities are global to the Work runtime. The conversation surface
   // reads them for the pre-session skill picker; it never stores them on a Workspace.
   let globalResources = $state<WorkResourceSummary[]>([]);
+  let globalCapabilitySkills = $state<import("$lib/types").StandaloneSkill[]>([]);
+  let agentPluginSkills = $state<Array<{ name: string; description: string }>>([]);
   let loadedResourceRuntime = $state("");
   let userSettings = $state<UserSettings | null>(null);
   let effectiveWorkAgent = $derived(session.run?.agent ?? session.agent ?? "pi");
@@ -832,6 +834,25 @@
       byName.set(name, {
         name,
         description: resource.description || "Work 全局技能",
+      });
+    }
+
+    for (const skill of globalCapabilitySkills) {
+      if (!skill.enabled || isExpertSkill({ name: skill.name, description: skill.description })) {
+        continue;
+      }
+      if (byName.has(skill.name)) continue;
+      byName.set(skill.name, {
+        name: skill.name,
+        description: skill.description || "全局技能",
+      });
+    }
+
+    for (const skill of agentPluginSkills) {
+      if (byName.has(skill.name)) continue;
+      byName.set(skill.name, {
+        name: skill.name,
+        description: skill.description || "Agent Plugin 技能",
       });
     }
 
@@ -1738,9 +1759,21 @@
     if (!requestedRuntime || requestedRuntime === loadedResourceRuntime) return;
     loadedResourceRuntime = requestedRuntime;
     try {
-      const nextResources = await listWorkResources(requestedRuntime);
+      const [resourcesResult, skillsResult, pluginsResult] = await Promise.allSettled([
+        listWorkResources(requestedRuntime),
+        api.listSkills(),
+        api.listAgentPlugins(),
+      ]);
       if (!disposed && requestedRuntime === effectiveWorkAgent.trim()) {
-        globalResources = nextResources;
+        if (resourcesResult.status === "fulfilled") globalResources = resourcesResult.value;
+        if (skillsResult.status === "fulfilled") globalCapabilitySkills = skillsResult.value;
+        if (pluginsResult.status === "fulfilled") {
+          agentPluginSkills = pluginsResult.value
+            .filter((plugin) => plugin.trusted && plugin.enabled && !plugin.expertKind)
+            .flatMap((plugin) =>
+              plugin.skills.map(({ name, description }) => ({ name, description })),
+            );
+        }
       }
     } catch {
       // The Work runtime still starts with its built-in tools and runtime commands.

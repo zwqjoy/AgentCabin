@@ -788,7 +788,31 @@ pub fn list_skills(cwd: Option<String>) -> Result<Vec<StandaloneSkill>, String> 
 
 #[tauri::command]
 pub fn list_pi_skills(cwd: Option<String>) -> Result<Vec<StandaloneSkill>, String> {
-    list_skills(cwd)
+    let mut skills = list_skills(cwd)?;
+    for skill in crate::storage::agent_plugins::list_enabled_general_skills_with_root(
+        &crate::storage::data_dir(),
+    ) {
+        if skills
+            .iter()
+            .any(|item| item.name.eq_ignore_ascii_case(&skill.name))
+        {
+            continue;
+        }
+        skills.push(StandaloneSkill {
+            name: skill.name,
+            description: skill.description,
+            path: skill.path.to_string_lossy().into_owned(),
+            scope: "agent-plugin".into(),
+            agent: "universal".into(),
+            source_kind: None,
+            enabled: true,
+            disabled_by: None,
+            can_edit: false,
+            can_delete: false,
+            can_toggle: false,
+        });
+    }
+    Ok(skills)
 }
 
 #[tauri::command]

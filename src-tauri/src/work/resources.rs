@@ -659,6 +659,12 @@ fn pi_skill_sources(paths: &WorkPaths, records: &[ResourceRecord]) -> Result<Vec
     {
         push_unique_source(&mut sources, skill.path.to_string_lossy().into_owned());
     }
+    for skill in crate::storage::skills::list_skills_with_root(paths.data_root())
+        .into_iter()
+        .filter(|skill| skill.enabled)
+    {
+        push_unique_source(&mut sources, skill.path);
+    }
     Ok(sources)
 }
 

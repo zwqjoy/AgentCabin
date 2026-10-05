@@ -570,6 +570,30 @@ pub async fn dispatch_command(
             let result = crate::commands::plugins::list_standalone_skills(cwd)?;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
+        "list_skills" | "list_pi_skills" => {
+            let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
+            let result = if method == "list_pi_skills" {
+                crate::commands::capabilities::list_pi_skills(cwd)?
+            } else {
+                crate::commands::capabilities::list_skills(cwd)?
+            };
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "list_pi_commands" => {
+            let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
+            let result = crate::commands::capabilities::list_pi_commands(cwd)?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "toggle_skill_binding" => {
+            let skill_id = extract_str(&params, "skill_id")?;
+            let enabled = extract_bool(&params, "enabled")?;
+            let result = crate::commands::capabilities::toggle_skill_binding(skill_id, enabled)?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "get_skill_bindings" => {
+            let result = crate::commands::capabilities::get_skill_bindings()?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
         "list_grok_skills" => {
             let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
             let result = crate::commands::plugins::list_grok_skills(cwd)?;

@@ -274,6 +274,14 @@ pub(crate) async fn pi_launch_context(
             code_skills.push(source);
         }
     }
+    for skill in crate::storage::agent_plugins::list_enabled_general_skills_with_root(
+        shared_paths.data_root(),
+    ) {
+        let source = skill.path.to_string_lossy().into_owned();
+        if !code_skills.contains(&source) {
+            code_skills.push(source);
+        }
+    }
     let connector_catalog = crate::storage::profile_bindings::read_connector_catalog();
     for cat in connector_catalog {
         if crate::storage::profile_bindings::is_connector_enabled(&cat.id) {

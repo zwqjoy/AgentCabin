@@ -225,7 +225,22 @@
   let displayedSkills = $derived.by(() => {
     const q = searchQuery.trim().toLowerCase();
     // The public catalog owns visibility; runtime commands include package helpers.
-    const genericSkills = standaloneSkills.filter((item) => item.enabled);
+    const genericSkills = standaloneSkills
+      .filter((item) => item.enabled)
+      .map((item) => ({ name: item.name, description: item.description || "", source: item.path }));
+    for (const plugin of plugins) {
+      if (!plugin.trusted || !plugin.enabled || plugin.expertKind) continue;
+      for (const skill of plugin.skills) {
+        if (genericSkills.some((item) => item.name.toLowerCase() === skill.name.toLowerCase())) {
+          continue;
+        }
+        genericSkills.push({
+          name: skill.name,
+          description: skill.description || "",
+          source: skill.path,
+        });
+      }
+    }
     if (!q) return genericSkills;
     return genericSkills.filter(
       (item) =>
