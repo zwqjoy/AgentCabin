@@ -23,8 +23,9 @@ export async function openExternal(url: string): Promise<void> {
 
 export async function openPath(path: string): Promise<void> {
   const t = getTransport();
-  if (!t.isDesktop()) {
-    throw new Error("Open path is only available in the desktop app");
+  if (t.isDesktop() && window.agentcabinDesktop?.shell?.openPath) {
+    await window.agentcabinDesktop.shell.openPath(path);
+    return;
   }
-  await electronBridge().shell.openPath(path);
+  await t.invoke<void>("open_path", { path });
 }

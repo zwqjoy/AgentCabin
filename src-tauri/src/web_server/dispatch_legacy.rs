@@ -144,6 +144,11 @@ pub async fn dispatch_command(
             crate::commands::runs::reveal_in_finder(path)?;
             Ok(json!(true))
         }
+        "open_path" => {
+            let path = extract_str(&params, "path")?;
+            crate::commands::runs::open_path(path)?;
+            Ok(json!(true))
+        }
         "update_run_model" => {
             let id = extract_str(&params, "id")?;
             let model = extract_str(&params, "model")?;
@@ -1842,6 +1847,11 @@ pub async fn dispatch_command(
         "open_project_in_vscode" => {
             let cwd = extract_str(&params, "cwd")?;
             crate::commands::editors::open_project_in_vscode(cwd)?;
+            Ok(json!(true))
+        }
+        "open_file_in_vscode" => {
+            let path = extract_str(&params, "path")?;
+            crate::commands::editors::open_file_in_vscode(path)?;
             Ok(json!(true))
         }
 

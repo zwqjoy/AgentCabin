@@ -135,3 +135,33 @@ pub fn open_project_in_vscode(cwd: String) -> Result<(), String> {
         .map(|_| ())
         .map_err(|e| format!("Failed to open VS Code: {e}"))
 }
+
+#[tauri::command]
+pub fn open_file_in_vscode(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.is_absolute() {
+        return Err("File path must be absolute".to_string());
+    }
+    if !p.exists() {
+        return Err(format!("File does not exist: {path}"));
+    }
+    let launcher = find_vscode().ok_or_else(|| "VS Code is not installed".to_string())?;
+
+    let result = match launcher {
+        VscodeLauncher::Command(program) => Command::new(program)
+            .arg("--reuse-window")
+            .arg(p)
+            .hide_console()
+            .spawn(),
+        #[cfg(target_os = "macos")]
+        VscodeLauncher::MacApplication => Command::new("open")
+            .args(["-a", "Visual Studio Code"])
+            .arg(&path)
+            .hide_console()
+            .spawn(),
+    };
+
+    result
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open file in VS Code: {e}"))
+}

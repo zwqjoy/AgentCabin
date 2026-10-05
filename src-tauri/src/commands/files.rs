@@ -48,7 +48,26 @@ pub(crate) fn validate_file_path(
     let mut requested = PathBuf::from(path);
     if requested.is_relative() {
         if let Some(extra) = extra_allowed.filter(|s| !s.trim().is_empty()) {
-            requested = PathBuf::from(extra).join(requested);
+            let joined = PathBuf::from(extra).join(&requested);
+            if !joined.exists() {
+                let extra_path = std::path::Path::new(extra);
+                if let Some(folder_name) = extra_path.file_name().and_then(|n| n.to_str()) {
+                    if let Ok(stripped) = requested.strip_prefix(folder_name) {
+                        let candidate = extra_path.join(stripped);
+                        if candidate.exists() {
+                            requested = candidate;
+                        } else {
+                            requested = joined;
+                        }
+                    } else {
+                        requested = joined;
+                    }
+                } else {
+                    requested = joined;
+                }
+            } else {
+                requested = joined;
+            }
         }
     }
 
@@ -952,5 +971,18 @@ mod tests {
         std::fs::write(tmp.path().join("etc-passwd-stand-in"), "secret").unwrap();
         let r = agents_md_exists(tmp.path().to_string_lossy().to_string()).unwrap();
         assert!(!r, "command must not return true for non-AGENTS.md files");
+    }
+
+    #[test]
+    fn validate_strips_redundant_project_folder_prefix() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project_dir = tmp.path().join("MyProject");
+        std::fs::create_dir(&project_dir).unwrap();
+        let file_path = project_dir.join("test.txt");
+        std::fs::write(&file_path, "hello").unwrap();
+
+        let cwd = project_dir.to_string_lossy();
+        let validated = validate_file_path("MyProject/test.txt", Some(&cwd)).unwrap();
+        assert_eq!(validated, std::fs::canonicalize(&file_path).unwrap());
     }
 }

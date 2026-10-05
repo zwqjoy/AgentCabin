@@ -172,6 +172,19 @@ export async function openProjectInVscode(cwd: string): Promise<void> {
   return invoke<void>("open_project_in_vscode", { cwd });
 }
 
+/** Open a specific local file in VS Code. */
+export async function openFileInVscode(path: string): Promise<void> {
+  dbg("api", "openFileInVscode", { path });
+  return invoke<void>("open_file_in_vscode", { path });
+}
+
+/** Open a file in the system default application. */
+export async function openPath(path: string): Promise<void> {
+  dbg("api", "openPath", { path });
+  const { openPath: shellOpenPath } = await import("$lib/platform/shell");
+  return shellOpenPath(path);
+}
+
 // Prompt search & favorites
 
 export async function searchPrompts(query: string, limit?: number): Promise<PromptSearchResult[]> {

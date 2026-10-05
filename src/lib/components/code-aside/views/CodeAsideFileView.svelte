@@ -1,10 +1,80 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { listDirectory, readTextFile, openProjectInVscode } from "$lib/api";
+  import {
+    listDirectory,
+    readTextFile,
+    readFileBase64,
+    statTextFile,
+    openPath,
+    revealInFinder,
+    openFileInVscode,
+    openProjectInVscode,
+  } from "$lib/api";
   import MarkdownContent from "$lib/components/MarkdownContent.svelte";
   import HighlightedCode from "$lib/components/HighlightedCode.svelte";
   import VscodeIcon from "$lib/components/VscodeIcon.svelte";
+  import OfficePreview from "$lib/components/work/viewers/OfficePreview.svelte";
+  import PdfViewer from "$lib/components/work/viewers/PdfViewer.svelte";
   import type { DirEntry } from "$lib/types";
+
+  const IMAGE_EXTS = new Set([
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "svg",
+    "webp",
+    "ico",
+    "bmp",
+    "avif",
+    "tif",
+    "tiff",
+    "jfif",
+  ]);
+  const OFFICE_EXTS = new Set(["docx", "xlsx", "pptx"]);
+  const BINARY_EXTS = new Set([
+    "zip",
+    "tar",
+    "gz",
+    "7z",
+    "rar",
+    "bz2",
+    "xz",
+    "doc",
+    "xls",
+    "ppt",
+    "db",
+    "sqlite",
+    "sqlite3",
+    "bin",
+    "exe",
+    "dmg",
+    "pkg",
+    "iso",
+    "dylib",
+    "so",
+    "dll",
+    "class",
+    "o",
+    "pyc",
+    "wasm",
+    "mov",
+    "mp4",
+    "webm",
+    "mkv",
+    "avi",
+    "mp3",
+    "wav",
+    "flac",
+    "aac",
+    "ogg",
+    "m4a",
+    "woff",
+    "woff2",
+    "ttf",
+    "eot",
+    "otf",
+  ]);
 
   interface Props {
     cwd: string;
@@ -24,6 +94,12 @@
 
   let currentPath = $state("");
   let fileContent = $state("");
+  let officeBase64 = $state("");
+  let imageDataUrl = $state("");
+  let pdfBase64 = $state("");
+  let isBinaryFile = $state(false);
+  let binaryFileSize = $state<number | null>(null);
+
   let fileLoading = $state(false);
   let fileError = $state("");
   let viewMode = $state<"rendered" | "source">("rendered");
@@ -34,34 +110,103 @@
     return currentPath.split("/").filter(Boolean);
   });
 
+  let currentFileName = $derived(currentPath.split("/").filter(Boolean).pop() || "document");
+  let currentFileExt = $derived(currentPath.split(".").pop()?.toLowerCase() ?? "");
   let isMarkdown = $derived(currentPath.endsWith(".md") || currentPath.endsWith(".markdown"));
 
-  async function loadFile(path: string) {
-    if (!path) {
+  let fullPath = $derived.by(() => {
+    if (!currentPath) return "";
+    if (currentPath.startsWith("/") || /^[a-zA-Z]:/.test(currentPath)) {
+      return currentPath;
+    }
+    const root = cwd.replace(/[/\\]+$/, "");
+    const rel = currentPath.replace(/^[/\\]+/, "");
+    return `${root}/${rel}`;
+  });
+
+  function normalizePath(raw: string): string {
+    let p = raw.trim().replace(/^file:\/\//, "");
+    const effectiveDir = cwd.replace(/[/\\]+$/, "");
+    if (effectiveDir) {
+      if (p.startsWith(effectiveDir + "/") || p.startsWith(effectiveDir + "\\")) {
+        p = p.slice(effectiveDir.length + 1);
+      }
+      const folderName = effectiveDir.split(/[/\\]/).filter(Boolean).pop() || "";
+      if (folderName && (p.startsWith(folderName + "/") || p.startsWith(folderName + "\\"))) {
+        p = p.slice(folderName.length + 1);
+      }
+    }
+    if (p.startsWith("./") || p.startsWith(".\\")) {
+      p = p.slice(2);
+    }
+    return p;
+  }
+
+  function formatBytes(bytes: number | null | undefined): string {
+    if (bytes === null || bytes === undefined || bytes === 0) return "";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  }
+
+  async function loadFile(rawPath: string) {
+    if (!rawPath) {
+      currentPath = "";
       fileContent = "";
       return;
     }
+    const path = normalizePath(rawPath);
+    currentPath = path;
+    onSelectFile?.(path);
+
     fileLoading = true;
     fileError = "";
+    fileContent = "";
+    officeBase64 = "";
+    imageDataUrl = "";
+    pdfBase64 = "";
+    isBinaryFile = false;
+    binaryFileSize = null;
+
+    const ext = path.split(".").pop()?.toLowerCase() ?? "";
+
     try {
-      const content = await readTextFile(path, cwd);
-      fileContent = content;
-      currentPath = path;
-      onSelectFile?.(path);
-    } catch (err: unknown) {
-      const folderName = cwd.split("/").filter(Boolean).pop() || "";
-      if (folderName && path.startsWith(folderName + "/")) {
-        const stripped = path.slice(folderName.length + 1);
+      if (OFFICE_EXTS.has(ext)) {
+        const [base64] = await readFileBase64(path, cwd);
+        officeBase64 = base64;
+      } else if (IMAGE_EXTS.has(ext)) {
+        const [base64, mime] = await readFileBase64(path, cwd);
+        imageDataUrl = `data:${mime};base64,${base64}`;
+      } else if (ext === "pdf") {
+        const [base64] = await readFileBase64(path, cwd);
+        pdfBase64 = base64;
+      } else if (BINARY_EXTS.has(ext)) {
+        isBinaryFile = true;
         try {
-          const content = await readTextFile(stripped, cwd);
-          fileContent = content;
-          currentPath = stripped;
-          onSelectFile?.(stripped);
-          return;
+          binaryFileSize = await statTextFile(path, cwd);
         } catch {
           // ignore
         }
+      } else {
+        try {
+          const content = await readTextFile(path, cwd);
+          fileContent = content;
+        } catch (readErr: unknown) {
+          const errMsg = readErr instanceof Error ? readErr.message : String(readErr);
+          if (errMsg.includes("valid UTF-8") || errMsg.includes("InvalidData")) {
+            isBinaryFile = true;
+            try {
+              binaryFileSize = await statTextFile(path, cwd);
+            } catch {
+              // ignore
+            }
+          } else {
+            throw readErr;
+          }
+        }
       }
+    } catch (err: unknown) {
       fileError = err instanceof Error ? err.message : String(err);
     } finally {
       fileLoading = false;
@@ -69,7 +214,7 @@
   }
 
   $effect(() => {
-    if (filePath && filePath !== currentPath) {
+    if (filePath && normalizePath(filePath) !== currentPath) {
       void loadFile(filePath);
     }
   });
@@ -157,7 +302,29 @@
     }
   });
 
+  async function openInDefaultApp() {
+    if (!fullPath) return;
+    try {
+      await openPath(fullPath);
+    } catch {
+      await revealInFinder(fullPath);
+    }
+  }
+
+  async function revealFileInFinder() {
+    if (!fullPath) return;
+    await revealInFinder(fullPath);
+  }
+
   async function openInEditor() {
+    if (fullPath) {
+      try {
+        await openFileInVscode(fullPath);
+        return;
+      } catch {
+        // fallback
+      }
+    }
     if (cwd) {
       await openProjectInVscode(cwd);
     }
@@ -224,6 +391,50 @@
         </button>
       {/if}
 
+      {#if currentPath}
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+          title="在系统默认应用中打开此文件"
+          onclick={openInDefaultApp}
+        >
+          <svg
+            class="h-3 w-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+          <span>系统打开</span>
+        </button>
+
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+          title="在访达中显示此文件"
+          onclick={revealFileInFinder}
+        >
+          <svg
+            class="h-3 w-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+          <span>访达</span>
+        </button>
+      {/if}
+
       <button
         type="button"
         class="flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
@@ -231,7 +442,7 @@
         onclick={openInEditor}
       >
         <VscodeIcon class="h-3 w-3" />
-        <span>打开</span>
+        <span>VS Code</span>
       </button>
 
       <button
@@ -267,24 +478,110 @@
   <!-- Content split: Preview on left, File Tree on right -->
   <div class="flex min-h-0 flex-1">
     <!-- Left: Content area -->
-    <div class="flex-1 min-w-0 overflow-y-auto p-4">
+    <div class="flex-1 min-w-0 flex flex-col overflow-hidden bg-background">
       {#if fileLoading}
         <div class="flex h-32 items-center justify-center text-xs text-muted-foreground">
           加载文件中…
         </div>
       {:else if fileError}
-        <div
-          class="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-400"
-        >
-          {fileError}
+        <div class="p-4">
+          <div
+            class="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-400"
+          >
+            {fileError}
+          </div>
+        </div>
+      {:else if officeBase64}
+        <div class="flex-1 min-h-0 overflow-hidden">
+          <OfficePreview
+            base64={officeBase64}
+            fileName={currentFileName}
+            fileExt={currentFileExt}
+          />
+        </div>
+      {:else if imageDataUrl}
+        <div class="flex-1 min-h-0 flex items-center justify-center overflow-auto p-4 bg-muted/10">
+          <img
+            src={imageDataUrl}
+            alt={currentFileName}
+            class="max-h-full max-w-full rounded shadow-sm object-contain"
+          />
+        </div>
+      {:else if pdfBase64}
+        <div class="flex-1 min-h-0 overflow-hidden">
+          <PdfViewer base64={pdfBase64} />
+        </div>
+      {:else if isBinaryFile}
+        <div class="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+          <div
+            class="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/60 text-3xl shadow-inner text-foreground/80"
+          >
+            📦
+          </div>
+          <div class="space-y-1">
+            <div class="text-sm font-semibold text-foreground">{currentFileName}</div>
+            <div class="text-xs text-muted-foreground font-mono">{currentPath}</div>
+            {#if binaryFileSize}
+              <div class="text-[11px] text-muted-foreground/80">{formatBytes(binaryFileSize)}</div>
+            {/if}
+          </div>
+          <p class="max-w-sm text-xs text-muted-foreground leading-relaxed">
+            该文件为二进制文件，无法直接在代码视图中作为纯文本预览。
+          </p>
+          <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+              onclick={openInDefaultApp}
+            >
+              <svg
+                class="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+              <span>在系统默认应用中打开</span>
+            </button>
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-md border border-border/80 bg-background px-3 py-1.5 text-xs text-foreground hover:bg-muted/50 transition-colors"
+              onclick={revealFileInFinder}
+            >
+              <svg
+                class="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                />
+              </svg>
+              <span>在访达中显示</span>
+            </button>
+          </div>
         </div>
       {:else if isMarkdown && viewMode === "rendered"}
-        <div class="prose dark:prose-invert max-w-none text-sm leading-relaxed">
-          <MarkdownContent text={fileContent} lazy={false} />
+        <div class="flex-1 min-h-0 overflow-y-auto p-4">
+          <div class="prose dark:prose-invert max-w-none text-sm leading-relaxed">
+            <MarkdownContent text={fileContent} lazy={false} />
+          </div>
         </div>
       {:else if fileContent}
-        <div class="font-mono text-xs">
-          <HighlightedCode content={fileContent} filePath={currentPath} />
+        <div class="flex-1 min-h-0 overflow-y-auto p-4">
+          <div class="font-mono text-xs">
+            <HighlightedCode content={fileContent} filePath={currentPath} />
+          </div>
         </div>
       {:else}
         <div class="flex h-32 items-center justify-center text-xs text-muted-foreground">

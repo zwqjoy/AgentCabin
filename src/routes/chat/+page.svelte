@@ -575,24 +575,44 @@
   let codeAsideRequestedReviewFilePath = $state<string | null>(null);
   let turnSummaryRunId = "";
 
-  function openFileInCodeAside(filePath: string) {
+  function normalizeCodeAsideFilePath(raw: string, baseCwd?: string): string {
+    let p = raw.trim().replace(/^file:\/\//, "");
+    const effectiveDir = (baseCwd || store.effectiveCwd || getProjectCwdForEditor() || "").replace(/[/\\]+$/, "");
+    if (effectiveDir) {
+      if (p.startsWith(effectiveDir + "/") || p.startsWith(effectiveDir + "\\")) {
+        p = p.slice(effectiveDir.length + 1);
+      }
+      const folderName = effectiveDir.split(/[/\\]/).filter(Boolean).pop() || "";
+      if (folderName && (p.startsWith(folderName + "/") || p.startsWith(folderName + "\\"))) {
+        p = p.slice(folderName.length + 1);
+      }
+    }
+    if (p.startsWith("./") || p.startsWith(".\\")) {
+      p = p.slice(2);
+    }
+    return p;
+  }
+
+  function openFileInCodeAside(filePath: string, baseCwd?: string) {
     if (!filePath) return;
+    const normalized = normalizeCodeAsideFilePath(filePath, baseCwd);
     codeAsideRequestedTab = null;
     codeAsideRequestedPath = null;
     codeAsideRequestedReviewFilePath = null;
     requestAnimationFrame(() => {
       codeAsideRequestedTab = "file";
-      codeAsideRequestedPath = filePath;
+      codeAsideRequestedPath = normalized;
       setCodeAsideOpen(true);
     });
   }
 
   onMount(() => {
     function onOpenFile(e: Event) {
-      const detail = (e as CustomEvent<{ path?: string; filePath?: string }>).detail;
+      const detail = (e as CustomEvent<{ path?: string; filePath?: string; cwd?: string }>).detail;
       const target = typeof detail === "string" ? detail : detail?.path || detail?.filePath;
+      const customCwd = typeof detail === "object" ? detail?.cwd : undefined;
       if (target) {
-        openFileInCodeAside(target);
+        openFileInCodeAside(target, customCwd);
       }
     }
     window.addEventListener("agentcabin:open-file", onOpenFile);

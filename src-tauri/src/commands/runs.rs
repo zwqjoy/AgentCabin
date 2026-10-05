@@ -342,6 +342,56 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+pub fn open_path(path: String) -> Result<(), String> {
+    log::debug!("[runs] open_path: path={}", path);
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("open")
+            .arg(&path)
+            .hide_console()
+            .output()
+            .map_err(|e| format!("open failed: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "open failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .hide_console()
+            .spawn()
+            .map_err(|e| format!("cmd /C start failed: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .hide_console()
+            .spawn()
+            .map_err(|e| format!("xdg-open failed: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        Err("open_path: unsupported platform".to_string())
+    }
+}
+
 pub(crate) async fn update_run_model_impl(id: String, model: String) -> Result<(), String> {
     let model = model.trim().to_string();
     if model.is_empty() {
