@@ -1,14 +1,20 @@
 import assert from 'node:assert/strict';
+import { buildWorkNativeMcpConfig } from '../src-tauri/src/work/pi_mcp_adapter.mjs';
 import { createServer } from 'node:http';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /** Exercises the real bundled Pi client, with a deterministic loopback bridge fixture. */
 export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build')) {
   const entry = resolve(runtimeRoot, 'pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js');
   const { createAgentSession, DefaultResourceLoader, SessionManager } = await import(pathToFileURL(entry).href);
+  const packageFixture = process.env.AGENTCABIN_NATIVE_MCP_PACKAGE_FIXTURE === '1';
+  const { createMcpToolName } = await import(pathToFileURL(join(dirname(entry), 'extensions/mcp/tools.js')).href);
+  const logicalId = 'agent-plugin--github.fixture--mcp--github.enterprise';
+  const expectedRoute = `/internal/work/mcp/${encodeURIComponent(packageFixture ? logicalId : 'fixture')}`;
+  let nativeSearchTool = 'mcp__fixture__search_docs';
   const dir = mkdtempSync(join(tmpdir(), 'agentcabin-native-mcp-'));
   const saved = { ...process.env };
   const calls = [];
@@ -18,7 +24,7 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
   ].map(([name, description]) => ({ name, description, inputSchema: { type: 'object', properties: {} } }));
   const server = createServer(async (req, res) => {
     if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
-    if (req.headers.authorization !== 'Bearer run-scoped-fixture' || req.url !== '/internal/work/mcp/fixture') {
+    if (req.headers.authorization !== 'Bearer run-scoped-fixture' || req.url !== expectedRoute) {
       res.writeHead(403); res.end(); return;
     }
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
@@ -48,6 +54,14 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
       command: 'NEVER_EXECUTE', args: ['SECRET'], env: { API_KEY: 'SECRET' }, cwd: '/SECRET',
       url: 'https://SECRET.invalid', headers: { Authorization: 'SECRET' }, oauth: { token: 'SECRET' },
     } } }));
+    if (packageFixture) {
+      const packages = { mcpServers: { [logicalId]: { command: 'NEVER_EXECUTE', env: { TOKEN: 'SECRET' }, url: 'https://SECRET.invalid' } } };
+      writeFileSync(join(dir, 'mcp.json'), JSON.stringify({ mcpServers: {} }));
+      writeFileSync(join(dir, 'connector-package-mcp.json'), JSON.stringify(packages));
+      const projected = buildWorkNativeMcpConfig({}, packages, { baseUrl: `http://127.0.0.1:${server.address().port}`, token: 'run-scoped-fixture' });
+      assert(!JSON.stringify(projected).includes('SECRET'));
+      nativeSearchTool = createMcpToolName(projected.servers[0].name, 'search_docs');
+    }
     const start = async sessionManager => {
       const resourceLoader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, noExtensions: true, noSkills: true, noPromptTemplates: true,
         additionalExtensionPaths: [resolve('src-tauri/src/work/pi_core_extension.mjs'), resolve('src-tauri/src/work/pi_mcp_adapter.mjs')] });
@@ -69,15 +83,15 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
     assert(!initial.includes('mcp'));
     assert(!initial.includes('codemode'));
     assert(!session.getAllTools().some(tool => tool.name === 'mcp'));
-    assert(!initial.some(n => n.startsWith('mcp__fixture__')));
+    assert(!initial.some(n => n.startsWith('mcp__')));
     const found = await ctx.executeTool('tool_search', { query: 'search documentation', limit: 2 });
     assert(!found.isError, JSON.stringify(found));
-    assert(session.getActiveToolNames().includes('mcp__fixture__search_docs'));
-    assert(session.getActiveToolNames().filter(n => n.startsWith('mcp__fixture__')).length <= 2);
+    assert(session.getActiveToolNames().includes(nativeSearchTool));
+    assert(session.getActiveToolNames().filter(n => n.startsWith('mcp__')).length <= 2);
     assert(!session.getActiveToolNames().some(n => n.includes('mcp_resource')));
     await session.extensionRunner.emitBeforeAgentStart('documentation', undefined, {});
-    assert(session.getActiveToolNames().includes('mcp__fixture__search_docs'));
-    const result = await ctx.executeTool('mcp__fixture__search_docs', {});
+    assert(session.getActiveToolNames().includes(nativeSearchTool));
+    const result = await ctx.executeTool(nativeSearchTool, {});
     assert(!result.isError, JSON.stringify(result));
     if (!externalPort) assert.equal(calls[0].name, 'search_docs');
     if (externalPort) {
@@ -96,11 +110,11 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
     // native search rather than adding an AgentCabin persistence layer.
     assert(session.getActiveToolNames().includes('tool_search'));
     await ctx.executeTool('tool_search', { query: 'search documentation', limit: 2 });
-    assert(session.getActiveToolNames().includes('mcp__fixture__search_docs'));
-    const resumed = await ctx.executeTool('mcp__fixture__search_docs', {});
+    assert(session.getActiveToolNames().includes(nativeSearchTool));
+    const resumed = await ctx.executeTool(nativeSearchTool, {});
     assert(!resumed.isError, JSON.stringify(resumed));
     if (!externalPort) assert.equal(calls.length, 2);
-    console.log('✓ Native Work MCP: deferred 58 tools, search activation, core preservation, direct loopback call and resume');
+    console.log(`✓ Native Work MCP${packageFixture ? ' Claude package' : ''}: deferred 58 tools, search activation, core preservation, direct loopback call and resume`);
   } finally {
     if (session) { await session.extensionRunner.emit({ type: 'session_shutdown' }); session.dispose(); }
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];

@@ -190,6 +190,7 @@
   type WorkCapabilitySection =
     | "skills"
     | "mcp"
+    | "agent-plugins"
     | "experts"
     | "expert-teams"
     | "connectors"
@@ -440,6 +441,7 @@
     if (
       workSection === "skills" ||
       workSection === "mcp" ||
+      workSection === "agent-plugins" ||
       workSection === "experts" ||
       workSection === "expert-teams" ||
       workSection === "connectors" ||
@@ -1100,6 +1102,7 @@
     } else if (
       workSection === "skills" ||
       workSection === "mcp" ||
+      workSection === "agent-plugins" ||
       workSection === "experts" ||
       workSection === "expert-teams" ||
       workSection === "connectors" ||
@@ -3131,7 +3134,7 @@
 
               <div class="border-t border-border/60 bg-background/30 px-2 pt-2 sm:px-3">
                 <nav class="flex min-w-0 gap-1 overflow-x-auto" aria-label="能力类型">
-                  {#each [{ id: "skills", label: "Skills", hint: "技能" }, { id: "experts", label: "专家", hint: "WorkBuddy Expert" }, { id: "expert-teams", label: "专家团", hint: "WorkBuddy Team" }, { id: "connectors", label: "连接器", hint: "WorkBuddy Connector" }, { id: "mcp", label: "MCP", hint: "Model Context Protocol" }] as section}
+                  {#each [{ id: "skills", label: "Skills", hint: "技能" }, { id: "agent-plugins", label: "Agent Plugins", hint: "兼容插件包" }, { id: "experts", label: "专家", hint: "WorkBuddy Expert" }, { id: "expert-teams", label: "专家团", hint: "WorkBuddy Team" }, { id: "connectors", label: "连接器", hint: "WorkBuddy Connector" }, { id: "mcp", label: "MCP", hint: "Model Context Protocol" }] as section}
                     <button
                       type="button"
                       class="group relative min-h-14 shrink-0 rounded-t-xl px-4 pb-3 pt-2 text-left transition-colors {workCapabilitySection ===
@@ -3161,7 +3164,7 @@
                 class="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-border bg-muted/20 p-1"
               >
                 <nav class="flex min-w-0 gap-1 overflow-x-auto" aria-label="Work 配置类型">
-                  {#each [{ id: "skills", label: "Skill" }, { id: "experts", label: "专家" }, { id: "expert-teams", label: "专家团" }, { id: "connectors", label: "连接器" }, { id: "mcp", label: "MCP" }] as section}
+                  {#each [{ id: "skills", label: "Skill" }, { id: "agent-plugins", label: "Agent Plugins" }, { id: "experts", label: "专家" }, { id: "expert-teams", label: "专家团" }, { id: "connectors", label: "连接器" }, { id: "mcp", label: "MCP" }] as section}
                     <button
                       type="button"
                       class="shrink-0 rounded-md px-5 py-1.5 text-sm font-medium transition-colors {workCapabilitySection ===
@@ -3180,7 +3183,7 @@
             </header>
           {/if}
 
-          {#if pageMode === "catalog" && workCapabilitySection !== "web" && workCapabilitySection !== "browser" && workCapabilitySection !== "mcp" && workCapabilitySection !== "experts" && workCapabilitySection !== "expert-teams"}
+          {#if pageMode === "catalog" && workCapabilitySection !== "web" && workCapabilitySection !== "browser" && workCapabilitySection !== "mcp" && workCapabilitySection !== "agent-plugins" && workCapabilitySection !== "experts" && workCapabilitySection !== "expert-teams"}
             <div class="flex items-center justify-between gap-3">
               <div
                 class="flex w-fit items-center gap-1 rounded-lg border border-border bg-muted/20 p-1"
@@ -3215,7 +3218,9 @@
             </div>
           {/if}
 
-          {#if workCapabilitySection === "experts"}
+          {#if workCapabilitySection === "agent-plugins"}
+            <AgentPluginsPanel canManage={pageMode === "catalog"} />
+          {:else if workCapabilitySection === "experts"}
             <AgentPluginsPanel canManage={pageMode === "catalog"} expertKind="expert" />
           {:else if workCapabilitySection === "expert-teams"}
             <AgentPluginsPanel canManage={pageMode === "catalog"} expertKind="expert-team" />

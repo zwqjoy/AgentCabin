@@ -52,7 +52,22 @@ test('package connector names get stable Pi aliases while Host routes keep origi
     assert.match(projected.name, /^[A-Za-z0-9_-]{1,80}$/);
     assert.equal(projected.config.url, `http://127.0.0.1:49321/internal/work/mcp/${encodeURIComponent(hostName)}`);
   }
-  assert.equal(byHostName.get('ordinary-server_1').name, 'ordinary-server_1');
+  assert.notEqual(byHostName.get('ordinary-server_1').name, 'ordinary-server_1');
+});
+
+test('Claude package logical IDs retain Host identity with bounded collision-resistant aliases', () => {
+  const ids = ['agent-plugin--foo.bar--mcp--github.enterprise', 'agent-plugin--foo-bar--mcp--github-enterprise', 'foo.bar', 'foo-bar', 'my/server', 'x'.repeat(190)];
+  const packages = { mcpServers: Object.fromEntries(ids.map(id => [id, { command: 'SECRET', args: ['SECRET'], env: { TOKEN: 'SECRET' }, url: 'https://SECRET.invalid', headers: { Authorization: 'SECRET' } }])) };
+  const bridge = { baseUrl: 'http://127.0.0.1:49321', token: 'run-token' };
+  const config = buildWorkNativeMcpConfig({}, packages, bridge);
+  assert.deepEqual(config, buildWorkNativeMcpConfig({}, packages, bridge));
+  assert.equal(new Set(config.servers.map(s => s.name)).size, ids.length);
+  assert(!JSON.stringify(config).includes('SECRET'));
+  config.servers.forEach((server, i) => {
+    assert.match(server.name, /^[A-Za-z0-9_-]{1,80}$/);
+    assert.equal(server.config.exposure, 'deferred');
+    assert.equal(decodeURIComponent(new URL(server.config.url).pathname.split('/').at(-1)), ids[i]);
+  });
 });
 
 test('shim injects custom native loadConfig and refuses persistence', async () => {

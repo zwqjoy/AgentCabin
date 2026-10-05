@@ -1,7 +1,8 @@
 //! Agent Plugins 1.0.0 storage, validation, and runtime projection.
 //!
 //! An Agent Plugin is an installed directory containing plugin.json, an
-//! optional skills directory, and an optional mcp.json. Package bytes are
+//! optional skills directory, and an optional mcp.json. Claude Code packages
+//! import .claude-plugin/plugin.json and .mcp.json into the same Host. Package bytes are
 //! immutable from the Capability Center: trust and global enablement live in
 //! AgentCabin-owned state outside the package.
 
@@ -21,6 +22,7 @@ pub const PLUGIN_SCHEMA: &str = "https://agent-plugins.org/schemas/1.0.0/plugin.
 pub const MCP_SCHEMA: &str = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 
 const PLUGIN_ROOT_TOKEN: &str = concat!("$", "{PLUGIN_ROOT}");
+const CLAUDE_ROOT_TOKEN: &str = "${CLAUDE_PLUGIN_ROOT}";
 const PLUGIN_DATA_TOKEN: &str = concat!("$", "{PLUGIN_DATA}");
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 const MAX_MCP_BYTES: u64 = 4 * 1024 * 1024;
@@ -95,6 +97,25 @@ pub struct WorkBuddyExpertMemberSummary {
     pub role: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginCompatibility {
+    pub level: String,
+    pub supported: Vec<String>,
+    pub detected_unsupported: Vec<String>,
+    pub blocked: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPluginComponentSummary {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub path: String,
+    pub support_status: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentPluginSummary {
@@ -120,6 +141,10 @@ pub struct AgentPluginSummary {
     pub mcp_servers: Vec<AgentPluginMcpServerSummary>,
     #[serde(default = "default_agent_plugin_format")]
     pub package_format: String,
+    #[serde(default)]
+    pub compatibility: PluginCompatibility,
+    #[serde(default)]
+    pub components: Vec<AgentPluginComponentSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expert_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -186,7 +211,7 @@ pub struct AgentPluginRuntimeMcpServer {
 }
 
 #[derive(Debug, Clone)]
-struct Manifest {
+struct NormalizedPluginManifest {
     name: String,
     version: String,
     description: String,
@@ -196,6 +221,7 @@ struct Manifest {
     license: Option<String>,
     package_format: String,
     workbuddy: Option<WorkBuddyManifest>,
+    claude: Option<Map<String, Value>>,
 }
 
 #[derive(Debug, Clone)]
@@ -291,6 +317,10 @@ fn is_real_dir(path: &Path) -> bool {
 }
 
 fn package_manifest_path(root: &Path) -> Option<PathBuf> {
+    let claude = root.join(".claude-plugin/plugin.json");
+    if is_real_file(&claude) {
+        return Some(claude);
+    }
     let workbuddy = root.join(".codebuddy-plugin").join("plugin.json");
     if is_real_file(&workbuddy) {
         return Some(workbuddy);
@@ -497,11 +527,45 @@ fn parse_workbuddy_manifest(object: &Map<String, Value>) -> Result<WorkBuddyMani
     })
 }
 
-fn parse_manifest(path: &Path, warnings: &mut Vec<String>) -> Result<Manifest, String> {
+fn parse_claude_plugin_manifest(
+    object: &Map<String, Value>,
+) -> Result<NormalizedPluginManifest, String> {
+    let name = json_string(object, "name")?.ok_or("Claude plugin manifest requires name")?;
+    if !is_valid_plugin_name(&name) {
+        return Err("Claude plugin name is invalid".into());
+    }
+    if let Some(keywords) = object.get("keywords") {
+        parse_string_array(Some(keywords), "keywords")?;
+    }
+    Ok(NormalizedPluginManifest {
+        name,
+        version: json_string(object, "version")?.unwrap_or_default(),
+        description: json_string(object, "description")?.unwrap_or_default(),
+        author: parse_author(object.get("author"))?,
+        homepage: json_string(object, "homepage")?,
+        repository: json_string(object, "repository")?,
+        license: json_string(object, "license")?,
+        package_format: "claude-code".into(),
+        workbuddy: None,
+        claude: Some(object.clone()),
+    })
+}
+
+fn parse_manifest(
+    path: &Path,
+    warnings: &mut Vec<String>,
+) -> Result<NormalizedPluginManifest, String> {
     let value = read_json_file(path, MAX_MANIFEST_BYTES, "plugin.json")?;
     let object = value
         .as_object()
         .ok_or_else(|| "plugin.json top level must be an object".to_string())?;
+    if path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == ".claude-plugin")
+    {
+        return parse_claude_plugin_manifest(object);
+    }
     let is_workbuddy = object.get("$schema").is_none()
         && (object.contains_key("expertType")
             || object.contains_key("agentName")
@@ -572,7 +636,7 @@ fn parse_manifest(path: &Path, warnings: &mut Vec<String>) -> Result<Manifest, S
     let workbuddy = is_workbuddy
         .then(|| parse_workbuddy_manifest(object))
         .transpose()?;
-    Ok(Manifest {
+    Ok(NormalizedPluginManifest {
         name: name.to_string(),
         version: object
             .get("version")
@@ -611,6 +675,7 @@ fn parse_manifest(path: &Path, warnings: &mut Vec<String>) -> Result<Manifest, S
             "agent-plugin".into()
         },
         workbuddy,
+        claude: None,
     })
 }
 
@@ -981,23 +1046,35 @@ fn discover_skills(
     plugin_id: &str,
     warnings: &mut Vec<String>,
 ) -> Vec<(AgentPluginSkillSummary, AgentPluginRuntimeSkill)> {
-    let skills_dir = root.join("skills");
+    discover_skills_at(root, &root.join("skills"), plugin_id, warnings)
+}
+
+fn discover_skills_at(
+    root: &Path,
+    skills_dir: &Path,
+    plugin_id: &str,
+    warnings: &mut Vec<String>,
+) -> Vec<(AgentPluginSkillSummary, AgentPluginRuntimeSkill)> {
     if !skills_dir.exists() {
         return Vec::new();
     }
-    if !is_real_dir(&skills_dir) || !contained_in(root, &skills_dir) {
+    if !is_real_dir(skills_dir) || !contained_in(root, skills_dir) {
         warnings
             .push("skills is not a real directory inside the plugin and was ignored".to_string());
         return Vec::new();
     }
 
-    let Ok(entries) = fs::read_dir(&skills_dir) else {
+    let Ok(entries) = fs::read_dir(skills_dir) else {
         warnings.push("skills could not be read and was ignored".to_string());
         return Vec::new();
     };
     let mut result = Vec::new();
-    for entry in entries.flatten() {
-        let skill_dir = entry.path();
+    let skill_dirs = if is_real_file(&skills_dir.join("SKILL.md")) {
+        vec![skills_dir.to_path_buf()]
+    } else {
+        entries.flatten().map(|entry| entry.path()).collect()
+    };
+    for skill_dir in skill_dirs {
         let Ok(meta) = fs::symlink_metadata(&skill_dir) else {
             continue;
         };
@@ -1085,12 +1162,16 @@ fn discover_skills(
 
 fn expand_value(value: &str, root: &Path, data: &Path) -> String {
     value
+        .replace(CLAUDE_ROOT_TOKEN, &root.display().to_string())
         .replace(PLUGIN_ROOT_TOKEN, &root.display().to_string())
         .replace(PLUGIN_DATA_TOKEN, &data.display().to_string())
 }
 
 fn expand_path(value: &str, root: &Path, data: &Path) -> Option<PathBuf> {
-    let path = if let Some(rest) = value.strip_prefix(PLUGIN_ROOT_TOKEN) {
+    let path = if let Some(rest) = value
+        .strip_prefix(PLUGIN_ROOT_TOKEN)
+        .or_else(|| value.strip_prefix(CLAUDE_ROOT_TOKEN))
+    {
         root.join(rest.trim_start_matches('/'))
     } else if let Some(rest) = value.strip_prefix(PLUGIN_DATA_TOKEN) {
         data.join(rest.trim_start_matches('/'))
@@ -1100,6 +1181,50 @@ fn expand_path(value: &str, root: &Path, data: &Path) -> Option<PathBuf> {
         return None;
     };
     Some(path)
+}
+
+fn safe_root_values(value: &Value, root: &Path) -> bool {
+    match value {
+        Value::String(value) => {
+            let normalized = value.replace(CLAUDE_ROOT_TOKEN, PLUGIN_ROOT_TOKEN);
+            if normalized
+                .replace(PLUGIN_ROOT_TOKEN, "")
+                .replace(PLUGIN_DATA_TOKEN, "")
+                .contains("${")
+            {
+                return false;
+            }
+            for tail in normalized.split(PLUGIN_ROOT_TOKEN).skip(1) {
+                let suffix = tail
+                    .split([' ', '\"', '\'', ';', ','])
+                    .next()
+                    .unwrap_or_default();
+                if !suffix.is_empty() && !suffix.starts_with('/') {
+                    return false;
+                }
+                let path = Path::new(suffix.trim_start_matches('/'));
+                if path
+                    .components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+                {
+                    return false;
+                }
+                let mut candidate = root.join(path);
+                while !candidate.exists() {
+                    if !candidate.pop() {
+                        return false;
+                    }
+                }
+                if !contained_in(root, &candidate) {
+                    return false;
+                }
+            }
+            true
+        }
+        Value::Array(values) => values.iter().all(|v| safe_root_values(v, root)),
+        Value::Object(values) => values.values().all(|v| safe_root_values(v, root)),
+        _ => true,
+    }
 }
 
 fn valid_http_url(value: &str) -> bool {
@@ -1157,21 +1282,49 @@ fn discover_mcp_servers(
     data_dir: &Path,
     warnings: &mut Vec<String>,
 ) -> Vec<(AgentPluginMcpServerSummary, AgentPluginRuntimeMcpServer)> {
-    let path = root.join("mcp.json");
+    discover_mcp_servers_at(
+        root,
+        &root.join("mcp.json"),
+        plugin_id,
+        data_dir,
+        false,
+        warnings,
+    )
+}
+
+fn discover_mcp_servers_at(
+    root: &Path,
+    path: &Path,
+    plugin_id: &str,
+    data_dir: &Path,
+    claude: bool,
+    warnings: &mut Vec<String>,
+) -> Vec<(AgentPluginMcpServerSummary, AgentPluginRuntimeMcpServer)> {
     if !path.exists() {
         return Vec::new();
     }
-    if !is_real_file(&path) || !contained_in(root, &path) {
+    if !is_real_file(path) || !contained_in(root, path) {
         warnings.push("mcp.json is not a real in-package file and was ignored".to_string());
         return Vec::new();
     }
-    let value = match read_json_file(&path, MAX_MCP_BYTES, "mcp.json") {
+    let value = match read_json_file(path, MAX_MCP_BYTES, "mcp.json") {
         Ok(value) => value,
         Err(error) => {
             warnings.push(format!("{error}; MCP components were ignored"));
             return Vec::new();
         }
     };
+    normalize_mcp_servers(root, plugin_id, data_dir, claude, &value, warnings)
+}
+
+fn normalize_mcp_servers(
+    root: &Path,
+    plugin_id: &str,
+    data_dir: &Path,
+    claude: bool,
+    value: &Value,
+    warnings: &mut Vec<String>,
+) -> Vec<(AgentPluginMcpServerSummary, AgentPluginRuntimeMcpServer)> {
     let object = match value.as_object() {
         Some(object) => object,
         None => {
@@ -1181,7 +1334,7 @@ fn discover_mcp_servers(
             return Vec::new();
         }
     };
-    if object.get("$schema").and_then(Value::as_str) != Some(MCP_SCHEMA) {
+    if !claude && object.get("$schema").and_then(Value::as_str) != Some(MCP_SCHEMA) {
         warnings.push(format!(
             "mcp.json must declare $schema {MCP_SCHEMA}; MCP components were ignored"
         ));
@@ -1217,7 +1370,28 @@ fn discover_mcp_servers(
             skip("is not an object".to_string(), warnings);
             continue;
         };
-        let Some(transport) = entry.get("type").and_then(Value::as_str) else {
+        if entry.get("type").is_some_and(|value| !value.is_string()) {
+            skip("type must be a string".into(), warnings);
+            continue;
+        }
+        let Some(transport) = entry
+            .get("type")
+            .and_then(Value::as_str)
+            .map(|t| {
+                if claude && t == "http" {
+                    "streamable-http"
+                } else {
+                    t
+                }
+            })
+            .or_else(|| {
+                claude.then_some(if entry.contains_key("command") {
+                    "stdio"
+                } else {
+                    "streamable-http"
+                })
+            })
+        else {
             skip("is missing type".to_string(), warnings);
             continue;
         };
@@ -1225,10 +1399,7 @@ fn discover_mcp_servers(
             "stdio" => &["type", "command", "args", "env", "cwd"],
             "streamable-http" | "sse" => &["type", "url", "headers"],
             _ => {
-                skip(
-                    format!("uses unsupported transport '{transport}'"),
-                    warnings,
-                );
+                skip("uses unsupported transport".to_string(), warnings);
                 continue;
             }
         };
@@ -1253,6 +1424,13 @@ fn discover_mcp_servers(
             continue;
         }
 
+        if claude && !safe_root_values(&Value::Object(entry.clone()), root) {
+            skip(
+                "contains a plugin-root path escape or unresolved variable".into(),
+                warnings,
+            );
+            continue;
+        }
         let id = component_id(plugin_id, "mcp", original_name);
         if transport == "stdio" {
             let Some(raw_command) = entry.get("command").and_then(Value::as_str) else {
@@ -1264,7 +1442,10 @@ fn discover_mcp_servers(
                 continue;
             }
             let mut command = raw_command.to_string();
-            if raw_command.starts_with("./") {
+            if raw_command.starts_with("./")
+                || raw_command.starts_with(CLAUDE_ROOT_TOKEN)
+                || raw_command.starts_with(PLUGIN_ROOT_TOKEN)
+            {
                 let Some(command_path) = expand_path(raw_command, root, data_dir) else {
                     skip("command path is invalid".to_string(), warnings);
                     continue;
@@ -1296,7 +1477,9 @@ fn discover_mcp_servers(
                 }
             };
             if raw_env.keys().any(|key| {
-                key.eq_ignore_ascii_case("PLUGIN_ROOT") || key.eq_ignore_ascii_case("PLUGIN_DATA")
+                key.eq_ignore_ascii_case("PLUGIN_ROOT")
+                    || key.eq_ignore_ascii_case("PLUGIN_DATA")
+                    || key.eq_ignore_ascii_case("CLAUDE_PLUGIN_ROOT")
             }) {
                 skip(
                     "env cannot define PLUGIN_ROOT or PLUGIN_DATA".to_string(),
@@ -1508,6 +1691,253 @@ fn is_plugin_enabled_with_root(root: &Path, plugin_id: &str) -> bool {
         .unwrap_or(false)
 }
 
+// Claude declarations only select in-package files; execution remains in the Host.
+fn claude_paths(
+    root: &Path,
+    manifest: &Map<String, Value>,
+    key: &str,
+    defaults: &[&str],
+    blocked: &mut Vec<String>,
+) -> Vec<PathBuf> {
+    let mut raw: Vec<String> = defaults.iter().map(|p| p.to_string()).collect();
+    if let Some(value) = manifest.get(key) {
+        match value {
+            Value::String(path) => raw.push(path.clone()),
+            Value::Array(values) => {
+                for value in values {
+                    if let Some(path) = value.as_str() {
+                        raw.push(path.into());
+                    } else {
+                        blocked.push(format!("{key}: component paths must be strings"));
+                    }
+                }
+            }
+            Value::Object(_)
+                if matches!(key, "hooks" | "mcpServers" | "lspServers" | "commands") => {}
+            _ => blocked.push(format!("{key}: unsupported component declaration")),
+        }
+    }
+    let mut paths = Vec::new();
+    for raw in raw {
+        let path = Path::new(&raw);
+        if path.is_absolute()
+            || path
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            blocked.push(format!(
+                "{key}: path must be relative and cannot contain .."
+            ));
+            continue;
+        }
+        let path = root.join(path);
+        if !path.exists() {
+            if !defaults.contains(&raw.as_str()) {
+                blocked.push(format!("{key}: component path is missing"));
+            }
+            continue;
+        }
+        if !contained_in(root, &path)
+            || fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink())
+        {
+            blocked.push(format!(
+                "{key}: component path escapes package or is a symlink"
+            ));
+            continue;
+        }
+        paths.push(path);
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn detect_components(
+    root: &Path,
+    path: &Path,
+    plugin: &str,
+    kind: &str,
+    result: &mut Vec<AgentPluginComponentSummary>,
+) {
+    if !contained_in(root, path) {
+        return;
+    }
+    if is_real_dir(path) {
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                detect_components(root, &entry.path(), plugin, kind, result);
+            }
+        }
+    } else if is_real_file(path) && (kind == "hooks" || path.extension().is_some_and(|e| e == "md"))
+    {
+        let relative = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        if result.iter().any(|c| c.path == relative && c.kind == kind) {
+            return;
+        }
+        result.push(AgentPluginComponentSummary {
+            id: component_id(plugin, kind, &relative),
+            name: path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into(),
+            kind: kind.into(),
+            path: relative,
+            support_status: "detected".into(),
+        });
+    }
+}
+
+struct ImportedComponents {
+    skills: Vec<(AgentPluginSkillSummary, AgentPluginRuntimeSkill)>,
+    mcp_servers: Vec<(AgentPluginMcpServerSummary, AgentPluginRuntimeMcpServer)>,
+    components: Vec<AgentPluginComponentSummary>,
+    compatibility: PluginCompatibility,
+    warnings: Vec<String>,
+}
+
+// Package importer only: no Claude CLI, execution runtime, or independent state.
+struct ClaudePluginAdapter;
+impl ClaudePluginAdapter {
+    fn discover(
+        package_dir: &Path,
+        plugin_id: &str,
+        data_dir: &Path,
+        claude: &Map<String, Value>,
+    ) -> ImportedComponents {
+        let mut skills = Vec::new();
+        let mut mcp_servers = Vec::new();
+        let mut components = Vec::new();
+        let mut warnings = Vec::new();
+        let mut compatibility = PluginCompatibility::default();
+        let mut blocked = Vec::new();
+
+        for path in claude_paths(package_dir, claude, "skills", &["skills"], &mut blocked) {
+            skills.extend(discover_skills_at(
+                package_dir,
+                &path,
+                plugin_id,
+                &mut blocked,
+            ));
+        }
+        skills.sort_by(|a, b| a.0.id.cmp(&b.0.id));
+        skills.dedup_by(|a, b| a.0.id == b.0.id);
+        for path in claude_paths(
+            package_dir,
+            claude,
+            "mcpServers",
+            &[".mcp.json"],
+            &mut blocked,
+        ) {
+            mcp_servers.extend(discover_mcp_servers_at(
+                package_dir,
+                &path,
+                plugin_id,
+                data_dir,
+                true,
+                &mut blocked,
+            ));
+        }
+        if let Some(Value::Object(servers)) = claude.get("mcpServers") {
+            mcp_servers.extend(normalize_mcp_servers(
+                package_dir,
+                plugin_id,
+                data_dir,
+                true,
+                &serde_json::json!({"mcpServers": servers}),
+                &mut blocked,
+            ));
+        }
+        let mut seen = std::collections::HashSet::new();
+        mcp_servers.retain(|server| {
+            if seen.insert(server.0.id.clone()) {
+                true
+            } else {
+                blocked.push(format!(
+                    "MCP '{}': duplicate server identity was ignored",
+                    server.0.original_name
+                ));
+                false
+            }
+        });
+        for (kind, defaults) in [
+            ("commands", vec!["commands"]),
+            ("agents", vec!["agents"]),
+            ("hooks", vec!["hooks/hooks.json", "hooks.json"]),
+        ] {
+            for path in claude_paths(package_dir, claude, kind, &defaults, &mut blocked) {
+                detect_components(package_dir, &path, plugin_id, kind, &mut components);
+            }
+            if claude.contains_key(kind) {
+                compatibility.detected_unsupported.push(kind.into());
+            }
+        }
+        for (kind, defaults) in [
+            ("lspServers", vec![".lsp.json"]),
+            ("outputStyles", vec!["output-styles"]),
+            ("workflows", vec!["workflows"]),
+        ] {
+            let paths = claude_paths(package_dir, claude, kind, &defaults, &mut blocked);
+            if !paths.is_empty() || claude.contains_key(kind) {
+                compatibility.detected_unsupported.push(kind.into());
+            }
+        }
+        for key in claude.keys() {
+            if matches!(key.as_str(), "lspServers" | "outputStyles" | "workflows") {
+                compatibility.detected_unsupported.push(key.clone());
+            } else if !matches!(
+                key.as_str(),
+                "name"
+                    | "version"
+                    | "description"
+                    | "author"
+                    | "homepage"
+                    | "repository"
+                    | "license"
+                    | "keywords"
+                    | "skills"
+                    | "commands"
+                    | "agents"
+                    | "hooks"
+                    | "mcpServers"
+            ) {
+                warnings.push(format!("Claude manifest unknown field '{key}' was ignored"));
+                if !matches!(
+                    key.as_str(),
+                    "$schema"
+                        | "metadata"
+                        | "displayName"
+                        | "icon"
+                        | "documentationUrl"
+                        | "supportUrl"
+                        | "privacyPolicyUrl"
+                        | "termsOfServiceUrl"
+                ) {
+                    compatibility.detected_unsupported.push(key.clone());
+                }
+            }
+        }
+        compatibility
+            .detected_unsupported
+            .extend(components.iter().map(|c| c.kind.clone()));
+        compatibility.detected_unsupported.sort();
+        compatibility.detected_unsupported.dedup();
+        compatibility.blocked = blocked;
+
+        ImportedComponents {
+            skills,
+            mcp_servers,
+            components,
+            compatibility,
+            warnings,
+        }
+    }
+}
+
 fn load_plugin_with_root(root: &Path, package_dir: &Path, state: &PluginState) -> LoadedPlugin {
     let fallback_id = package_dir
         .file_name()
@@ -1527,6 +1957,11 @@ fn load_plugin_with_root(root: &Path, package_dir: &Path, state: &PluginState) -
         skills: Vec::new(),
         mcp_servers: Vec::new(),
         package_format: default_agent_plugin_format(),
+        compatibility: PluginCompatibility {
+            level: "unsupported".into(),
+            ..Default::default()
+        },
+        components: Vec::new(),
         expert_kind: None,
         display_name: None,
         profession: None,
@@ -1551,14 +1986,46 @@ fn load_plugin_with_root(root: &Path, package_dir: &Path, state: &PluginState) -
     }
     let Some(manifest_path) = package_manifest_path(package_dir) else {
         summary.error =
-            Some("Package is missing plugin.json or .codebuddy-plugin/plugin.json".to_string());
+            Some("Package is missing plugin.json, .claude-plugin/plugin.json, or .codebuddy-plugin/plugin.json".to_string());
         return LoadedPlugin {
             summary,
             runtime_skills: Vec::new(),
             runtime_mcp_servers: Vec::new(),
         };
     };
+    if manifest_path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == ".claude-plugin")
+    {
+        summary.package_format = "claude-code".into();
+    }
+    if !contained_in(package_dir, &manifest_path) {
+        summary.error = Some("Package manifest is outside its installed directory".into());
+        return LoadedPlugin {
+            summary,
+            runtime_skills: Vec::new(),
+            runtime_mcp_servers: Vec::new(),
+        };
+    }
     let mut warnings = Vec::new();
+    let count = [
+        ".claude-plugin/plugin.json",
+        ".codebuddy-plugin/plugin.json",
+        "plugin.json",
+    ]
+    .iter()
+    .filter(|p| is_real_file(&package_dir.join(p)))
+    .count();
+    if count > 1 {
+        warnings.push(format!(
+            "Multiple plugin manifests detected; using {}.",
+            manifest_path
+                .strip_prefix(package_dir)
+                .unwrap_or(&manifest_path)
+                .display()
+        ));
+    }
     let manifest = match parse_manifest(&manifest_path, &mut warnings) {
         Ok(manifest) => manifest,
         Err(error) => {
@@ -1594,7 +2061,11 @@ fn load_plugin_with_root(root: &Path, package_dir: &Path, state: &PluginState) -
             runtime_mcp_servers: Vec::new(),
         };
     }
-    let mut skills = discover_skills(package_dir, &manifest.name, &mut warnings);
+    let mut skills = if manifest.claude.is_some() {
+        Vec::new()
+    } else {
+        discover_skills(package_dir, &manifest.name, &mut warnings)
+    };
     if let Some(workbuddy) = &manifest.workbuddy {
         if let Some(expert_skill) =
             discover_workbuddy_expert_skill(package_dir, &manifest.name, workbuddy, &mut warnings)
@@ -1602,7 +2073,34 @@ fn load_plugin_with_root(root: &Path, package_dir: &Path, state: &PluginState) -
             skills.push(expert_skill);
         }
     }
-    let mcp_servers = discover_mcp_servers(package_dir, &manifest.name, &data_dir, &mut warnings);
+    let mcp_servers;
+    let mut compatibility = PluginCompatibility::default();
+    if let Some(claude) = &manifest.claude {
+        let imported =
+            ClaudePluginAdapter::discover(package_dir, &manifest.name, &data_dir, claude);
+        skills = imported.skills;
+        mcp_servers = imported.mcp_servers;
+        summary.components = imported.components;
+        compatibility = imported.compatibility;
+        warnings.extend(imported.warnings);
+    } else {
+        mcp_servers = discover_mcp_servers(package_dir, &manifest.name, &data_dir, &mut warnings);
+    }
+    if !skills.is_empty() {
+        compatibility.supported.push("Skills".into());
+    }
+    if !mcp_servers.is_empty() {
+        compatibility.supported.push("MCP".into());
+    }
+    compatibility.level = if compatibility.supported.is_empty() {
+        "unsupported"
+    } else if !compatibility.detected_unsupported.is_empty() || !compatibility.blocked.is_empty() {
+        "partial"
+    } else {
+        "full"
+    }
+    .into();
+    summary.compatibility = compatibility;
     summary.name = manifest.name.clone();
     summary.version = manifest.version;
     summary.description = manifest.description;
@@ -1611,7 +2109,19 @@ fn load_plugin_with_root(root: &Path, package_dir: &Path, state: &PluginState) -
     summary.repository = manifest.repository;
     summary.license = manifest.license;
     summary.skills = skills.iter().map(|item| item.0.clone()).collect();
-    summary.mcp_servers = mcp_servers.iter().map(|item| item.0.clone()).collect();
+    summary.mcp_servers = mcp_servers
+        .iter()
+        .map(|item| {
+            let mut summary = item.0.clone();
+            if manifest.claude.is_some() {
+                summary.command = None;
+                summary.args.clear();
+                summary.cwd = None;
+                summary.url = None;
+            }
+            summary
+        })
+        .collect();
     summary.package_format = manifest.package_format.clone();
     if let Some(workbuddy) = &manifest.workbuddy {
         summary.expert_kind = Some(workbuddy.expert_kind.clone());
@@ -1875,7 +2385,7 @@ fn activate_plugin_from_dir(
         return Err("Agent Plugin source is not a real directory".to_string());
     }
     let manifest_path = package_manifest_path(source_dir).ok_or_else(|| {
-        "Package source is missing plugin.json or .codebuddy-plugin/plugin.json".to_string()
+        "Package source is missing plugin.json, .claude-plugin/plugin.json, or .codebuddy-plugin/plugin.json".to_string()
     })?;
     if !contained_in(source_dir, &manifest_path) {
         return Err("Package manifest is outside its source directory".into());
@@ -2247,6 +2757,219 @@ pub fn sync_runtime_configs() -> Result<(), String> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn claude_offline_smoke_matrix() {
+        for (name, level, skills, mcp) in [
+            ("frontend-design", "full", 1, 0),
+            ("skill-creator", "full", 1, 0),
+            ("github", "full", 1, 2),
+            ("playwright", "full", 0, 1),
+            ("feature-dev", "partial", 1, 0),
+            ("agents-only", "unsupported", 0, 0),
+        ] {
+            let temp = TempDir::new().unwrap();
+            let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/claude-plugins")
+                .join(name);
+            let summary =
+                install_agent_plugin_with_root(temp.path(), source.to_str().unwrap()).unwrap();
+            assert_eq!(summary.package_format, "claude-code");
+            assert_eq!(summary.compatibility.level, level, "{name}");
+            assert_eq!(summary.skills.len(), skills);
+            assert_eq!(summary.mcp_servers.len(), mcp);
+            assert!(!summary.trusted && !summary.enabled);
+            assert!(!serde_json::to_string(&summary)
+                .unwrap()
+                .contains("fixture-secret"));
+            assert!(list_enabled_skills_with_root(temp.path()).is_empty());
+            assert!(list_enabled_mcp_servers_with_root(temp.path()).is_empty());
+            assert!(set_agent_plugin_binding_with_root(temp.path(), name, true).is_err());
+            set_agent_plugin_trust_with_root(temp.path(), name, true).unwrap();
+            assert!(list_enabled_mcp_servers_with_root(temp.path()).is_empty());
+            set_agent_plugin_binding_with_root(temp.path(), name, true).unwrap();
+            assert_eq!(list_enabled_skills_with_root(temp.path()).len(), skills);
+            assert_eq!(list_enabled_mcp_servers_with_root(temp.path()).len(), mcp);
+            let installed = package_path_with_root(temp.path(), name);
+            assert_eq!(
+                fs::read(source.join(".claude-plugin/plugin.json")).unwrap(),
+                fs::read(installed.join(".claude-plugin/plugin.json")).unwrap()
+            );
+            if mcp > 0 {
+                assert_eq!(
+                    fs::read(source.join(".mcp.json")).unwrap(),
+                    fs::read(installed.join(".mcp.json")).unwrap()
+                );
+            }
+            set_agent_plugin_trust_with_root(temp.path(), name, false).unwrap();
+            assert!(list_enabled_skills_with_root(temp.path()).is_empty());
+            assert!(list_enabled_mcp_servers_with_root(temp.path()).is_empty());
+        }
+    }
+
+    #[test]
+    fn claude_custom_paths_diagnostics_and_root_alias() {
+        let temp = TempDir::new().unwrap();
+        let package = temp.path().join("demo");
+        fs::create_dir_all(package.join(".claude-plugin")).unwrap();
+        fs::create_dir_all(package.join("custom-skills/demo")).unwrap();
+        fs::create_dir_all(package.join("custom-commands")).unwrap();
+        fs::create_dir_all(package.join("bin")).unwrap();
+        fs::write(package.join("bin/server"), "fixture").unwrap();
+        fs::write(
+            package.join("custom-skills/demo/SKILL.md"),
+            "---\nname: demo\ndescription: fixture\n---\n${CLAUDE_PLUGIN_ROOT}",
+        )
+        .unwrap();
+        fs::write(package.join("custom-commands/test.md"), "test").unwrap();
+        fs::write(package.join(".claude-plugin/plugin.json"), r#"{"name":"demo","skills":"./custom-skills","commands":"./custom-commands","agents":"../../outside","lspServers":{}}"#).unwrap();
+        fs::write(package.join("plugin.json"), "{}").unwrap();
+        fs::write(package.join(".mcp.json"), r#"{"mcpServers":{"local":{"command":"${CLAUDE_PLUGIN_ROOT}/bin/server","args":["${CLAUDE_PLUGIN_ROOT}/bin/server"]}}}"#).unwrap();
+        let loaded = load_plugin_with_root(temp.path(), &package, &PluginState::default());
+        assert_eq!(loaded.summary.skills.len(), 1);
+        assert_eq!(loaded.summary.components.len(), 1);
+        assert_eq!(loaded.summary.compatibility.level, "partial");
+        assert!(!loaded.summary.compatibility.blocked.is_empty());
+        assert!(loaded
+            .summary
+            .warnings
+            .iter()
+            .any(|w| w.contains("Multiple plugin manifests")));
+        assert_eq!(
+            loaded.runtime_mcp_servers[0].command.as_deref(),
+            package.join("bin/server").to_str()
+        );
+        assert!(
+            fs::read_to_string(package.join("custom-skills/demo/SKILL.md"))
+                .unwrap()
+                .contains(CLAUDE_ROOT_TOKEN)
+        );
+        for path in [
+            "../../outside",
+            "/tmp",
+            "${CLAUDE_PLUGIN_ROOT}/../../outside",
+        ] {
+            fs::write(
+                package.join(".mcp.json"),
+                serde_json::json!({"mcpServers":{"bad":{"command":path}}}).to_string(),
+            )
+            .unwrap();
+            let loaded = load_plugin_with_root(temp.path(), &package, &PluginState::default());
+            if path.starts_with(CLAUDE_ROOT_TOKEN) {
+                assert!(loaded.runtime_mcp_servers.is_empty());
+            }
+        }
+        fs::write(package.join(".mcp.json"), "{").unwrap();
+        let loaded = load_plugin_with_root(temp.path(), &package, &PluginState::default());
+        assert!(loaded.runtime_mcp_servers.is_empty());
+        assert!(!loaded.summary.compatibility.blocked.is_empty());
+        fs::write(package.join(".claude-plugin/plugin.json"), "{}").unwrap();
+        assert!(
+            load_plugin_with_root(temp.path(), &package, &PluginState::default())
+                .summary
+                .error
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn claude_inline_mcp_and_paths_fail_closed() {
+        let temp = TempDir::new().unwrap();
+        let package = temp.path().join("demo");
+        fs::create_dir_all(package.join(".claude-plugin")).unwrap();
+        fs::create_dir_all(package.join("skills/demo")).unwrap();
+        fs::write(
+            package.join("skills/demo/SKILL.md"),
+            "---\nname: demo\ndescription: test\n---\n",
+        )
+        .unwrap();
+        fs::write(package.join(".claude-plugin/plugin.json"), r#"{"name":"demo","mcpServers":{"inline":{"command":"node","env":{"TOKEN":"secret-inline"}}},"hooks":{}}"#).unwrap();
+        let loaded = load_plugin_with_root(temp.path(), &package, &PluginState::default());
+        assert_eq!(loaded.runtime_mcp_servers.len(), 1);
+        assert_eq!(loaded.summary.compatibility.level, "partial");
+        assert!(!serde_json::to_string(&loaded.summary)
+            .unwrap()
+            .contains("secret-inline"));
+        for raw in ["../outside", "/tmp"] {
+            let mut blocked = Vec::new();
+            let manifest = serde_json::json!({"commands":raw});
+            assert!(claude_paths(
+                &package,
+                manifest.as_object().unwrap(),
+                "commands",
+                &[],
+                &mut blocked
+            )
+            .is_empty());
+            assert!(!blocked.is_empty());
+        }
+        for value in [
+            "${CLAUDE_PLUGIN_ROOT}/../outside",
+            "${CLAUDE_PLUGIN_ROOT}/../../outside",
+            "${CLAUDE_PLUGIN_ROOT}suffix/file",
+        ] {
+            assert!(!safe_root_values(&Value::String(value.into()), &package));
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(temp.path(), package.join("escape")).unwrap();
+            assert!(!safe_root_values(
+                &Value::String("${CLAUDE_PLUGIN_ROOT}/escape/missing".into()),
+                &package
+            ));
+            let mut blocked = Vec::new();
+            let manifest = serde_json::json!({"agents":"./escape"});
+            assert!(claude_paths(
+                &package,
+                manifest.as_object().unwrap(),
+                "agents",
+                &[],
+                &mut blocked
+            )
+            .is_empty());
+            assert!(!blocked.is_empty());
+            let dest = temp.path().join("install");
+            assert!(install_agent_plugin_with_root(&dest, package.to_str().unwrap()).is_err());
+            let external_manifest = temp.path().join("external-manifest");
+            fs::create_dir_all(&external_manifest).unwrap();
+            fs::write(external_manifest.join("plugin.json"), r#"{"name":"demo"}"#).unwrap();
+            fs::remove_dir_all(package.join(".claude-plugin")).unwrap();
+            std::os::unix::fs::symlink(&external_manifest, package.join(".claude-plugin")).unwrap();
+            let loaded = load_plugin_with_root(temp.path(), &package, &PluginState::default());
+            assert!(loaded.summary.error.is_some());
+            assert!(loaded.runtime_skills.is_empty() && loaded.runtime_mcp_servers.is_empty());
+        }
+    }
+
+    #[test]
+    fn claude_custom_mcp_paths_and_invalid_siblings() {
+        let temp = TempDir::new().unwrap();
+        let package = temp.path().join("demo");
+        fs::create_dir_all(package.join(".claude-plugin")).unwrap();
+        fs::create_dir_all(package.join("config")).unwrap();
+        fs::write(
+            package.join(".claude-plugin/plugin.json"),
+            r#"{"name":"demo","mcpServers":"./config/mcp.json","metadata":{"future":true}}"#,
+        )
+        .unwrap();
+        fs::write(package.join("config/mcp.json"), r#"{"mcpServers":{"good":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"host-secret"}},"bad":{"command":"node","type":42},"unknown":{"command":"node","futureRuntime":true}}}"#).unwrap();
+        let loaded = load_plugin_with_root(temp.path(), &package, &PluginState::default());
+        assert_eq!(loaded.runtime_mcp_servers.len(), 1);
+        assert_eq!(loaded.runtime_mcp_servers[0].transport, "streamable-http");
+        assert_eq!(loaded.summary.compatibility.level, "partial");
+        assert_eq!(loaded.summary.compatibility.blocked.len(), 2);
+        assert!(!serde_json::to_string(&loaded.summary)
+            .unwrap()
+            .contains("host-secret"));
+        fs::write(
+            package.join("config/mcp.json"),
+            r#"{"mcpServers":{"good":{"url":"https://example.com/mcp"}}}"#,
+        )
+        .unwrap();
+        let loaded = load_plugin_with_root(temp.path(), &package, &PluginState::default());
+        assert_eq!(loaded.summary.compatibility.level, "full");
+        assert!(loaded.summary.compatibility.detected_unsupported.is_empty());
+    }
 
     fn write_plugin(root: &Path, manifest: &str, skill: Option<&str>, mcp: Option<&str>) {
         fs::create_dir_all(root.join("skills/demo")).unwrap();

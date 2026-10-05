@@ -5,12 +5,12 @@ import { pathToFileURL } from "node:url";
 
 const PI_MCP_SERVER_NAME = /^[A-Za-z0-9_-]{1,80}$/;
 
-function piServerNames(hostNames) {
+function piServerNames(hostNames, packageNames) {
   const names = new Map();
-  const reserved = new Set(hostNames.filter((name) => PI_MCP_SERVER_NAME.test(name)));
+  const reserved = new Set(hostNames.filter((name) => !packageNames.has(name) && PI_MCP_SERVER_NAME.test(name)));
   const used = new Set(reserved);
   for (const hostName of hostNames) {
-    if (PI_MCP_SERVER_NAME.test(hostName)) {
+    if (!packageNames.has(hostName) && PI_MCP_SERVER_NAME.test(hostName)) {
       names.set(hostName, hostName);
       continue;
     }
@@ -44,7 +44,7 @@ export function buildWorkNativeMcpConfig(raw, packages, bridge) {
     throw new Error("Work MCP requires an authenticated loopback Host bridge");
   }
   const entries = new Map([...Object.entries(configuredServers(raw)), ...Object.entries(configuredServers(packages))]);
-  const projectedNames = piServerNames([...entries.keys()]);
+  const projectedNames = piServerNames([...entries.keys()], new Set(Object.keys(configuredServers(packages))));
   return {
     servers: [...entries].map(([name, server]) => {
       if (!name || /[\u0000-\u001f\u007f]/.test(name) || name.length > 200 ||

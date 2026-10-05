@@ -1233,7 +1233,14 @@ export interface AgentPluginSummary {
   source?: AgentPluginSource;
   skills: AgentPluginSkillSummary[];
   mcpServers: AgentPluginMcpServerSummary[];
-  packageFormat: "workbuddy";
+  packageFormat: "agent-plugin" | "claude-code" | "workbuddy";
+  compatibility?: {
+    level: "full" | "partial" | "unsupported";
+    supported: string[];
+    detectedUnsupported: string[];
+    blocked: string[];
+  };
+  components?: { id: string; name: string; kind: string; path: string; supportStatus: string }[];
   expertKind?: "expert" | "expert-team";
   displayName?: string;
   profession?: string;

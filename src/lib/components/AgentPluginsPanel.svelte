@@ -13,7 +13,7 @@
 
   interface Props {
     canManage?: boolean;
-    expertKind: "expert" | "expert-team";
+    expertKind?: "expert" | "expert-team";
   }
 
   let { canManage = true, expertKind }: Props = $props();
@@ -24,7 +24,11 @@
   let error = $state("");
   let notice = $state("");
   let visiblePlugins = $derived(
-    plugins.filter((item) => item.packageFormat === "workbuddy" && item.expertKind === expertKind),
+    plugins.filter((item) =>
+      expertKind
+        ? item.packageFormat === "workbuddy" && item.expertKind === expertKind
+        : item.packageFormat !== "workbuddy",
+    ),
   );
   let displayedCount = $derived(visiblePlugins.length);
 
@@ -64,7 +68,7 @@
     try {
       const { open } = await import("$lib/platform/dialog");
       const selected = await open({
-        title: expertKind === "expert-team" ? "导入 WorkBuddy 专家团" : "导入 WorkBuddy 专家",
+        title: expertKind === "expert-team" ? "导入 WorkBuddy 专家团" : "导入插件包",
         multiple: false,
         directory: true,
       });
@@ -149,8 +153,8 @@
     if (!canManage || busyId) return;
     try {
       const { confirm } = await import("$lib/platform/dialog");
-      const ok = await confirm("卸载 WorkBuddy 专家“" + item.name + "”？插件数据目录会保留。", {
-        title: "卸载 WorkBuddy 专家",
+      const ok = await confirm("卸载插件“" + item.name + "”？插件数据目录会保留。", {
+        title: "卸载插件",
         kind: "warning",
       });
       if (!ok) return;
@@ -183,7 +187,7 @@
       <div class="flex items-center gap-2">
         <span class="h-2 w-2 rounded-full bg-violet-500"></span>
         <h2 class="text-sm font-semibold text-foreground">
-          {expertKind === "expert-team" ? "专家团" : "专家"}
+          {!expertKind ? "Agent Plugins" : expertKind === "expert-team" ? "专家团" : "专家"}
         </h2>
         <span
           class="rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-700 dark:text-violet-300"
@@ -191,7 +195,9 @@
         >
       </div>
       <p class="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-        直接导入 WorkBuddy .codebuddy-plugin 专家包；包内 Skill、Agent 指令和 MCP 依赖会一起加载。
+        {expertKind
+          ? "直接导入 WorkBuddy .codebuddy-plugin 专家包；包内 Skill、Agent 指令和 MCP 依赖会一起加载。"
+          : "导入 Agent Plugin 或 Claude Code Plugin；Skills 和 MCP 复用 AgentCabin Host，其他 Claude 组件仅识别，不执行。"}
       </p>
       <p class="mt-1 text-[11px] leading-5 text-muted-foreground/80">
         组件配置只读展示；环境变量和请求头仅显示键名，不把凭据展示到界面。
@@ -203,8 +209,8 @@
           <input
             bind:value={source}
             class="min-h-9 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-xs outline-none placeholder:text-muted-foreground/70 focus:border-primary"
-            placeholder="GitHub URL 或 WorkBuddy 专家包目录"
-            aria-label="WorkBuddy 专家包来源"
+            placeholder="GitHub URL 或插件包目录"
+            aria-label="插件包来源"
             onkeydown={(event) => {
               if (event.key === "Enter") void install();
             }}
@@ -224,7 +230,7 @@
           disabled={Boolean(busyId)}
           onclick={() => void chooseLocal()}
         >
-          选择本地 WorkBuddy 包
+          选择本地插件包
         </button>
       </div>
     {/if}
@@ -250,14 +256,17 @@
     <div class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
       <span class="h-4 w-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary"
       ></span>
-      正在读取 WorkBuddy {expertKind === "expert-team" ? "专家团" : "专家"}…
+      正在读取 {!expertKind ? "Agent Plugins" : expertKind === "expert-team" ? "专家团" : "专家"}…
     </div>
   {:else if visiblePlugins.length === 0}
     <div
       class="rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground"
     >
-      {expertKind === "expert-team" ? "还没有导入专家团。" : "还没有导入专家。"}可粘贴 GitHub
-      地址，或选择包含 .codebuddy-plugin/plugin.json 的本地目录。
+      {!expertKind
+        ? "还没有导入 Agent Plugin。"
+        : expertKind === "expert-team"
+          ? "还没有导入专家团。"
+          : "还没有导入专家。"}可粘贴 GitHub 地址，或选择本地插件目录。
     </div>
   {:else}
     <div class="space-y-3">
@@ -346,6 +355,31 @@
               class="border-b border-red-500/20 bg-red-500/5 px-4 py-2 text-xs text-red-600 dark:text-red-400"
             >
               清单无效：{item.error}
+            </div>
+          {/if}
+          {#if !expertKind}
+            <div class="text-xs text-muted-foreground">
+              {item.packageFormat === "claude-code" ? "Claude Code Plugin" : "Agent Plugin"}
+              · Compatibility: {item.compatibility?.level === "full"
+                ? "Full · 完全兼容"
+                : item.compatibility?.level === "partial"
+                  ? "Partial · 部分兼容"
+                  : "Unsupported · 不可运行"}
+              <p>
+                Skills {item.skills.length} · MCP {item.mcpServers.length}
+                {#each ["commands", "agents", "hooks"] as kind}
+                  · {kind} {item.components?.filter((c) => c.kind === kind).length ?? 0}
+                {/each}
+              </p>
+              {#if item.compatibility?.supported.length}
+                <p>支持执行：{item.compatibility.supported.join(", ")}</p>
+              {/if}
+              {#if item.compatibility?.detectedUnsupported.length}
+                <p>已识别，当前不执行：{item.compatibility.detectedUnsupported.join(", ")}</p>
+              {/if}
+              {#each item.compatibility?.blocked ?? [] as blocked}
+                <p class="text-destructive">Blocked: {blocked}</p>
+              {/each}
             </div>
           {/if}
           {#if item.warnings.length > 0}
