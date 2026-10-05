@@ -103,7 +103,6 @@
   import { formatInstallCount, relativeTime } from "$lib/utils/format";
   import { renderMarkdown } from "$lib/utils/markdown";
   import { dbg, dbgWarn } from "$lib/utils/debug";
-  import { ALL_RUNTIME_PROVIDERS, RUNTIME_PROVIDERS_CONFIG } from "$lib/utils/agent-metadata";
   import { getSavedProjectCwd } from "$lib/utils/project-cwd";
   import McpDiscoverPanel from "$lib/components/McpDiscoverPanel.svelte";
   import McpConfiguredPanel from "$lib/components/McpConfiguredPanel.svelte";
@@ -128,9 +127,6 @@
   import { t } from "$lib/i18n/index.svelte";
   import { getTransport } from "$lib/transport";
 
-  const runtimeProviderSummary = ALL_RUNTIME_PROVIDERS.map(
-    (provider) => RUNTIME_PROVIDERS_CONFIG[provider].name,
-  ).join(" · ");
   import type {
     MarketplacePlugin,
     StandaloneSkill,
@@ -3115,20 +3111,6 @@
                 >
                   <span class="font-semibold text-foreground">全局配置：</span>
                   一个开关同时影响所有对话与任务。安装实体、认证与公共配置共用；不同运行时仍保留各自的权限、审批、沙箱与交付边界。切换不会影响正在进行的会话。
-                </div>
-
-                <!-- 来源与支持运行时徽标 -->
-                <div
-                  class="mt-4 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground border-t border-border/40 pt-3"
-                >
-                  <span
-                    class="rounded-md bg-background/80 border border-border/50 px-2 py-1 font-mono"
-                  >
-                    配置来源：~/.agentcabin
-                  </span>
-                  <span class="rounded-md bg-background/80 border border-border/50 px-2 py-1">
-                    已登记的 Runtime Provider：{runtimeProviderSummary}
-                  </span>
                 </div>
               </div>
 
