@@ -108,7 +108,7 @@
 <div class="flex flex-1 flex-col min-h-0 space-y-4">
   <!-- Top Workspace Header -->
   <div
-    class="flex shrink-0 flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/70 bg-card/70 px-5 py-4 shadow-sm"
+    class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3"
   >
     <div class="min-w-0">
       <div class="flex items-center gap-2.5">
@@ -123,7 +123,7 @@
               }
               if (e.key === "Escape") renaming = false;
             }}
-            class="min-h-0 w-64 rounded-lg border border-border bg-background px-2.5 py-1 text-lg font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            class="min-h-0 w-64 rounded-lg border border-border bg-background px-2.5 py-1 text-[var(--ui-font-size-heading)] font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             disabled={renameBusy}
             maxlength="80"
           />
@@ -163,7 +163,7 @@
             >
           </button>
         {:else}
-          <h2 class="truncate text-lg font-semibold text-foreground">
+          <h2 class="truncate text-[var(--ui-font-size-heading)] font-semibold text-foreground">
             {workspace.name}
           </h2>
           <button
@@ -214,7 +214,7 @@
     <div class="flex shrink-0 items-center gap-2.5">
       <button
         type="button"
-        class="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 hover:shadow"
+        class="inline-flex min-h-9 items-center gap-1.5 rounded-[var(--radius-card)] bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-none transition-all hover:opacity-90 hover:shadow-none"
         onclick={onNewConversation}
       >
         <svg
@@ -233,9 +233,7 @@
   </div>
 
   <!-- Workspace Configuration View Container -->
-  <div
-    class="flex flex-1 flex-col min-h-0 overflow-hidden rounded-2xl border border-border/70 bg-card/50 shadow-sm"
-  >
+  <div class="flex flex-1 flex-col min-h-0 overflow-hidden border-t border-border/60">
     <!-- Tab navigation -->
     <div class="shrink-0 border-b border-border/60 bg-background/40 px-4 py-2">
       <div class="flex items-center justify-between gap-4">
@@ -244,9 +242,9 @@
             type="button"
             role="tab"
             aria-selected={activeTab === "tasks"}
-            class="flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors {activeTab ===
+            class="flex items-center gap-2 rounded-[var(--radius-card)] px-3.5 py-1.5 text-xs font-medium transition-colors {activeTab ===
             'tasks'
-              ? 'bg-card text-foreground shadow-sm font-semibold'
+              ? 'bg-card text-foreground shadow-none font-semibold'
               : 'text-muted-foreground hover:bg-card/60 hover:text-foreground'}"
             onclick={() => (activeTab = "tasks")}
           >
@@ -263,9 +261,9 @@
             type="button"
             role="tab"
             aria-selected={activeTab === "materials"}
-            class="flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors {activeTab ===
+            class="flex items-center gap-2 rounded-[var(--radius-card)] px-3.5 py-1.5 text-xs font-medium transition-colors {activeTab ===
             'materials'
-              ? 'bg-card text-foreground shadow-sm font-semibold'
+              ? 'bg-card text-foreground shadow-none font-semibold'
               : 'text-muted-foreground hover:bg-card/60 hover:text-foreground'}"
             onclick={() => (activeTab = "materials")}
           >
@@ -279,9 +277,9 @@
             type="button"
             role="tab"
             aria-selected={activeTab === "artifacts"}
-            class="flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors {activeTab ===
+            class="flex items-center gap-2 rounded-[var(--radius-card)] px-3.5 py-1.5 text-xs font-medium transition-colors {activeTab ===
             'artifacts'
-              ? 'bg-card text-foreground shadow-sm font-semibold'
+              ? 'bg-card text-foreground shadow-none font-semibold'
               : 'text-muted-foreground hover:bg-card/60 hover:text-foreground'}"
             onclick={() => (activeTab = "artifacts")}
           >
@@ -300,7 +298,7 @@
         <div class="space-y-6">
           {#if workspacePendingCount > 0}
             <div
-              class="flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs"
+              class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs"
               role="status"
             >
               <span class="text-amber-700 dark:text-amber-300">

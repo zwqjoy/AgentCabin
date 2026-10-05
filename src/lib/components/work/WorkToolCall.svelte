@@ -378,7 +378,7 @@
   >
     <details class="group/work-delegate">
       <summary
-        class="flex min-h-6 cursor-pointer select-none list-none items-center gap-2 rounded px-1 py-0.5 text-muted-foreground/80 hover:text-foreground transition-colors hover:bg-muted/30 [&::-webkit-details-marker]:hidden"
+        class="agent-tool-row flex min-h-6 cursor-pointer select-none list-none items-center gap-2 rounded px-1 py-0.5 text-muted-foreground/80 hover:text-foreground transition-colors hover:bg-muted/30 [&::-webkit-details-marker]:hidden"
       >
         <span class="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           {#if isDelegateRunning}
@@ -457,7 +457,7 @@
   <!-- Resolved: Approved directory access card -->
   <details class="{nested ? 'w-full py-0.5' : 'chat-content-width py-1.5'} text-sm">
     <summary
-      class="group flex min-h-8 cursor-pointer select-none list-none items-center gap-3 rounded-lg px-0.5 py-1 text-muted-foreground transition-colors hover:bg-muted/45 [&::-webkit-details-marker]:hidden"
+      class="agent-tool-row group flex min-h-8 cursor-pointer select-none list-none items-center gap-3 rounded-lg px-0.5 py-1 text-muted-foreground transition-colors hover:bg-muted/45 [&::-webkit-details-marker]:hidden"
     >
       <span
         class="flex h-5 w-5 shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400"
@@ -490,7 +490,9 @@
         <path d="m5 12 4 4L19 6" />
       </svg>
     </summary>
-    <div class="ml-8 mt-1 space-y-2 rounded-xl border border-border/45 bg-muted/20 px-3 py-2.5">
+    <div
+      class="agent-tool-details ml-8 mt-1 space-y-2 rounded-[var(--radius-card)] border border-border/45 bg-muted/20 px-3 py-2.5"
+    >
       <div class="text-[10px] text-muted-foreground/70">
         执行详情：<code class="font-mono">{entry.tool.tool_name}</code>
       </div>
@@ -517,7 +519,7 @@
       : 'chat-content-width py-1.5'} text-sm text-red-600 dark:text-red-400"
   >
     <summary
-      class="group flex min-h-8 cursor-pointer select-none list-none items-center gap-3 rounded-lg px-0.5 py-1 text-muted-foreground transition-colors hover:bg-muted/45 [&::-webkit-details-marker]:hidden"
+      class="agent-tool-row group flex min-h-8 cursor-pointer select-none list-none items-center gap-3 rounded-lg px-0.5 py-1 text-muted-foreground transition-colors hover:bg-muted/45 [&::-webkit-details-marker]:hidden"
     >
       <span class="flex h-5 w-5 shrink-0 items-center justify-center text-red-500">
         <svg
@@ -538,7 +540,9 @@
       </span>
       <span class="shrink-0 text-xs font-medium text-red-500">已拒绝</span>
     </summary>
-    <div class="ml-8 mt-1 space-y-2 rounded-xl border border-border/45 bg-muted/20 px-3 py-2.5">
+    <div
+      class="agent-tool-details ml-8 mt-1 space-y-2 rounded-[var(--radius-card)] border border-border/45 bg-muted/20 px-3 py-2.5"
+    >
       <div class="text-[10px] text-muted-foreground/70">
         执行详情：<code class="font-mono">{entry.tool.tool_name}</code>
       </div>
@@ -552,7 +556,7 @@
   <!-- Standard Tool Call Entry (Cursor-style action chip) -->
   <details class="{nested ? 'w-full py-0.5' : 'chat-content-width py-0.5'} text-xs group">
     <summary
-      class="flex min-h-6 cursor-pointer select-none list-none items-center gap-2 rounded-md px-1 py-0.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground [&::-webkit-details-marker]:hidden"
+      class="agent-tool-row flex min-h-6 cursor-pointer select-none list-none items-center gap-2 rounded-md px-1 py-0.5 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground [&::-webkit-details-marker]:hidden"
     >
       <span class="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
         {#if isToolFailed}
@@ -584,12 +588,14 @@
         <span>{actionSummary.verb}</span>
         <span class="ml-1 font-mono text-foreground/80 font-normal">{actionSummary.target}</span>
       </span>
+    </summary>
+    <div
+      class="agent-tool-details ml-5 mt-1 space-y-2 rounded-lg border border-border/40 bg-muted/20 p-2 text-[11px]"
+    >
       {#if entry.tool.duration_ms != null && entry.tool.duration_ms > 0}
         <span class="shrink-0 text-[10px] text-muted-foreground/40">{entry.tool.duration_ms}ms</span
         >
       {/if}
-    </summary>
-    <div class="ml-5 mt-1 space-y-2 rounded-lg border border-border/40 bg-muted/20 p-2 text-[11px]">
       {#if executionFailure}
         <div
           class="rounded-md border border-red-500/25 bg-red-500/5 px-2.5 py-2 text-red-700 dark:text-red-300"

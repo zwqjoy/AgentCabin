@@ -253,7 +253,7 @@
   >
     <details class="group/delegate-details">
       <summary
-        class="flex min-h-6 cursor-pointer select-none list-none items-center gap-2 rounded px-1 py-0.5 text-muted-foreground/80 hover:text-foreground transition-colors hover:bg-muted/30 [&::-webkit-details-marker]:hidden"
+        class="agent-tool-row flex min-h-6 cursor-pointer select-none list-none items-center gap-2 rounded px-1 py-0.5 text-muted-foreground/80 hover:text-foreground transition-colors hover:bg-muted/30 [&::-webkit-details-marker]:hidden"
       >
         <span class="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           {#if isDelegateRunning}
@@ -332,7 +332,7 @@
     <div
       role="button"
       tabindex="0"
-      class="flex items-center h-6 w-full min-w-0 rounded px-1 text-[13px] leading-6 transition-colors hover:bg-muted/30 cursor-pointer select-none text-muted-foreground/80 hover:text-foreground group/item {activity.state ===
+      class="agent-tool-row flex items-center w-full min-w-0 rounded px-1 text-[13px] leading-6 transition-colors hover:bg-muted/30 cursor-pointer select-none text-muted-foreground/80 hover:text-foreground group/item {activity.state ===
       'running'
         ? 'bg-muted/25'
         : ''}"
@@ -525,7 +525,7 @@
     <!-- DSH ioCard & Drawer -->
     {#if isDrawerOpen}
       <div
-        class="mt-1 mb-1.5 ml-4 overflow-hidden rounded-xl border border-border/60 bg-[var(--chat-surface-code)] text-xs font-mono shadow-xs animate-fade-in"
+        class="agent-tool-details mt-1 mb-1.5 ml-4 overflow-hidden rounded-[var(--radius-card)] border border-border/60 bg-[var(--chat-surface-code)] text-xs font-mono animate-fade-in"
       >
         {#if inputJsonString}
           <div

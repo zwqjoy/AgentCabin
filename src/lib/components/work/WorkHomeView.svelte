@@ -53,13 +53,13 @@
 </script>
 
 <div
-  class="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col overflow-y-auto px-1 pb-10 pt-10 sm:pt-16"
+  class="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col overflow-y-auto px-1 pb-6 pt-6 sm:pt-8"
 >
   <section aria-labelledby="work-home-title">
     <p class="text-xs font-medium text-muted-foreground">AgentCabin Work</p>
     <h1
       id="work-home-title"
-      class="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
+      class="mt-2 text-[var(--ui-font-size-heading)] font-semibold tracking-tight text-foreground"
     >
       今天要让 Agent 做什么？
     </h1>
@@ -72,7 +72,7 @@
       }}
     >
       <div
-        class="flex items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10"
+        class="flex items-center gap-2 rounded-[var(--radius-card)] border border-border bg-card px-3 py-2 shadow-none transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10"
       >
         <input
           aria-label="描述你希望完成的事情"
@@ -84,7 +84,7 @@
           type="submit"
           aria-label="开始工作"
           disabled={!quickTask.trim()}
-          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-lg text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-card)] bg-primary text-lg text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >→</button
         >
       </div>
@@ -107,7 +107,7 @@
   </section>
 
   {#if recentSessions.length > 0}
-    <section class="mt-12" aria-labelledby="recent-title">
+    <section class="mt-6" aria-labelledby="recent-title">
       <div class="flex items-center justify-between">
         <h2 id="recent-title" class="text-sm font-semibold text-foreground">最近</h2>
         <span class="text-[11px] text-muted-foreground">{recentSessions.length}</span>
@@ -116,7 +116,7 @@
         {#each recentSessions as session (session.id)}
           <button
             type="button"
-            class="flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-accent/40"
+            class="flex w-full items-center gap-3 py-2 text-left transition-colors hover:bg-accent/40"
             onclick={() => openSession(session)}
           >
             <span class="min-w-0 flex-1 truncate text-sm text-foreground"
@@ -131,7 +131,7 @@
     </section>
   {/if}
 
-  <details class="mt-10 border-t border-border/60 pt-3">
+  <details class="mt-6 border-t border-border/60 pt-3">
     <summary
       class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
     >
@@ -143,7 +143,7 @@
         {#each workspaces as workspace (workspace.id)}
           <button
             type="button"
-            class="flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-accent/40"
+            class="flex w-full items-center gap-3 py-2 text-left transition-colors hover:bg-accent/40"
             title={workspace.primaryWorkRoot || workspace.root}
             onclick={() => onSelectWorkspace(workspace.id)}
             ><span class="min-w-0 flex-1 truncate text-sm text-foreground">{workspace.name}</span
@@ -154,7 +154,7 @@
     {:else}
       <button
         type="button"
-        class="mt-3 w-full rounded-xl border border-dashed border-border px-3 py-4 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        class="mt-3 w-full rounded-[var(--radius-card)] border border-dashed border-border px-3 py-4 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
         onclick={onCreateWorkspace}>还没有工作区，创建一个来关联本地文件夹。</button
       >
     {/if}

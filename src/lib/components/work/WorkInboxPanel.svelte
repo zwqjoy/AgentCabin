@@ -262,7 +262,7 @@
   <!-- Clear Confirmation Banner/Modal -->
   {#if showConfirmClear}
     <div
-      class="mx-4 mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 text-xs text-red-700 dark:text-red-300 space-y-2"
+      class="mx-4 mt-3 rounded-[var(--radius-card)] border border-red-500/30 bg-red-500/10 p-3.5 text-xs text-red-700 dark:text-red-300 space-y-2"
     >
       <div class="font-semibold flex items-center gap-1.5">
         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -287,7 +287,7 @@
         </button>
         <button
           type="button"
-          class="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 shadow-sm"
+          class="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 shadow-none"
           onclick={executeClearAll}
         >
           确认清空
@@ -298,7 +298,7 @@
 
   {#if inboxStore.error}
     <div
-      class="mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-700 dark:text-red-300"
+      class="mx-4 mt-3 flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-700 dark:text-red-300"
       role="alert"
     >
       <span class="min-w-0 flex-1">{inboxStore.error}</span>
@@ -319,7 +319,7 @@
       <div class="py-8 text-center text-xs text-muted-foreground">正在加载事项…</div>
     {:else if displayedItems.length === 0}
       <div
-        class="flex items-center justify-between rounded-xl border border-dashed border-border/60 bg-card/30 p-4 text-xs text-muted-foreground"
+        class="flex items-center justify-between rounded-[var(--radius-card)] border border-dashed border-border/60 bg-card/30 p-4 text-xs text-muted-foreground"
       >
         <div class="flex items-center gap-2">
           <svg
@@ -360,7 +360,7 @@
           {@const itemError = itemErrors[item.id]}
 
           <div
-            class="group relative rounded-xl border border-border/60 bg-card/60 p-4 shadow-sm transition-all hover:border-border space-y-3 opacity-90"
+            class="group relative rounded-[var(--radius-card)] border border-border/60 bg-card/60 p-4 shadow-none transition-all hover:border-border space-y-3 opacity-90"
           >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0 flex-1">

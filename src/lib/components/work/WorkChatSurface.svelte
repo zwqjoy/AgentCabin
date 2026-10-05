@@ -266,8 +266,7 @@
     return WORK_PRESETS.some((preset) => preset.id === value) ? (value as WorkPreset) : "office";
   }
 
-  // Presets describe the user's work intent; the underlying Work Harness and
-  // shared Browser/Web Runtime remain unchanged. A loaded run owns its preset
+  // Presets describe the user's work intent. A loaded run owns its preset
   // so reopening a conversation cannot silently switch its behavior.
   let selectedWorkPreset = $state<WorkPreset>(
     parseWorkPreset($page.url.searchParams.get("preset")),
@@ -2347,25 +2346,6 @@
       }
     }
 
-    function handleBrowserSessionStopped(event: Event) {
-      const runId = (event as CustomEvent<{ runId?: unknown }>).detail?.runId;
-      const current = session.run;
-      if (
-        typeof runId !== "string" ||
-        !current ||
-        (runId !== current.id && runId !== current.work_run_id)
-      ) {
-        return;
-      }
-
-      // BrowserInspector already asked the backend to stop the actor. Adopt
-      // the terminal state locally as well, because the selected sidebar row
-      // deliberately avoids a full metadata scan during active streaming.
-      const stopped = { ...current, status: "stopped" as const };
-      workSession.session.adoptStoppedRun(stopped);
-      notifySessionsChanged(stopped);
-    }
-
     function onWorkNewChat(event: Event) {
       const detail = (event as CustomEvent<{ workspaceId?: string; prompt?: string }>).detail;
       const wsId = workspace?.id ?? "";
@@ -2444,7 +2424,6 @@
 
     window.addEventListener(RUNS_CHANGED_EVENT, handleRunMutation);
     window.addEventListener("agentcabin:work-new-chat", onWorkNewChat);
-    window.addEventListener("agentcabin:browser-session-stopped", handleBrowserSessionStopped);
     function onUserSettingsChanged(event: Event) {
       const next = (event as CustomEvent<UserSettings>).detail;
       if (next) userSettings = next;
@@ -2499,7 +2478,6 @@
       inboxChangedUnlisten?.();
       window.removeEventListener(RUNS_CHANGED_EVENT, handleRunMutation);
       window.removeEventListener("agentcabin:work-new-chat", onWorkNewChat);
-      window.removeEventListener("agentcabin:browser-session-stopped", handleBrowserSessionStopped);
       window.removeEventListener("agentcabin:user-settings-changed", onUserSettingsChanged);
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
       window.removeEventListener("focus", handleVisibilityOrFocus);
@@ -2765,7 +2743,7 @@
           />
 
           <h1
-            class="work-home-title text-center text-2xl font-bold tracking-tight text-foreground select-none sm:text-3xl"
+            class="work-home-title text-center font-semibold tracking-tight text-foreground select-none"
           >
             今天要让 Agent 做什么？
           </h1>

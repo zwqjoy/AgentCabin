@@ -113,12 +113,12 @@
 
 <style>
   .approval-card {
-    border-radius: 12px;
+    border-radius: var(--radius-card);
     border: 1px solid hsl(var(--border));
     background: hsl(var(--card));
-    padding: 14px 16px;
+    padding: 12px;
     margin: 8px 0;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    box-shadow: none;
     display: flex;
     flex-direction: column;
     gap: 10px;

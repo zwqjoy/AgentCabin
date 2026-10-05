@@ -80,9 +80,7 @@
   ];
 </script>
 
-<div
-  class="flex h-9 shrink-0 items-center justify-between border-b border-border/60 bg-muted/20 px-2 select-none"
->
+<div class="workspace-pane-header">
   <!-- Left: Tab items + Add button -->
   <div class="flex items-center gap-1 overflow-x-auto min-w-0 pr-2 scrollbar-hide">
     {#each tabs as tab (tab.id)}
@@ -91,9 +89,7 @@
         role="tab"
         tabindex="0"
         aria-selected={isActive}
-        class="group relative flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium transition-all cursor-pointer border {isActive
-          ? 'bg-background text-foreground shadow-xs border-border/80'
-          : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted/40 hover:text-foreground'}"
+        class="workspace-pane-tab group relative"
         onclick={() => onSelectTab(tab.id)}
         onkeydown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -251,7 +247,7 @@
 {#if addMenuOpen}
   <div
     bind:this={addMenuRef}
-    class="fixed z-[9999] w-48 rounded-xl border border-border/80 bg-popover/95 p-1 shadow-2xl text-xs backdrop-blur-md"
+    class="fixed z-[9999] w-48 rounded-[var(--radius-card)] border border-border/80 bg-popover/95 p-1 shadow-md text-xs backdrop-blur-md"
     style="top: {menuPos.top}px; left: {menuPos.left}px;"
   >
     {#each menuItems as item}

@@ -255,7 +255,7 @@
 <div class="mx-auto w-full max-w-5xl px-6 py-10 lg:px-10">
   <div class="mb-7 flex items-start justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-semibold tracking-tight text-foreground">
+      <h1 class="text-[var(--ui-font-size-heading)] font-semibold tracking-tight text-foreground">
         {t("settings_archived_title")}
       </h1>
       <p class="mt-2 text-sm text-muted-foreground">{t("settings_archived_desc")}</p>

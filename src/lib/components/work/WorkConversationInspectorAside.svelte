@@ -266,27 +266,23 @@
     </div>
   {/if}
 
-  <div
-    class="flex h-9 shrink-0 items-center justify-between border-b border-border/60 bg-muted/20 px-2 select-none"
-  >
+  <div class="workspace-pane-header">
     <!-- Left: Tab items -->
-    <div class="flex items-center gap-1 min-w-0 overflow-x-auto scrollbar-hide">
+    <div class="flex items-center gap-1 min-w-0 overflow-x-auto scrollbar-hide" role="tablist">
       <button
         type="button"
-        class="flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors border {activeTab ===
-        'tasks'
-          ? 'bg-background text-foreground shadow-xs border-border/80'
-          : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted/40 hover:text-foreground'}"
+        class="workspace-pane-tab"
+        aria-selected={activeTab === "tasks"}
+        role="tab"
         onclick={() => (activeTab = "tasks")}
       >
         <span>任务与成果</span>
       </button>
       <button
         type="button"
-        class="flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors border {activeTab ===
-        'files'
-          ? 'bg-background text-foreground shadow-xs border-border/80'
-          : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted/40 hover:text-foreground'}"
+        class="workspace-pane-tab"
+        aria-selected={activeTab === "files"}
+        role="tab"
         onclick={() => (activeTab = "files")}
       >
         <span>文件</span>

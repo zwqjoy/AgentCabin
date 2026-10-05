@@ -7015,7 +7015,7 @@
                   <!-- Title -->
                   {#if welcomeProjectName}
                     <h2
-                      class="text-center text-xl sm:text-2xl font-semibold text-foreground mb-1 animate-fade-in tracking-tight"
+                      class="text-center text-[var(--ui-font-size-heading)] font-semibold text-foreground mb-1 animate-fade-in tracking-tight"
                     >
                       你想让我们在 <span class="font-semibold text-foreground"
                         >{welcomeProjectName}</span
@@ -7026,7 +7026,7 @@
                     </p>
                   {:else}
                     <h2
-                      class="text-center text-xl sm:text-2xl font-semibold text-foreground mb-1 animate-fade-in tracking-tight"
+                      class="text-center text-[var(--ui-font-size-heading)] font-semibold text-foreground mb-1 animate-fade-in tracking-tight"
                     >
                       {t("chat_welcomeNoProject")}
                     </h2>

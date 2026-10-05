@@ -291,7 +291,7 @@
       <section class="border-b border-border/60">
         <button
           type="button"
-          class="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
+          class="flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-accent/40"
           aria-expanded={progressOpen}
           onclick={() => (progressOpen = !progressOpen)}
         >
@@ -344,10 +344,10 @@
 
     {#if hasArtifactDetails}
       <section class="border-b border-border/60">
-        <div class="flex min-h-14 items-center gap-1 pr-2">
+        <div class="flex min-h-10 items-center gap-1 pr-2">
           <button
             type="button"
-            class="flex min-w-0 flex-1 items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
+            class="flex min-w-0 flex-1 items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-accent/40"
             aria-expanded={artifactsOpen}
             onclick={() => (artifactsOpen = !artifactsOpen)}
           >
@@ -415,10 +415,10 @@
 
     {#if getReceipt && hasOperationalWork}
       <section class="border-b border-border/60">
-        <div class="flex min-h-14 items-center gap-1 pr-2">
+        <div class="flex min-h-10 items-center gap-1 pr-2">
           <button
             type="button"
-            class="flex min-w-0 flex-1 items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
+            class="flex min-w-0 flex-1 items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-accent/40"
             aria-expanded={receiptOpen}
             onclick={toggleReceipt}
           >
@@ -460,7 +460,7 @@
       <section class="border-b border-border/60">
         <button
           type="button"
-          class="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
+          class="flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-accent/40"
           aria-expanded={infoOpen}
           onclick={() => (infoOpen = !infoOpen)}
         >
@@ -488,7 +488,7 @@
   {:else}
     <div class="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
       <div
-        class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 bg-muted/30 text-muted-foreground/60"
+        class="mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--radius-card)] border border-border/60 bg-muted/30 text-muted-foreground/60"
       >
         <svg
           viewBox="0 0 24 24"

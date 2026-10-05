@@ -96,10 +96,10 @@
     --status-success: #20b982;
     --status-warning: #b7791f;
     --status-danger: #d34b4b;
-    --radius-sm: 8px;
-    --radius-control: 10px;
-    --radius-card: 14px;
-    --radius-composer: 18px;
+    --radius-sm: 6px;
+    --radius-control: 6px;
+    --radius-card: 8px;
+    --radius-composer: 12px;
     --control-height-sm: 2rem;
     --control-height-md: 2.25rem;
     --control-height-lg: 2.5rem;
@@ -124,7 +124,7 @@
     /* Typography scale */
     --ui-font-size: 14px;
     --ui-font-size-secondary: 12px;
-    --ui-font-size-caption: 10px;
+    --ui-font-size-caption: 11px;
     --ui-font-size-micro: 11px;
     --ui-font-size-tiny: 9px;
     --ui-font-size-heading: 16px;
@@ -146,22 +146,22 @@
     --chat-line-height: 1.62;
     --chat-secondary-line-height: 1.5;
     /* Text colors */
-    --chat-text-primary: #202124;
-    --chat-text-secondary: #646b75;
-    --chat-text-tertiary: #9298a1;
+    --chat-text-primary: var(--text-primary);
+    --chat-text-secondary: var(--text-secondary);
+    --chat-text-tertiary: var(--text-tertiary);
     /* Surfaces */
     --chat-surface: #ffffff;
     --chat-surface-subtle: #f7f8f9;
     --chat-surface-code: #f5f6f7;
     --chat-surface-user: #f5f6f7;
     /* Borders */
-    --chat-border: rgba(17, 24, 39, 0.07);
-    --chat-border-strong: rgba(17, 24, 39, 0.12);
+    --chat-border: var(--border-subtle);
+    --chat-border-strong: var(--border-strong);
     /* Radii */
-    --chat-radius-sm: 6px;
-    --chat-radius-md: 10px;
-    --chat-radius-lg: 12px;
-    --chat-radius-user: 12px;
+    --chat-radius-sm: var(--radius-sm);
+    --chat-radius-md: var(--radius-card);
+    --chat-radius-lg: var(--radius-composer);
+    --chat-radius-user: var(--radius-card);
   }
 
   /* ── Dark mode ── */
@@ -225,25 +225,10 @@
     --shadow-control-focus: 0 0 0 2px rgba(53, 201, 146, 0.22);
 
     /* ── AgentCabin Conversation Design System Tokens (Dark) ── */
-    --chat-font-size: 15px;
-    --chat-secondary-size: 13px;
-    --chat-meta-size: 12px;
-    --chat-code-size: 13px;
-    --chat-line-height: 1.62;
-    --chat-secondary-line-height: 1.5;
-    --chat-text-primary: #e9eaec;
-    --chat-text-secondary: #a0a4ab;
-    --chat-text-tertiary: #747981;
     --chat-surface: #1b1c20;
     --chat-surface-subtle: #212226;
     --chat-surface-code: #15171c;
     --chat-surface-user: #242629;
-    --chat-border: rgba(255, 255, 255, 0.07);
-    --chat-border-strong: rgba(255, 255, 255, 0.12);
-    --chat-radius-sm: 6px;
-    --chat-radius-md: 10px;
-    --chat-radius-lg: 12px;
-    --chat-radius-user: 12px;
   }
 
   /* ── Neutral Grayscale Color Schemes ── */
@@ -2671,9 +2656,9 @@ body {
 .work-home-title {
   margin-bottom: 8px;
   color: var(--text-primary);
-  font-size: 28px;
+  font-size: var(--ui-font-size-heading);
   font-weight: 600;
-  line-height: 36px;
+  line-height: 24px;
   letter-spacing: -0.025em;
 }
 
@@ -2719,12 +2704,12 @@ body {
   border: 1px solid var(--border-default) !important;
   border-radius: var(--radius-composer) !important;
   background: var(--bg-surface) !important;
-  box-shadow: var(--shadow-floating) !important;
+  box-shadow: none !important;
 }
 
 .prompt-composer:focus-within {
-  border-color: var(--chat-border-strong) !important;
-  box-shadow: var(--shadow-floating) !important;
+  border-color: var(--accent-border) !important;
+  box-shadow: var(--shadow-control-focus) !important;
 }
 
 .prompt-composer > div:first-child {
@@ -3103,7 +3088,7 @@ body {
   }
 
   .prompt-composer {
-    border-radius: 14px !important;
+    border-radius: var(--radius-composer) !important;
   }
 }
 
@@ -3151,7 +3136,12 @@ mark.agent-search-highlight.agent-search-highlight-active {
 }
 
 .work-home-secondary-actions {
-  display: none !important;
+  margin-top: 16px;
+}
+
+.work-home-secondary-actions button {
+  border-radius: var(--radius-control);
+  box-shadow: none;
 }
 
 .work-home-composer {
@@ -3165,8 +3155,8 @@ mark.agent-search-highlight.agent-search-highlight-active {
   }
 
   .work-home-title {
-    font-size: 24px !important;
-    line-height: 32px;
+    font-size: var(--ui-font-size-heading) !important;
+    line-height: 24px;
   }
 }
 
@@ -3242,4 +3232,76 @@ mark.agent-search-highlight.agent-search-highlight-active {
   .composer-permission-trigger-chevron {
     display: none;
   }
+}
+
+/* Code and Work share chrome, while retaining their own pane and tool state. */
+.workspace-pane-header {
+  display: flex;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: 8px;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-subtle);
+  user-select: none;
+}
+
+.workspace-pane-tab {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-size-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.workspace-pane-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.workspace-pane-tab[aria-selected="true"] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.workspace-pane-tab:focus-visible,
+.agent-tool-row:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+.agent-tool-row {
+  min-height: 28px;
+  border-radius: var(--radius-sm);
+  font-size: var(--chat-secondary-size);
+  line-height: 20px;
+}
+
+.agent-tool-details {
+  border-radius: var(--radius-card);
+  border-color: var(--chat-border);
+  background: var(--chat-surface-code);
+  box-shadow: none;
+  font-size: var(--chat-meta-size);
+}
+
+.agent-tool-details pre {
+  max-height: 18rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-family: var(--font-code-override, var(--font-code));
+  font-size: var(--chat-code-size);
+  line-height: 1.5;
 }

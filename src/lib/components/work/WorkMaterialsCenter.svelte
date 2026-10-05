@@ -87,7 +87,7 @@
   <div class="shrink-0 border-b border-border/60 px-4 py-3 sm:px-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-lg font-bold text-foreground">资料与产物</h1>
+        <h1 class="text-[var(--ui-font-size-heading)] font-semibold text-foreground">资料与产物</h1>
         <p class="mt-1 text-xs text-muted-foreground">
           管理可复用资料，并集中查看各工作空间的交付成果。
         </p>

@@ -38,7 +38,7 @@
 </script>
 
 <div
-  class="group flex flex-col justify-between rounded-xl border border-border/70 bg-card/60 p-4 transition-all hover:border-border hover:bg-card/90 hover:shadow-sm"
+  class="group flex flex-col justify-between rounded-[var(--radius-card)] border border-border/70 bg-card/60 p-4 transition-all hover:border-border hover:bg-card/90 hover:shadow-none"
 >
   <!-- Card Top -->
   <div>

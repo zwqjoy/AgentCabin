@@ -406,7 +406,9 @@
   <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     <div>
       <div class="flex items-center gap-2">
-        <h1 class="text-lg font-bold text-foreground">{pageTitle}</h1>
+        <h1 class="text-[var(--ui-font-size-heading)] font-semibold text-foreground">
+          {pageTitle}
+        </h1>
       </div>
       <p class="mt-1 text-xs text-muted-foreground">
         {pageDescription}
@@ -415,7 +417,7 @@
 
     <button
       type="button"
-      class="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-xs transition-all hover:bg-primary/90"
+      class="inline-flex items-center gap-1.5 rounded-[var(--radius-card)] bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-none transition-all hover:bg-primary/90"
       onclick={() => openCreateModal()}
     >
       <span class="text-sm font-bold">+</span>
@@ -425,30 +427,30 @@
 
   <!-- Metric Badges -->
   <div class="grid grid-cols-2 gap-3 {isGlobalView ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}">
-    <div class="rounded-xl border border-border/70 bg-card/60 p-3.5">
+    <div class="rounded-[var(--radius-card)] border border-border/70 bg-card/60 p-3.5">
       <span class="text-[11px] text-muted-foreground font-medium block">定时已激活</span>
       <div class="mt-1 flex items-baseline gap-1.5">
-        <span class="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+        <span class="text-base font-semibold text-emerald-600 dark:text-emerald-400">
           {quickStats.scheduled}
         </span>
         <span class="text-[10px] text-muted-foreground">/ {quickStats.total} 总计</span>
       </div>
     </div>
 
-    <div class="rounded-xl border border-border/70 bg-card/60 p-3.5">
+    <div class="rounded-[var(--radius-card)] border border-border/70 bg-card/60 p-3.5">
       <span class="text-[11px] text-muted-foreground font-medium block">正在执行中</span>
       <div class="mt-1 flex items-baseline gap-1.5">
-        <span class="text-xl font-bold text-amber-600 dark:text-amber-400">
+        <span class="text-base font-semibold text-amber-600 dark:text-amber-400">
           {quickStats.inRun}
         </span>
         <span class="text-[10px] text-muted-foreground">个任务</span>
       </div>
     </div>
 
-    <div class="rounded-xl border border-border/70 bg-card/60 p-3.5">
+    <div class="rounded-[var(--radius-card)] border border-border/70 bg-card/60 p-3.5">
       <span class="text-[11px] text-muted-foreground font-medium block">需人工确认</span>
       <div class="mt-1 flex items-baseline gap-1.5">
-        <span class="text-xl font-bold text-orange-600 dark:text-orange-400">
+        <span class="text-base font-semibold text-orange-600 dark:text-orange-400">
           {quickStats.needsAttention}
         </span>
         <span class="text-[10px] text-muted-foreground">项待办</span>
@@ -456,10 +458,10 @@
     </div>
 
     {#if isGlobalView}
-      <div class="rounded-xl border border-border/70 bg-card/60 p-3.5">
+      <div class="rounded-[var(--radius-card)] border border-border/70 bg-card/60 p-3.5">
         <span class="text-[11px] text-muted-foreground font-medium block">今日已完成</span>
         <div class="mt-1 flex items-baseline gap-1.5">
-          <span class="text-xl font-bold text-foreground">
+          <span class="text-base font-semibold text-foreground">
             {stats?.completedRunsToday ?? 0}
           </span>
           <span class="text-[10px] text-muted-foreground">次运行</span>
@@ -545,7 +547,7 @@
       <input
         type="text"
         placeholder="搜索任务名称或指令…"
-        class="w-full rounded-xl border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary focus:ring-1 focus:ring-primary/20"
+        class="w-full rounded-[var(--radius-card)] border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary focus:ring-1 focus:ring-primary/20"
         bind:value={searchQuery}
       />
     </div>
@@ -554,7 +556,7 @@
   <!-- Tasks are grouped by the next useful action; editing remains a secondary action. -->
   {#if filteredTasks.length === 0}
     <div
-      class="flex h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 p-8 text-center text-xs text-muted-foreground"
+      class="flex h-56 flex-col items-center justify-center rounded-[var(--radius-card)] border border-dashed border-border/80 p-8 text-center text-xs text-muted-foreground"
     >
       <span class="text-2xl">🤖</span>
       <span class="mt-2 font-medium">
@@ -619,7 +621,9 @@
     tabindex="-1"
     onclick={(e) => e.target === e.currentTarget && closeModal()}
   >
-    <div class="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-5">
+    <div
+      class="w-full max-w-lg rounded-[var(--radius-card)] border border-border bg-card p-6 shadow-2xl space-y-5"
+    >
       <div class="flex items-start justify-between gap-4">
         <div>
           <h2 class="text-base font-semibold text-foreground">
@@ -660,7 +664,7 @@
             </label>
             <select
               id="ws-select"
-              class="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
+              class="w-full rounded-[var(--radius-card)] border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
               bind:value={newSelectedWorkspaceId}
             >
               {#each workspaces as ws (ws.id)}
@@ -676,7 +680,7 @@
           </label>
           <input
             id="task-title"
-            class="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
+            class="w-full rounded-[var(--radius-card)] border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
             placeholder={mode === "code"
               ? "例如：每日定时运行自动化测试套件"
               : "例如：每日全网竞品价格监控并生成周报"}
@@ -702,7 +706,7 @@
           <textarea
             id="task-instructions"
             rows="3"
-            class="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
+            class="w-full rounded-[var(--radius-card)] border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
             placeholder={mode === "code"
               ? "描述 Agent 每次运行时在项目中要执行的操作和关注重点…"
               : "描述 Agent 每次运行时要执行的操作和关注重点…"}
@@ -711,7 +715,9 @@
         </div>
 
         <!-- Schedule Section -->
-        <div class="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-3">
+        <div
+          class="rounded-[var(--radius-card)] border border-border/60 bg-muted/20 p-3.5 space-y-3"
+        >
           <div class="flex items-center justify-between">
             <span class="text-xs font-medium text-foreground">开启定时调度</span>
             <label class="relative inline-flex cursor-pointer items-center">
@@ -828,7 +834,7 @@
           <textarea
             id="req-artifacts"
             rows="2"
-            class="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
+            class="w-full rounded-[var(--radius-card)] border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
             placeholder={mode === "code"
               ? "例如：output/weekly-dev-report.md, output/test-summary.md"
               : "例如：output/weekly-report.pdf\\noutput/data.xlsx"}
@@ -847,14 +853,14 @@
         <div class="flex items-center justify-end gap-2 border-t border-border/60 pt-4">
           <button
             type="button"
-            class="rounded-xl border border-border px-4 py-2 text-xs text-foreground hover:bg-accent"
+            class="rounded-[var(--radius-card)] border border-border px-4 py-2 text-xs text-foreground hover:bg-accent"
             onclick={closeModal}
           >
             取消
           </button>
           <button
             type="submit"
-            class="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            class="rounded-[var(--radius-card)] bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             disabled={saving || !newTitle.trim()}
           >
             {saving ? "保存中…" : "保存"}
@@ -873,7 +879,9 @@
     aria-modal="true"
     tabindex="-1"
   >
-    <div class="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-2xl space-y-4">
+    <div
+      class="w-full max-w-sm rounded-[var(--radius-card)] border border-border bg-card p-5 shadow-2xl space-y-4"
+    >
       <h3 class="text-sm font-semibold text-foreground">确认删除任务？</h3>
       <p class="text-xs text-muted-foreground">
         任务「{taskToDelete.title}」将被永久删除，其历史运行记录将保留在日志中。
