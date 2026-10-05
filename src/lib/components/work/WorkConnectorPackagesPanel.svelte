@@ -149,8 +149,8 @@
         >
       </div>
       <p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
-        仅接受 WorkBuddy connector-meta.json 格式，可组合 MCP、CLI 和
-        Skill。导入后默认不信任、不启用。
+        支持官方 connector-meta.json 包，以及归档中的 mcp.json 或 cli.json + Skill
+        目录；缺少元数据时会在导入副本中补齐。导入后默认不信任、不启用。
       </p>
       <p class="mt-1 max-w-2xl text-[11px] leading-5 text-muted-foreground/80">
         CLI 会在信任并启用后安装到 AgentCabin 应用级运行时，不修改系统全局 npm。

@@ -560,6 +560,38 @@ pub fn install_with_paths(
         return Err(error);
     }
 
+    // Public WorkBuddy connector archives sometimes contain only mcp.json or
+    // cli.json plus skills/. Keep the source archive untouched and materialize
+    // the inferred official metadata only in AgentCabin's installed copy.
+    let installed_meta = destination.join("connector-meta.json");
+    let has_installed_meta = match path_exists_without_following_symlink(&installed_meta) {
+        Ok(exists) => exists,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&destination);
+            return Err(error);
+        }
+    };
+    if !has_installed_meta {
+        let metadata = match synthesize_workbuddy_metadata(&destination) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                let _ = fs::remove_dir_all(&destination);
+                return Err(error);
+            }
+        };
+        let content = match serde_json::to_vec_pretty(&metadata) {
+            Ok(content) => content,
+            Err(error) => {
+                let _ = fs::remove_dir_all(&destination);
+                return Err(error.to_string());
+            }
+        };
+        if let Err(error) = fs::write(&installed_meta, content) {
+            let _ = fs::remove_dir_all(&destination);
+            return Err(error.to_string());
+        }
+    }
+
     // Re-validate the copied tree so a future copy implementation cannot
     // weaken the source validation boundary.
     if let Err(error) = read_and_validate_manifest(&destination) {
@@ -2160,7 +2192,174 @@ fn canonical_package_source(source: &Path) -> Result<PathBuf, String> {
 }
 
 fn read_and_validate_manifest(root: &Path) -> Result<ConnectorPackageManifest, String> {
-    read_and_validate_workbuddy_manifest(root)
+    match fs::symlink_metadata(root.join("connector-meta.json")) {
+        Ok(_) => read_and_validate_workbuddy_manifest(root),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let metadata = synthesize_workbuddy_metadata(root)?;
+            read_and_validate_workbuddy_metadata(root, metadata)
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Build the minimum WorkBuddy package metadata for archived connector
+/// directories that contain only an MCP or CLI definition and optional skills.
+/// Ambiguous (both/neither runtime) folders are rejected rather than guessed.
+fn synthesize_workbuddy_metadata(root: &Path) -> Result<Value, String> {
+    let has_mcp = root.join("mcp.json").is_file();
+    let has_cli = root.join("cli.json").is_file();
+    let package_type = match (has_mcp, has_cli) {
+        (true, false) => "mcp",
+        (false, true) => "cli",
+        (true, true) => {
+            return Err(
+                "WorkBuddy connector archive cannot contain both mcp.json and cli.json".into(),
+            )
+        }
+        (false, false) => {
+            return Err("WorkBuddy connector archive must contain mcp.json or cli.json".into())
+        }
+    };
+    let folder = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "WorkBuddy connector folder must have a UTF-8 name".to_string())?;
+    let id = normalize_inferred_connector_id(folder)?;
+    let skills = workbuddy_skill_dirs(root, &Map::new());
+    let (skill_name, description) = first_workbuddy_skill_metadata(root, &skills);
+    let display_name = if skill_name.trim().is_empty() {
+        humanize_connector_id(&id)
+    } else {
+        skill_name
+    };
+    let auth_fields = read_workbuddy_token_schema(root)?;
+    let auth_mode = if !auth_fields.is_empty() {
+        "api_key"
+    } else if package_type == "cli" && cli_declares_auth_operation(root)? {
+        "cli"
+    } else {
+        // OAuth may be initiated dynamically by an MCP 401 challenge and is
+        // not identifiable from these files alone. Do not invent a native-app
+        // OAuth provider here; that would produce a misleading auth flow.
+        "none"
+    };
+    let mut metadata = serde_json::json!({
+        "source": id,
+        "name": display_name,
+        "version": "1.0.0",
+        "type": package_type,
+        "auth_mode": auth_mode,
+        "skills": skills,
+    });
+    if !description.trim().is_empty() {
+        metadata["description"] = Value::String(description);
+    }
+    Ok(metadata)
+}
+
+fn normalize_inferred_connector_id(folder: &str) -> Result<String, String> {
+    let mut id = String::new();
+    let mut separator = false;
+    for character in folder.chars().flat_map(char::to_lowercase) {
+        if character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_' {
+            id.push(character);
+            separator = false;
+        } else if character == '.' || character == '-' || character.is_ascii_whitespace() {
+            if !id.is_empty() && !separator {
+                id.push(if character == '.' { '.' } else { '-' });
+                separator = true;
+            }
+        } else if !id.is_empty() && !separator {
+            id.push('-');
+            separator = true;
+        }
+        if id.len() >= 64 {
+            break;
+        }
+    }
+    while id
+        .chars()
+        .last()
+        .is_some_and(|character| matches!(character, '.' | '-' | '_'))
+    {
+        id.pop();
+    }
+    crate::work::connector_package::validate_package_id(&id)?;
+    Ok(id)
+}
+
+fn humanize_connector_id(id: &str) -> String {
+    id.split(['-', '_', '.'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            chars
+                .next()
+                .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn first_workbuddy_skill_metadata(root: &Path, skill_dirs: &[String]) -> (String, String) {
+    use std::io::Read;
+
+    for directory in skill_dirs {
+        let path = root.join(directory).join("SKILL.md");
+        let Ok(file) = fs::File::open(path) else {
+            continue;
+        };
+        let mut bytes = Vec::new();
+        if file.take(16 * 1024).read_to_end(&mut bytes).is_err() {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            continue;
+        };
+        let Some(rest) = text.strip_prefix("---") else {
+            continue;
+        };
+        let Some(end) = rest.find("\n---") else {
+            continue;
+        };
+        let Ok(frontmatter) = serde_yaml::from_str::<serde_yaml::Value>(&rest[..end]) else {
+            continue;
+        };
+        let get = |keys: &[&str]| {
+            keys.iter()
+                .find_map(|key| frontmatter.get(*key).and_then(serde_yaml::Value::as_str))
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        };
+        let name = get(&["name_zh", "name"]);
+        let description = get(&["description_zh", "description"]);
+        if !name.is_empty() || !description.is_empty() {
+            return (name, description);
+        }
+    }
+    (String::new(), String::new())
+}
+
+fn cli_declares_auth_operation(root: &Path) -> Result<bool, String> {
+    let path = root.join("cli.json");
+    let value: Value = serde_json::from_str(
+        &fs::read_to_string(path)
+            .map_err(|error| format!("invalid WorkBuddy cli.json: {error}"))?,
+    )
+    .map_err(|error| format!("invalid WorkBuddy cli.json: {error}"))?;
+    if value.get("auth").is_some_and(|auth| !auth.is_null()) {
+        return Ok(true);
+    }
+    Ok(value
+        .get("operations")
+        .and_then(Value::as_object)
+        .is_some_and(|operations| {
+            operations.keys().any(|name| {
+                ConnectorCliOperationKind::parse(name) == Some(ConnectorCliOperationKind::Auth)
+            })
+        }))
 }
 
 fn workbuddy_text(object: &Map<String, Value>, keys: &[&str]) -> String {
@@ -2240,6 +2439,13 @@ fn read_and_validate_workbuddy_manifest(root: &Path) -> Result<ConnectorPackageM
     let value: Value =
         serde_json::from_str(&fs::read_to_string(&meta_path).map_err(|error| error.to_string())?)
             .map_err(|error| format!("invalid WorkBuddy connector-meta.json: {error}"))?;
+    read_and_validate_workbuddy_metadata(root, value)
+}
+
+fn read_and_validate_workbuddy_metadata(
+    root: &Path,
+    value: Value,
+) -> Result<ConnectorPackageManifest, String> {
     let object = value
         .as_object()
         .ok_or_else(|| "WorkBuddy connector-meta.json must be an object".to_string())?;
