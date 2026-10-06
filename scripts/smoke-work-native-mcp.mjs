@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { buildWorkNativeMcpConfig } from '../src-tauri/src/work/pi_mcp_adapter.mjs';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -61,6 +61,12 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
       AGENTCABIN_WORK_MCP_CONFIG: join(dir, 'mcp.json'), AGENTCABIN_WORK_PACKAGE_MCP_CONFIG: join(dir, 'connector-package-mcp.json'),
       AGENTCABIN_WORK_MCP_ENABLED: '1', AGENTCABIN_WORK_BROWSER_ENABLED: '0',
     });
+    // Match the production extension chain, including expert reconciliation.
+    // The Host profile below contains a stdio command that Pi must never start.
+    mkdirSync(join(dir, 'extensions'));
+    writeFileSync(join(dir, 'extensions', 'agentcabin-work-mcp-adapter.mjs'), readFileSync(resolve('src-tauri/src/work/pi_mcp_adapter.mjs')));
+    writeFileSync(join(dir, 'expert-extension.mjs'), readFileSync(resolve('src-tauri/src/agent/pi_expert_extension.mjs')));
+    writeFileSync(join(dir, 'expert-context.json'), JSON.stringify({ expert: null, skills: [], mcpServers: {}, members: {} }));
     writeFileSync(join(dir, 'mcp.json'), JSON.stringify({ mcpServers: { fixture: {
       command: 'NEVER_EXECUTE', args: ['SECRET'], env: { API_KEY: 'SECRET' }, cwd: '/SECRET',
       url: 'https://SECRET.invalid', headers: { Authorization: 'SECRET' }, oauth: { token: 'SECRET' },
@@ -85,7 +91,7 @@ export async function smokeWorkNativeMcp(runtimeRoot = resolve('runtime-build'))
     }
     const start = async sessionManager => {
       const resourceLoader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, noExtensions: true, noSkills: true, noPromptTemplates: true,
-        additionalExtensionPaths: [resolve('src-tauri/src/work/pi_core_extension.mjs'), resolve('src-tauri/src/work/pi_mcp_adapter.mjs')] });
+        additionalExtensionPaths: [resolve('src-tauri/src/work/pi_core_extension.mjs'), resolve('src-tauri/src/work/pi_mcp_adapter.mjs'), join(dir, 'expert-extension.mjs')] });
       await resourceLoader.reload();
       const result = await createAgentSession({ cwd: dir, agentDir: dir, resourceLoader, sessionManager });
       assert.deepEqual(result.extensionsResult.errors, []);

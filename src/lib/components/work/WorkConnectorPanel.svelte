@@ -182,7 +182,7 @@
     <div>
       <div class="flex items-center gap-2">
         <span class="h-2 w-2 rounded-full bg-cyan-500"></span>
-        <h2 class="text-sm font-semibold text-foreground">自定义 MCP 服务器</h2>
+        <h2 class="text-sm font-semibold text-foreground">MCP 服务器</h2>
         <span
           class="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-700 dark:text-cyan-300"
           >{connectors.length}</span
@@ -191,7 +191,7 @@
       <p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
         {source === "discover"
           ? "手动添加 MCP 服务器，可使用本地命令或远程 URL；凭据值单独加密保存。"
-          : "已配置的自定义 MCP 服务器，可检查连通性并查看实际工具。"}
+          : "Code 和 Work 共用这些 MCP 服务器及启用状态，可检查连通性并查看实际工具。"}
       </p>
     </div>
     <div class="flex items-center gap-2 text-[11px] text-muted-foreground">

@@ -2462,11 +2462,14 @@ impl ToolPipeline {
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                     .ok_or_else(|| "work_mcp_list requires a non-empty server".to_string())?;
-                if server.chars().count() > 80 || server.chars().any(char::is_control) {
-                    return Err("work_mcp_list server name is invalid".into());
-                }
-                let result =
-                    crate::work::mcp::list_tools_with_paths(&self.paths, server, proxy_url).await?;
+                crate::work::internal_bridge::validate_mcp_server_name(server)?;
+                let result = crate::work::mcp::list_tools_for_run(
+                    &self.paths,
+                    &intent.work_run_id,
+                    server,
+                    proxy_url,
+                )
+                .await?;
                 Ok(WorkExecutionResult {
                     execution_id: format!("exec-{}", uuid::Uuid::new_v4()),
                     resource_id: intent.tool_name.clone(),
@@ -2492,9 +2495,7 @@ impl ToolPipeline {
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                     .ok_or_else(|| "work_mcp_call requires a non-empty server".to_string())?;
-                if server.chars().count() > 80 || server.chars().any(char::is_control) {
-                    return Err("work_mcp_call server name is invalid".into());
-                }
+                crate::work::internal_bridge::validate_mcp_server_name(server)?;
                 let tool_name = intent
                     .arguments
                     .get("tool_name")
@@ -2511,8 +2512,9 @@ impl ToolPipeline {
                 if !call_arguments.is_object() {
                     return Err("work_mcp_call arguments must be an object".into());
                 }
-                let result = crate::work::mcp::call_with_paths(
+                let result = crate::work::mcp::call_for_run(
                     &self.paths,
+                    &intent.work_run_id,
                     server,
                     tool_name,
                     &call_arguments,

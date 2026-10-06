@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import type { ActivityItem } from "$lib/utils/tool-activity-adapter";
-  import { copyToClipboard, extractOutputText } from "$lib/utils/tool-rendering";
+  import {
+    copyToClipboard,
+    extractOutputText,
+    extractImageBlocks,
+  } from "$lib/utils/tool-rendering";
   import { classifyWorkExecutionFailure } from "$lib/utils/work-execution-failure";
 
   let {
@@ -25,6 +29,10 @@
   } = $props();
 
   let isDrawerOpen = $state(false);
+  let lazyResult = $state<unknown>(null);
+  const outputImages = $derived(
+    extractImageBlocks(lazyResult ?? activity.tool.output ?? activity.tool.tool_use_result),
+  );
   let lazyOutput = $state<string | null>(null);
   let isLoadingOutput = $state(false);
   let isCopied = $state(false);
@@ -42,6 +50,7 @@
 
   const hasOutput = $derived(
     Boolean(
+      outputImages.length > 0 ||
       (displayOutput && displayOutput.trim().length > 0) ||
       activity.detail.diff ||
       (activity.detail.matches && activity.detail.matches.length > 0) ||
@@ -209,6 +218,7 @@
       try {
         const res = await fetchToolResult(runId, activity.tool.tool_use_id);
         if (res) {
+          lazyResult = res;
           lazyOutput = extractOutputText(res);
         }
       } catch {
@@ -542,6 +552,14 @@
         {#if inputJsonString && (displayOutput || errorSummary)}
           <div class="h-[0.5px] bg-border/40"></div>
         {/if}
+        {#each outputImages as img}
+          <img
+            src="data:{img.source.media_type};base64,{img.source.data}"
+            alt="工具返回的图片"
+            class="max-h-96 max-w-full rounded border border-border/50"
+            loading="lazy"
+          />
+        {/each}
         {#if displayOutput || errorSummary}
           <div
             class="grid grid-cols-[max-content_1fr] items-baseline gap-x-3.5 max-h-56 p-3 overflow-y-auto"

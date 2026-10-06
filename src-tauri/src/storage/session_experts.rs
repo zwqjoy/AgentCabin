@@ -192,6 +192,52 @@ mod tests {
     }
 
     #[test]
+    fn selected_expert_mcp_is_host_resolved_without_global_enablement_and_revoked_on_exit() {
+        let root = TempDir::new().unwrap();
+        install(root.path(), "writer");
+        let package =
+            agent_plugins::agent_plugin_packages_dir_with_root(root.path()).join("writer");
+        fs::write(package.join("mcp.json"), serde_json::json!({
+            "$schema": agent_plugins::MCP_SCHEMA,
+            "mcpServers": { "echo": { "type": "stdio", "command": "node", "env": { "TOKEN": "HOST_ONLY_SECRET" } } },
+        }).to_string()).unwrap();
+        fs::create_dir_all(root.path().join("runs/run-a")).unwrap();
+        let selected = resolve_with_root(root.path(), "writer").unwrap();
+        save_with_root(root.path(), "run-a", Some(&selected)).unwrap();
+        assert!(agent_plugins::list_enabled_mcp_servers_with_root(root.path()).is_empty());
+        let server_id = "agent-plugin--writer--mcp--echo";
+        let config =
+            agent_plugins::selected_expert_mcp_config_with_root(root.path(), "run-a", server_id)
+                .unwrap()
+                .unwrap();
+        assert_eq!(config["command"], "node");
+        assert_eq!(config["env"]["TOKEN"], "HOST_ONLY_SECRET");
+        assert!(agent_plugins::selected_expert_mcp_config_with_root(
+            root.path(),
+            "run-b",
+            server_id
+        )
+        .unwrap()
+        .is_none());
+        save_with_root(root.path(), "run-a", None).unwrap();
+        assert!(agent_plugins::selected_expert_mcp_config_with_root(
+            root.path(),
+            "run-a",
+            server_id
+        )
+        .unwrap()
+        .is_none());
+        save_with_root(root.path(), "run-a", Some(&selected)).unwrap();
+        agent_plugins::set_agent_plugin_trust_with_root(root.path(), "writer", false).unwrap();
+        assert!(agent_plugins::selected_expert_mcp_config_with_root(
+            root.path(),
+            "run-a",
+            server_id
+        )
+        .is_err());
+    }
+
+    #[test]
     fn full_lead_instructions_and_declared_preload_are_loaded_and_validated() {
         let root = TempDir::new().unwrap();
         install(root.path(), "writer");

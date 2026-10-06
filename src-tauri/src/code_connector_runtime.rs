@@ -186,7 +186,14 @@ async fn call_agent_plugin_mcp(
             "Invalid Agent Plugin MCP server name",
         ));
     }
-    if !session.plugin_mcp_servers.contains(&server_name) {
+    let paths = crate::work::paths::WorkPaths::app();
+    let expert_config = crate::storage::agent_plugins::selected_expert_mcp_config_with_root(
+        paths.data_root(),
+        &session.run_id,
+        &server_name,
+    )
+    .map_err(|error| bridge_error(StatusCode::BAD_REQUEST, error))?;
+    if !session.plugin_mcp_servers.contains(&server_name) && expert_config.is_none() {
         return Ok(mcp_rpc_error(
             Value::Null,
             -32602,
@@ -217,46 +224,50 @@ async fn call_agent_plugin_mcp(
         )),
         "notifications/initialized" => Ok(mcp_rpc_result(id, json!({}))),
         "tools/list" | "tools/call" => {
-            let paths = crate::work::paths::WorkPaths::app();
-            let config_path =
-                crate::storage::agent_plugins::agent_plugin_mcp_config_path_with_root(
-                    paths.data_root(),
-                    "code",
-                )
-                .map_err(|error| bridge_error(StatusCode::INTERNAL_SERVER_ERROR, error))?;
-            let metadata = std::fs::symlink_metadata(&config_path).map_err(|_| {
-                bridge_error(
-                    StatusCode::NOT_FOUND,
-                    "Agent Plugin MCP config is unavailable",
-                )
-            })?;
-            if metadata.file_type().is_symlink()
-                || !metadata.is_file()
-                || metadata.len() > 256 * 1024
-            {
-                return Err(bridge_error(
-                    StatusCode::BAD_REQUEST,
-                    "Agent Plugin MCP config is invalid",
-                ));
-            }
-            let root: Value =
-                serde_json::from_slice(&std::fs::read(&config_path).map_err(|error| {
-                    bridge_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
-                })?)
-                .map_err(|error| bridge_error(StatusCode::BAD_REQUEST, error.to_string()))?;
-            let Some(servers) = root.get("mcpServers").and_then(Value::as_object) else {
-                return Ok(mcp_rpc_error(
-                    id,
-                    -32602,
-                    "Agent Plugin MCP server is unavailable",
-                ));
-            };
-            let Some(selected) = servers.get(&server_name).cloned() else {
-                return Ok(mcp_rpc_error(
-                    id,
-                    -32602,
-                    "Agent Plugin MCP server is unavailable",
-                ));
+            let selected = if let Some(config) = expert_config {
+                config
+            } else {
+                let config_path =
+                    crate::storage::agent_plugins::agent_plugin_mcp_config_path_with_root(
+                        paths.data_root(),
+                        "code",
+                    )
+                    .map_err(|error| bridge_error(StatusCode::INTERNAL_SERVER_ERROR, error))?;
+                let metadata = std::fs::symlink_metadata(&config_path).map_err(|_| {
+                    bridge_error(
+                        StatusCode::NOT_FOUND,
+                        "Agent Plugin MCP config is unavailable",
+                    )
+                })?;
+                if metadata.file_type().is_symlink()
+                    || !metadata.is_file()
+                    || metadata.len() > 256 * 1024
+                {
+                    return Err(bridge_error(
+                        StatusCode::BAD_REQUEST,
+                        "Agent Plugin MCP config is invalid",
+                    ));
+                }
+                let root: Value =
+                    serde_json::from_slice(&std::fs::read(&config_path).map_err(|error| {
+                        bridge_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+                    })?)
+                    .map_err(|error| bridge_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+                let Some(servers) = root.get("mcpServers").and_then(Value::as_object) else {
+                    return Ok(mcp_rpc_error(
+                        id,
+                        -32602,
+                        "Agent Plugin MCP server is unavailable",
+                    ));
+                };
+                let Some(selected) = servers.get(&server_name).cloned() else {
+                    return Ok(mcp_rpc_error(
+                        id,
+                        -32602,
+                        "Agent Plugin MCP server is unavailable",
+                    ));
+                };
+                selected
             };
             let mut selected_root = json!({ "mcpServers": { server_name.clone(): selected } });
             crate::work::mcp::resolve_agent_plugin_environment(&mut selected_root, &|name| {

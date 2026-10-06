@@ -941,6 +941,9 @@ pub async fn test_browser() -> Result<crate::work::models::WorkBrowserHealth, St
 #[tauri::command]
 pub fn list_mcp_catalog(
 ) -> Result<Vec<crate::storage::pi_profile_bindings::McpCatalogServer>, String> {
+    let paths = crate::work::paths::WorkPaths::app();
+    paths.ensure_layout()?;
+    crate::work::connectors::migrate_legacy_to_global(&paths)?;
     Ok(crate::storage::pi_profile_bindings::read_mcp_catalog())
 }
 
@@ -958,7 +961,11 @@ pub fn delete_mcp_catalog_server(server_id: String) -> Result<(), String> {
         "[pi_extensions] delete_mcp_catalog_server: id={}",
         server_id
     );
-    crate::storage::pi_profile_bindings::delete_mcp_catalog_server(&server_id)
+    let paths = crate::work::paths::WorkPaths::app();
+    crate::work::connectors::migrate_legacy_to_global(&paths)?;
+    crate::storage::pi_profile_bindings::delete_mcp_catalog_server(&server_id)?;
+    crate::storage::pi_profile_bindings::sync_pi_code_mcp_from_catalog_and_bindings(None)?;
+    crate::work::connectors::sync_mcp_from_catalog_and_bindings(&paths)
 }
 
 #[tauri::command]

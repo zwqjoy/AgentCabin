@@ -1144,6 +1144,24 @@ pub async fn dispatch_command(
             let result = crate::commands::mcp::search_mcp_registry(query, limit, cursor).await?;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
+        "search_modelscope_mcp_servers" => {
+            let query = params
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let limit = params
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32);
+            let result = crate::commands::mcp::search_modelscope_mcp_servers(query, limit).await?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "get_modelscope_mcp_server" => {
+            let server_id = extract_str(&params, "server_id")?;
+            let result = crate::commands::mcp::get_modelscope_mcp_server(server_id).await?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
 
         // ── Diagnostics ──
         "check_agent_cli" => {

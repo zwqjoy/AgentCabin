@@ -2334,6 +2334,23 @@ pub fn selected_expert_resources_with_root(
     ))
 }
 
+/// Resolve a selected expert's server on the Host, independently of the
+/// global enable switch. Selection, installation and trust are checked afresh.
+pub(crate) fn selected_expert_mcp_config_with_root(
+    root: &Path,
+    run_id: &str,
+    server_id: &str,
+) -> Result<Option<Value>, String> {
+    let Some(expert) = crate::storage::session_experts::get_with_root(root, run_id)? else {
+        return Ok(None);
+    };
+    let (_, _, servers) = selected_expert_resources_with_root(root, &expert.id)?;
+    Ok(servers
+        .iter()
+        .find(|server| server.id == server_id)
+        .map(server_value))
+}
+
 /// Load the actual WorkBuddy Agent instructions and explicitly preloaded Skills.
 /// Skill resources/scripts remain on disk and are read only when needed.
 pub fn selected_expert_prompt_with_root(root: &Path, plugin_id: &str) -> Result<String, String> {

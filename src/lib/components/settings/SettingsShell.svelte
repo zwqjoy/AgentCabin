@@ -27,7 +27,7 @@
   {@render sidebar()}
 
   <!-- Right Main Content -->
-  <main class="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
+  <main class="settings-content flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
     <div
       class="mx-auto w-full {wide
         ? 'max-w-[1400px] px-8 sm:px-12 py-10'

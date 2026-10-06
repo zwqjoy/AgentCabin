@@ -1328,6 +1328,7 @@ export interface McpRegistrySearchResult {
 
 export interface McpRegistryServer {
   name: string;
+  modelScopeId?: string | null;
   description: string;
   title?: string;
   version: string;
@@ -1341,6 +1342,7 @@ export interface McpRegistryPackage {
   identifier: string;
   version?: string;
   environmentVariables: McpRegistryEnvVar[];
+  config?: Record<string, unknown> | null;
 }
 
 export interface McpRegistryRemote {

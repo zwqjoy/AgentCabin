@@ -77,59 +77,6 @@
         </p>
       </div>
 
-      <!-- Runtime Availability Matrix -->
-      <div>
-        <h3 class="font-semibold text-foreground mb-2">运行时兼容矩阵 (Available In)</h3>
-        <div class="rounded-lg border border-border overflow-hidden">
-          <table class="w-full text-left">
-            <thead class="bg-muted/60 text-[11px] font-medium text-muted-foreground">
-              <tr>
-                <th class="px-3 py-2">Runtime Provider</th>
-                <th class="px-3 py-2">Work Mode</th>
-                <th class="px-3 py-2">Code Mode</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-border/50 text-[11px]">
-              {#each item.runtimeAvailability as scope}
-                {@const workAvailable =
-                  scope.workAvailable ?? (item.scopes.includes("work") && scope.available)}
-                {@const codeAvailable =
-                  scope.codeAvailable ?? (item.scopes.includes("code") && scope.available)}
-                <tr class="hover:bg-muted/20">
-                  <td class="px-3 py-2 font-mono font-medium capitalize">{scope.provider}</td>
-                  <td class="px-3 py-2">
-                    {#if workAvailable}
-                      <span class="text-emerald-600 dark:text-emerald-400 font-semibold"
-                        >✓ 可用</span
-                      >
-                    {:else if scope.reason}
-                      <span class="text-muted-foreground text-[10px]">{scope.reason}</span>
-                    {:else}
-                      <span class="text-zinc-400">-</span>
-                    {/if}
-                  </td>
-                  <td class="px-3 py-2">
-                    {#if codeAvailable}
-                      <span class="text-emerald-600 dark:text-emerald-400 font-semibold"
-                        >✓ 可用</span
-                      >
-                    {:else}
-                      <span class="text-zinc-400">-</span>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-              {#if !item.runtimeAvailability.some((r) => r.provider === "claude" || r.provider === "codex")}
-                <tr class="text-muted-foreground/60 text-[10px]">
-                  <td class="px-3 py-2 font-mono">Claude / Codex</td>
-                  <td class="px-3 py-2 italic" colspan="2">未确定的第三方运行时 (Unknown)</td>
-                </tr>
-              {/if}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       <!-- Account & Auth Details -->
       {#if item.auth}
         <div>

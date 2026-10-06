@@ -179,6 +179,10 @@
     if (!item.source) return "本地目录导入";
     return item.source.kind === "github" ? "GitHub" : "本地目录";
   }
+
+  function componentCount(item: AgentPluginSummary, kind: string): number {
+    return item.components?.filter((component) => component.kind === kind).length ?? 0;
+  }
 </script>
 
 <section class="space-y-4 rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm sm:p-5">
@@ -269,20 +273,25 @@
           : "还没有导入专家。"}可粘贴 GitHub 地址，或选择本地插件目录。
     </div>
   {:else}
-    <div class="space-y-3">
+    <div class="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
       {#each visiblePlugins as item (item.id)}
-        <article class="overflow-hidden rounded-xl border border-border/70 bg-background/45">
-          <div
-            class="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-4 py-3"
-          >
+        <article
+          class="flex min-w-0 flex-col rounded-xl border border-border/70 bg-background/45 p-3 transition-colors hover:border-border hover:bg-background/70"
+        >
+          <div class="flex min-w-0 items-start justify-between gap-3">
             <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <h3 class="text-sm font-semibold text-foreground">
+              <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <h3
+                  class="truncate text-sm font-semibold text-foreground"
+                  title={item.displayName ?? item.name}
+                >
                   {item.displayName ?? item.name}
                 </h3>
-                {#if item.version}
-                  <span class="text-[11px] text-muted-foreground">v{item.version}</span>
-                {/if}
+                {#if item.version}<span class="shrink-0 text-[10px] text-muted-foreground"
+                    >v{item.version}</span
+                  >{/if}
+              </div>
+              <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
                 <span
                   class="rounded-full px-2 py-0.5 text-[10px] {item.trusted
                     ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
@@ -295,34 +304,59 @@
                 {#if item.expertKind}
                   <span
                     class="rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-700 dark:text-violet-300"
-                    >{item.expertKind === "expert-team"
-                      ? "WorkBuddy 专家团"
-                      : "WorkBuddy 专家"}</span
                   >
+                    {item.expertKind === "expert-team" ? "WorkBuddy 专家团" : "WorkBuddy 专家"}
+                  </span>
+                {:else}
+                  <span class="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                    {item.packageFormat === "claude-code" ? "Claude Code" : "Agent Plugin"}
+                  </span>
                 {/if}
               </div>
-              {#if item.description}
-                <p class="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</p>
-              {/if}
-              {#if item.members.length > 0}
-                <p class="mt-1 text-[11px] text-muted-foreground">
-                  成员：{item.members.map((member) => member.name).join("、")}
-                </p>
-              {/if}
-              {#if item.source?.location}
-                <p
-                  class="mt-1 truncate font-mono text-[10px] text-muted-foreground/70"
-                  title={item.source.location}
-                >
-                  {item.source.location}
-                </p>
-              {/if}
             </div>
-            <div class="flex flex-wrap items-center gap-2">
+          </div>
+
+          {#if item.description}
+            <p class="mt-2 line-clamp-2 min-h-9 text-xs leading-[18px] text-muted-foreground">
+              {item.description}
+            </p>
+          {:else}
+            <p class="mt-2 min-h-9 text-xs leading-[18px] text-muted-foreground">暂无简介</p>
+          {/if}
+
+          <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+            <span class="rounded-md bg-muted/70 px-2 py-1">Skills {item.skills.length}</span>
+            <span class="rounded-md bg-muted/70 px-2 py-1">MCP {item.mcpServers.length}</span>
+            {#if item.members.length > 0}
+              <span class="rounded-md bg-muted/70 px-2 py-1">{item.members.length} 位成员</span>
+            {/if}
+            {#if item.warnings.length > 0}
+              <span class="rounded-md bg-amber-500/10 px-2 py-1 text-amber-700 dark:text-amber-300"
+                >警告 {item.warnings.length}</span
+              >
+            {/if}
+          </div>
+
+          <div
+            class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5"
+          >
+            <label
+              class="inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-md px-1 text-[11px] text-muted-foreground has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
+            >
+              <input
+                type="checkbox"
+                checked={item.enabled}
+                disabled={!canManage || !item.trusted || Boolean(busyId)}
+                onchange={(event) =>
+                  void toggleEnabled(item, (event.currentTarget as HTMLInputElement).checked)}
+              />
+              全局启用
+            </label>
+            <div class="flex flex-wrap items-center gap-1.5">
               {#if canManage}
                 <button
                   type="button"
-                  class="rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-muted disabled:opacity-50"
+                  class="rounded-md border border-border px-2 py-1 text-[10px] transition-colors hover:bg-muted disabled:opacity-50"
                   disabled={Boolean(busyId)}
                   onclick={() => void toggleTrust(item)}
                 >
@@ -331,7 +365,7 @@
                 {#if item.canUpdate}
                   <button
                     type="button"
-                    class="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                    class="rounded-md border border-border px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                     disabled={Boolean(busyId)}
                     onclick={() => void update(item)}
                   >
@@ -340,7 +374,7 @@
                 {/if}
                 <button
                   type="button"
-                  class="rounded-md border border-destructive/30 px-2 py-1 text-[11px] text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+                  class="rounded-md border border-destructive/30 px-2 py-1 text-[10px] text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
                   disabled={Boolean(busyId)}
                   onclick={() => void uninstall(item)}
                 >
@@ -350,184 +384,198 @@
             </div>
           </div>
 
-          {#if item.error}
-            <div
-              class="border-b border-red-500/20 bg-red-500/5 px-4 py-2 text-xs text-red-600 dark:text-red-400"
+          <details class="group mt-1 border-t border-border/60 pt-2">
+            <summary
+              class="flex cursor-pointer list-none items-center justify-between gap-2 py-1 text-[11px] text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden"
             >
-              清单无效：{item.error}
-            </div>
-          {/if}
-          {#if !expertKind}
-            <div class="text-xs text-muted-foreground">
-              {item.packageFormat === "claude-code" ? "Claude Code Plugin" : "Agent Plugin"}
-              · Compatibility: {item.compatibility?.level === "full"
-                ? "Full · 完全兼容"
-                : item.compatibility?.level === "partial"
-                  ? "Partial · 部分兼容"
-                  : "Unsupported · 不可运行"}
-              <p>
-                Skills {item.skills.length} · MCP {item.mcpServers.length}
-                {#each ["commands", "agents", "hooks"] as kind}
-                  · {kind} {item.components?.filter((c) => c.kind === kind).length ?? 0}
-                {/each}
-              </p>
-              {#if item.compatibility?.supported.length}
-                <p>支持执行：{item.compatibility.supported.join(", ")}</p>
+              <span>查看成员、组件与配置</span>
+              <span class="transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="mt-2 space-y-3 border-t border-border/50 pt-3">
+              {#if item.members.length > 0}
+                <div>
+                  <h4 class="mb-1 text-[11px] font-semibold text-foreground">
+                    成员 · {item.members.length}
+                  </h4>
+                  <p class="text-[11px] leading-4 text-muted-foreground">
+                    {item.members.map((member) => member.name).join("、")}
+                  </p>
+                </div>
               {/if}
-              {#if item.compatibility?.detectedUnsupported.length}
-                <p>已识别，当前不执行：{item.compatibility.detectedUnsupported.join(", ")}</p>
+              {#if item.source?.location}
+                <p
+                  class="truncate font-mono text-[10px] text-muted-foreground/70"
+                  title={item.source.location}
+                >
+                  {item.source.location}
+                </p>
               {/if}
-              {#each item.compatibility?.blocked ?? [] as blocked}
-                <p class="text-destructive">Blocked: {blocked}</p>
-              {/each}
-            </div>
-          {/if}
-          {#if item.warnings.length > 0}
-            <details
-              class="border-b border-amber-500/20 bg-amber-500/5 px-4 py-2 text-xs text-amber-700 dark:text-amber-300"
-            >
-              <summary class="cursor-pointer">解析警告（{item.warnings.length}）</summary>
-              <ul class="mt-1 space-y-1 pl-4">
-                {#each item.warnings as warning}
-                  <li>{warning}</li>
-                {/each}
-              </ul>
-            </details>
-          {/if}
-
-          <div class="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-3">
-            <span class="mr-1 text-[11px] font-medium text-muted-foreground">全局启用：</span>
-            <label
-              class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
-            >
-              <input
-                type="checkbox"
-                checked={item.enabled}
-                disabled={!canManage || !item.trusted || Boolean(busyId)}
-                onchange={(event) =>
-                  void toggleEnabled(item, (event.currentTarget as HTMLInputElement).checked)}
-              />
-              全部运行时
-            </label>
-            {#if !item.trusted}
-              <span class="text-[10px] text-amber-700 dark:text-amber-300">信任后才能启用</span>
-            {/if}
-          </div>
-
-          <div class="grid gap-4 px-4 py-3 lg:grid-cols-2">
-            <div class="min-w-0">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <h4 class="text-[11px] font-semibold text-foreground">Skills</h4>
-                <span class="text-[10px] text-muted-foreground">{item.skills.length}</span>
-              </div>
-              {#if item.skills.length === 0}
-                <p class="text-[11px] text-muted-foreground">未声明 Skill。</p>
-              {:else}
-                <div class="space-y-2">
-                  {#each item.skills as skill (skill.id)}
-                    <div class="rounded-lg border border-border/60 bg-card/50 px-3 py-2">
-                      <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0">
-                          <p class="text-xs font-medium text-foreground">{skill.name}</p>
-                          <p
-                            class="mt-0.5 break-all font-mono text-[10px] text-violet-700 dark:text-violet-300"
-                          >
-                            {skill.id}
-                          </p>
-                        </div>
-                        <span
-                          class="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                          >只读</span
-                        >
-                      </div>
-                      {#if skill.description}
-                        <p class="mt-1 text-[11px] leading-4 text-muted-foreground">
-                          {skill.description}
-                        </p>
-                      {/if}
-                      <p
-                        class="mt-1 truncate font-mono text-[10px] text-muted-foreground/70"
-                        title={skill.path}
-                      >
-                        {skill.path}
-                      </p>
-                    </div>
+              {#if item.error}
+                <div
+                  class="rounded-md border border-red-500/20 bg-red-500/5 px-2.5 py-2 text-xs text-red-600 dark:text-red-400"
+                >
+                  清单无效：{item.error}
+                </div>
+              {/if}
+              {#if !expertKind}
+                <div class="text-xs text-muted-foreground">
+                  {item.packageFormat === "claude-code" ? "Claude Code Plugin" : "Agent Plugin"}
+                  · Compatibility: {item.compatibility?.level === "full"
+                    ? "Full · 完全兼容"
+                    : item.compatibility?.level === "partial"
+                      ? "Partial · 部分兼容"
+                      : "Unsupported · 不可运行"}
+                  <p>
+                    Skills {item.skills.length} · MCP {item.mcpServers.length}
+                    {#each ["commands", "agents", "hooks"] as kind}
+                      · {kind} {componentCount(item, kind)}
+                    {/each}
+                  </p>
+                  {#if item.compatibility?.supported.length}
+                    <p>支持执行：{item.compatibility.supported.join(", ")}</p>
+                  {/if}
+                  {#if item.compatibility?.detectedUnsupported.length}
+                    <p>已识别，当前不执行：{item.compatibility.detectedUnsupported.join(", ")}</p>
+                  {/if}
+                  {#each item.compatibility?.blocked ?? [] as blocked}
+                    <p class="text-destructive">Blocked: {blocked}</p>
                   {/each}
                 </div>
               {/if}
-            </div>
-            <div class="min-w-0">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <h4 class="text-[11px] font-semibold text-foreground">MCP</h4>
-                <span class="text-[10px] text-muted-foreground">{item.mcpServers.length}</span>
-              </div>
-              {#if item.mcpServers.length === 0}
-                <p class="text-[11px] text-muted-foreground">未声明 MCP Server。</p>
-              {:else}
-                <div class="space-y-2">
-                  {#each item.mcpServers as server (server.id)}
-                    <div class="rounded-lg border border-border/60 bg-card/50 px-3 py-2">
-                      <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0">
-                          <p class="text-xs font-medium text-foreground">{server.name}</p>
+              {#if item.warnings.length > 0}
+                <details
+                  class="rounded-md border border-amber-500/20 bg-amber-500/5 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-300"
+                >
+                  <summary class="cursor-pointer">解析警告（{item.warnings.length}）</summary>
+                  <ul class="mt-1 space-y-1 pl-4">
+                    {#each item.warnings as warning}
+                      <li>{warning}</li>
+                    {/each}
+                  </ul>
+                </details>
+              {/if}
+
+              {#if !item.trusted}
+                <p class="text-[10px] text-amber-700 dark:text-amber-300">信任后才能启用</p>
+              {/if}
+
+              <div class="grid gap-3 border-t border-border/50 pt-3 lg:grid-cols-2">
+                <div class="min-w-0">
+                  <div class="mb-2 flex items-center justify-between gap-2">
+                    <h4 class="text-[11px] font-semibold text-foreground">Skills</h4>
+                    <span class="text-[10px] text-muted-foreground">{item.skills.length}</span>
+                  </div>
+                  {#if item.skills.length === 0}
+                    <p class="text-[11px] text-muted-foreground">未声明 Skill。</p>
+                  {:else}
+                    <div class="space-y-2">
+                      {#each item.skills as skill (skill.id)}
+                        <div class="rounded-lg border border-border/60 bg-card/50 px-2.5 py-2">
+                          <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                              <p class="text-xs font-medium text-foreground">{skill.name}</p>
+                              <p
+                                class="mt-0.5 break-all font-mono text-[10px] text-violet-700 dark:text-violet-300"
+                              >
+                                {skill.id}
+                              </p>
+                            </div>
+                            <span
+                              class="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                              >只读</span
+                            >
+                          </div>
+                          {#if skill.description}
+                            <p class="mt-1 text-[11px] leading-4 text-muted-foreground">
+                              {skill.description}
+                            </p>
+                          {/if}
                           <p
-                            class="mt-0.5 break-all font-mono text-[10px] text-violet-700 dark:text-violet-300"
+                            class="mt-1 truncate font-mono text-[10px] text-muted-foreground/70"
+                            title={skill.path}
                           >
-                            {server.id}
+                            {skill.path}
                           </p>
                         </div>
-                        <span
-                          class="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                          >{server.transport}</span
-                        >
-                      </div>
-                      {#if server.command}
-                        <p
-                          class="mt-1 truncate font-mono text-[10px] text-muted-foreground"
-                          title={server.command}
-                        >
-                          {server.command}
-                        </p>
-                      {:else if server.url}
-                        <p
-                          class="mt-1 truncate font-mono text-[10px] text-muted-foreground"
-                          title={server.url}
-                        >
-                          {server.url}
-                        </p>
-                      {/if}
-                      {#if server.cwd}
-                        <p
-                          class="mt-1 truncate font-mono text-[10px] text-muted-foreground/80"
-                          title={server.cwd}
-                        >
-                          cwd: {server.cwd}
-                        </p>
-                      {/if}
-                      {#if server.args.length > 0}
-                        <p
-                          class="mt-1 truncate font-mono text-[10px] text-muted-foreground/80"
-                          title={server.args.join(" ")}
-                        >
-                          args: {server.args.join(" ")}
-                        </p>
-                      {/if}
-                      <div class="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
-                        {#if server.envKeys.length > 0}<span class="rounded bg-muted px-1.5 py-0.5"
-                            >env: {server.envKeys.join(", ")}</span
-                          >{/if}
-                        {#if server.headerKeys.length > 0}<span
-                            class="rounded bg-muted px-1.5 py-0.5"
-                            >headers: {server.headerKeys.join(", ")}</span
-                          >{/if}
-                        <span class="rounded bg-muted px-1.5 py-0.5">只读配置</span>
-                      </div>
+                      {/each}
                     </div>
-                  {/each}
+                  {/if}
                 </div>
-              {/if}
+                <div class="min-w-0">
+                  <div class="mb-2 flex items-center justify-between gap-2">
+                    <h4 class="text-[11px] font-semibold text-foreground">MCP</h4>
+                    <span class="text-[10px] text-muted-foreground">{item.mcpServers.length}</span>
+                  </div>
+                  {#if item.mcpServers.length === 0}
+                    <p class="text-[11px] text-muted-foreground">未声明 MCP Server。</p>
+                  {:else}
+                    <div class="space-y-2">
+                      {#each item.mcpServers as server (server.id)}
+                        <div class="rounded-lg border border-border/60 bg-card/50 px-2.5 py-2">
+                          <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                              <p class="text-xs font-medium text-foreground">{server.name}</p>
+                              <p
+                                class="mt-0.5 break-all font-mono text-[10px] text-violet-700 dark:text-violet-300"
+                              >
+                                {server.id}
+                              </p>
+                            </div>
+                            <span
+                              class="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                              >{server.transport}</span
+                            >
+                          </div>
+                          {#if server.command}
+                            <p
+                              class="mt-1 truncate font-mono text-[10px] text-muted-foreground"
+                              title={server.command}
+                            >
+                              {server.command}
+                            </p>
+                          {:else if server.url}
+                            <p
+                              class="mt-1 truncate font-mono text-[10px] text-muted-foreground"
+                              title={server.url}
+                            >
+                              {server.url}
+                            </p>
+                          {/if}
+                          {#if server.cwd}
+                            <p
+                              class="mt-1 truncate font-mono text-[10px] text-muted-foreground/80"
+                              title={server.cwd}
+                            >
+                              cwd: {server.cwd}
+                            </p>
+                          {/if}
+                          {#if server.args.length > 0}
+                            <p
+                              class="mt-1 truncate font-mono text-[10px] text-muted-foreground/80"
+                              title={server.args.join(" ")}
+                            >
+                              args: {server.args.join(" ")}
+                            </p>
+                          {/if}
+                          <div class="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                            {#if server.envKeys.length > 0}<span
+                                class="rounded bg-muted px-1.5 py-0.5"
+                                >env: {server.envKeys.join(", ")}</span
+                              >{/if}
+                            {#if server.headerKeys.length > 0}<span
+                                class="rounded bg-muted px-1.5 py-0.5"
+                                >headers: {server.headerKeys.join(", ")}</span
+                              >{/if}
+                            <span class="rounded bg-muted px-1.5 py-0.5">只读配置</span>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              </div>
             </div>
-          </div>
+          </details>
         </article>
       {/each}
     </div>

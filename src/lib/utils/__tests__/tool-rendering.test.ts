@@ -1280,3 +1280,26 @@ describe("getToolGroupSemanticSummary", () => {
     expect(summary.activeLabel).toBe("正在执行命令...");
   });
 });
+
+describe("native MCP tool images", () => {
+  it("normalizes Pi images alongside text", () => {
+    expect(
+      extractImageBlocks({
+        content: [
+          { type: "text", text: "logo" },
+          { type: "image", mimeType: "image/png", data: "abc123" },
+        ],
+      }),
+    ).toEqual([
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "abc123" } },
+    ]);
+  });
+  it("ignores malformed images and unsupported media", () => {
+    expect(
+      extractImageBlocks([
+        { type: "image" },
+        { type: "image", mimeType: "text/html", data: "abc" },
+      ]),
+    ).toEqual([]);
+  });
+});

@@ -7,6 +7,32 @@ use crate::agent::claude_stream;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+fn ensure_default_pi_tool(settings: &mut serde_json::Value, tool: &str) {
+    let Some(object) = settings.as_object_mut() else {
+        return;
+    };
+    let default_tools = object
+        .entry("defaultTools")
+        .or_insert_with(|| serde_json::json!([format!("+{tool}")]));
+    let Some(tools) = default_tools.as_array_mut() else {
+        *default_tools = serde_json::json!([format!("+{tool}")]);
+        return;
+    };
+    if tools.iter().any(|entry| {
+        entry
+            .as_str()
+            .is_some_and(|entry| entry == tool || entry == format!("+{tool}"))
+    }) {
+        return;
+    }
+    let entry = if tools.is_empty() {
+        tool.to_string()
+    } else {
+        format!("+{tool}")
+    };
+    tools.push(serde_json::Value::String(entry));
+}
+
 pub struct PiRuntimeAdapter;
 
 impl RuntimeProviderAdapter for PiRuntimeAdapter {
@@ -48,6 +74,20 @@ impl RuntimeProviderAdapter for PiRuntimeAdapter {
         let mut servers_map = serde_json::Map::new();
         let mut code_plugin_servers = serde_json::Map::new();
         for server in &caps.mcp_servers {
+            if caps.app_mode == crate::work::models::AppMode::Work {
+                // Work transports and credentials stay in the Host. Its native
+                // adapter supplies authenticated loopback servers to Pi.
+                if expert_server_ids.contains(server.id.as_str()) {
+                    dynamic_servers.insert(server.id.clone(), serde_json::json!({}));
+                }
+                continue;
+            }
+            if expert_server_ids.contains(server.id.as_str())
+                && server.id.starts_with("agent-plugin--")
+            {
+                dynamic_servers.insert(server.id.clone(), serde_json::json!({}));
+                continue;
+            }
             let is_agent_plugin = server.id.starts_with("agent-plugin--");
             if caps.app_mode == crate::work::models::AppMode::Code && is_agent_plugin {
                 // Plugin MCP configuration stays Host-owned. Pi receives only
@@ -184,6 +224,11 @@ impl RuntimeProviderAdapter for PiRuntimeAdapter {
         } else {
             serde_json::json!({})
         };
+        if caps.app_mode == crate::work::models::AppMode::Code && !caps.mcp_servers.is_empty() {
+            // Built-in tool-search is registered inactive. Explicitly enable it
+            // in the run profile so deferred MCP tools can be discovered.
+            ensure_default_pi_tool(&mut settings, "tool_search");
+        }
         if let (Ok(node), Ok(npm_cli)) = (
             crate::agent::runtime_locator::resolve_node(),
             crate::agent::runtime_locator::resolve_npm_cli(),
@@ -250,5 +295,51 @@ impl RuntimeProviderAdapter for PiRuntimeAdapter {
 
     fn cleanup_runtime(&self, caps: &EffectiveCapabilities) -> Result<(), String> {
         cleanup_managed_directory(&caps.managed_runtime_dir, "Pi runtime")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::capability_resolver::{CapabilityResolver, EffectiveMcpServer};
+    use crate::work::models::AppMode;
+
+    #[tokio::test]
+    async fn work_projection_keeps_stdio_transports_and_credentials_in_host() {
+        let root = tempfile::TempDir::new().unwrap();
+        let cwd = tempfile::TempDir::new().unwrap();
+        let mut caps = CapabilityResolver::resolve(
+            root.path(),
+            AppMode::Work,
+            RuntimeProviderKind::Pi,
+            cwd.path().to_str().unwrap(),
+            "work-host-mcp-projection",
+        )
+        .await
+        .unwrap();
+        caps.mcp_servers.push(EffectiveMcpServer {
+            id: "everything".into(),
+            transport: "stdio".into(),
+            command: Some("HOST_ONLY_COMMAND".into()),
+            args: vec!["HOST_ONLY_ARG".into()],
+            cwd: None,
+            url: None,
+            env: HashMap::from([("API_TOKEN".into(), "HOST_ONLY_SECRET".into())]),
+            headers: HashMap::new(),
+        });
+        PiRuntimeAdapter.prepare_runtime(&caps).unwrap();
+        for filename in ["mcp.json", "expert-context.json"] {
+            let text = std::fs::read_to_string(caps.managed_runtime_dir.join(filename)).unwrap();
+            for value in [
+                "HOST_ONLY_COMMAND",
+                "HOST_ONLY_ARG",
+                "HOST_ONLY_SECRET",
+                "API_TOKEN",
+            ] {
+                assert!(!text.contains(value), "{filename} leaked {value}");
+            }
+            let config: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(config["mcpServers"], serde_json::json!({}));
+        }
     }
 }

@@ -1334,16 +1334,10 @@ pub fn project_mcp_bindings_from_catalog(
         let mut secret_headers = HashMap::new();
         if let Some(secret_ref) = binding.and_then(|binding| binding.secret_ref.as_deref()) {
             if let Some(secret_dict) = get_host_secret_with_root(root, secret_ref) {
-                for (key, value) in secret_dict {
-                    if key.eq_ignore_ascii_case("authorization")
-                        || key.eq_ignore_ascii_case("token")
-                        || key.eq_ignore_ascii_case("apiKey")
-                        || key.to_lowercase().contains("header")
-                    {
-                        secret_headers.insert(key, value);
-                    } else {
-                        secret_env.insert(key, value);
-                    }
+                if matches!(item.transport.as_str(), "http" | "sse" | "streamable-http") {
+                    secret_headers.extend(secret_dict);
+                } else {
+                    secret_env.extend(secret_dict);
                 }
             }
         }

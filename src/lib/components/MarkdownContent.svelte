@@ -321,6 +321,24 @@
     };
   });
 
+  // Broken local/ephemeral links should never leave a browser broken-image icon.
+  $effect(() => {
+    if (!container || !html) return;
+    const cleanups: Array<() => void> = [];
+    for (const img of container.querySelectorAll<HTMLImageElement>("img")) {
+      const onError = () => {
+        const fallback = document.createElement("span");
+        fallback.className =
+          "inline-flex items-center rounded bg-muted px-2 py-1 text-xs text-muted-foreground";
+        fallback.textContent = img.alt ? `图片不可用：${img.alt}` : "图片文件不可用";
+        img.replaceWith(fallback);
+      };
+      img.addEventListener("error", onError, { once: true });
+      cleanups.push(() => img.removeEventListener("error", onError));
+    }
+    return () => cleanups.forEach((cleanup) => cleanup());
+  });
+
   // Resolve relative image paths against basePath (for Explorer file preview)
   $effect(() => {
     if (!container || !html || !basePath) return;
