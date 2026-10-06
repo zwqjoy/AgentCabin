@@ -1088,6 +1088,7 @@ pub fn get_run_recovery(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::work::ledger::WorkRuntimeLedger;
     use crate::work::models::ToolConcurrencyClass;
     use tempfile::TempDir;
 
@@ -1117,6 +1118,129 @@ mod tests {
             WorkRunStatus::Completed
         )
         .is_ok());
+    }
+
+    #[test]
+    fn simple_chat_completes_without_agent_goal_plan_or_checkpoint() {
+        let temp = TempDir::new().unwrap();
+        let paths = WorkPaths::new(temp.path().to_path_buf());
+        let manager = TaskManager::new(paths.clone());
+        let task = manager
+            .create_task("ws-simple", "Chat", "Hello", None)
+            .unwrap();
+        let run = manager
+            .start_run(&task.id, None, crate::work::models::WorkRunTrigger::Manual)
+            .unwrap();
+        assert!(run.task_state.goal_spec.is_none());
+        assert!(run.task_state.plan.is_empty());
+        assert!(run.task_state.checkpoint.is_none());
+        let result = WorkHarnessController::new(paths)
+            .complete_or_fail_run(&task.id, &run.id, WorkRunStatus::Completed, None, None)
+            .unwrap();
+        assert_eq!(result.status, WorkRunStatus::Completed);
+    }
+
+    #[test]
+    fn pending_approval_blocks_completion_without_agent_progress_state() {
+        let temp = TempDir::new().unwrap();
+        let paths = WorkPaths::new(temp.path().to_path_buf());
+        let manager = TaskManager::new(paths.clone());
+        let task = manager
+            .create_task("ws-pending", "Chat", "Write", None)
+            .unwrap();
+        let run = manager
+            .start_run(&task.id, None, crate::work::models::WorkRunTrigger::Manual)
+            .unwrap();
+        InteractionManager::new(paths.clone())
+            .create_interaction(
+                &task.id,
+                &run.id,
+                &task.workspace_id,
+                None,
+                None,
+                Some("call-pending"),
+                PendingInteractionKind::Permission,
+                "Approve",
+                "Pending write",
+                serde_json::json!({}),
+            )
+            .unwrap();
+        let result = WorkHarnessController::new(paths)
+            .complete_or_fail_run(&task.id, &run.id, WorkRunStatus::Completed, None, None)
+            .unwrap();
+        assert_eq!(result.status, WorkRunStatus::WaitingApproval);
+        assert!(result.finished_at.is_none());
+    }
+
+    #[test]
+    fn restart_uses_ledger_without_agent_checkpoint_and_never_retries_unknown_mutation() {
+        for side_effect in [SideEffectClass::Read, SideEffectClass::ExternalMutating] {
+            let temp = TempDir::new().unwrap();
+            let paths = WorkPaths::new(temp.path().to_path_buf());
+            let manager = TaskManager::new(paths.clone());
+            let task = manager
+                .create_task("ws-restart", "Interrupted", "Execute", None)
+                .unwrap();
+            let run = manager
+                .start_run(&task.id, None, crate::work::models::WorkRunTrigger::Manual)
+                .unwrap();
+            let ledger = WorkRuntimeLedger::open(&paths, &task.id, &run.id).unwrap();
+            ledger
+                .record(&RuntimeFact::ToolProposed {
+                    tool_call_id: "interrupted".to_string(),
+                    tool_name: "work_call_app".to_string(),
+                    action: "execute".to_string(),
+                    arguments_hash: "hash".to_string(),
+                    expected_outputs: vec![],
+                    side_effect_class: side_effect,
+                    concurrency_class: ToolConcurrencyClass::Serial,
+                    timestamp: crate::models::now_iso(),
+                })
+                .unwrap();
+            ledger
+                .record(&RuntimeFact::ToolStarted {
+                    tool_call_id: "interrupted".to_string(),
+                    execution_id: "exec-interrupted".to_string(),
+                    timestamp: crate::models::now_iso(),
+                })
+                .unwrap();
+            drop(manager);
+            drop(ledger);
+            // Re-open only durable stores, as a new Host process would.
+            let controller = WorkHarnessController::new(paths.clone());
+            controller.reconcile_on_restart().unwrap();
+            controller.reconcile_on_restart().unwrap();
+            let reopened = TaskManager::new(paths.clone());
+            let restored = reopened.get_run(&task.id, &run.id).unwrap();
+            let pending = InteractionManager::new(paths.clone())
+                .list_pending(Some(&task.id), Some(&run.id))
+                .unwrap();
+            if side_effect == SideEffectClass::ExternalMutating {
+                assert_eq!(restored.status, WorkRunStatus::WaitingApproval);
+                assert_eq!(pending.len(), 1);
+            } else {
+                assert_eq!(restored.status, WorkRunStatus::Recoverable);
+                assert!(pending.is_empty());
+            }
+            let facts = WorkRuntimeLedger::open(&paths, &task.id, &run.id)
+                .unwrap()
+                .list_facts()
+                .unwrap();
+            assert_eq!(
+                facts
+                    .iter()
+                    .filter(|f| matches!(f, RuntimeFact::ToolStarted { .. }))
+                    .count(),
+                1
+            );
+            assert!(!facts
+                .iter()
+                .any(|f| matches!(f, RuntimeFact::ToolResult { .. })));
+            let completion = controller
+                .complete_or_fail_run(&task.id, &run.id, WorkRunStatus::Completed, None, None)
+                .unwrap();
+            assert_ne!(completion.status, WorkRunStatus::Completed);
+        }
     }
 
     #[test]

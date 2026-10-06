@@ -12,7 +12,7 @@ import {
   createWorkToolDefinition,
 } from "./work_tool_catalog.mjs";
 
-test("Work tool catalog is independent from the selected runtime", () => {
+test("Pi Work catalog contains Host capabilities, not agent state or retired runtimes", () => {
   const base = createWorkToolCatalog({
     mcpEnabled: false,
     browserEnabled: false,
@@ -37,7 +37,11 @@ test("Work tool catalog is independent from the selected runtime", () => {
   assert.ok(!browserDisabled.some((tool) => tool.name === "agent_browser_code"));
   assert.ok(!browserDisabled.some((tool) => tool.name === "agent_browser_tools"));
   assert.ok(!base.some((tool) => tool.name === "mcp"));
-  assert.ok(optional.some((tool) => tool.name === "mcp"));
+  assert.ok(!optional.some((tool) => tool.name === "mcp"));
+  for (const name of ["work_set_goal", "work_replace_plan", "work_update_step", "work_save_checkpoint", "work_delegate", "work_agent_wait", "work_agent_status", "work_agent_steer", "work_agent_stop"]) {
+    assert.ok(!optional.some((tool) => tool.name === name));
+    assert.ok(!createDefaultActiveWorkTools().has(name));
+  }
   assert.ok(optional.some((tool) => tool.name === "web_search"));
   assert.ok(!optional.some((tool) => tool.name === "work_delegate"));
   assert.ok(createDefaultActiveWorkTools({ subagentChild: false }).has("work_run_command"));

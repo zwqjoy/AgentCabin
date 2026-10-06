@@ -1,16 +1,8 @@
-//! Work Runtime Adapter abstraction layer.
+//! Pi Work launch boundary.
 //!
-//! This module defines the boundary between the Work Harness and the
-//! provider-specific runtime. The Work Harness drives any runtime through
-//! the [`WorkRuntimeAdapter`] contract. Provider-specific setup (CLI,
-//! extension paths, env vars, etc.) stays inside the concrete adapter.
-//!
-//! Current registrations:
-//!   - Pi     ✅  (PiWorkRuntimeAdapter)
-//!   - DSH    ❌  (UnsupportedWorkRuntime)
-//!   - Claude  ❌  (UnsupportedWorkRuntime)
-//!   - Codex   ❌  (UnsupportedWorkRuntime)
-//!   - Grok    ❌  (UnsupportedWorkRuntime)
+//! Pi is the only production Work runtime. The adapter contract is retained
+//! for launch-order tests and isolates package provisioning / actor spawning
+//! from Host authority. It does not provide a multi-runtime registry.
 
 pub mod pi;
 
@@ -46,7 +38,7 @@ pub struct WorkRuntimeCapabilities {
     pub supports_follow_up: bool,
 }
 
-/// Runtime-neutral input for provider-specific preparation.
+/// Host-owned input for provider-specific preparation.
 #[derive(Debug, Clone)]
 pub struct WorkRuntimePrepareContext {
     pub paths: WorkPaths,
@@ -65,7 +57,7 @@ pub struct WorkLaunchOverrides {
     pub forbid_model_fallback: bool,
 }
 
-/// Runtime-neutral input for starting a Work session actor.
+/// Host-owned input for starting a Work session actor.
 ///
 /// The concrete adapter owns the provider settings it derives from this
 /// request. Work Core only supplies the run identity, lifecycle operation,
@@ -133,7 +125,7 @@ impl WorkRuntimeLaunchTrace {
     }
 }
 
-/// Runtime-neutral bridge identity for one Work launch.
+/// Host-owned bridge identity for one Work launch.
 ///
 /// The bridge is owned by Work Core, so provider adapters receive its canonical
 /// identity and host-selected proxy instead of deriving workspace/task state
@@ -180,12 +172,8 @@ impl WorkBridgeLaunchInfo {
 /// Errors emitted by the Work Runtime layer.
 #[derive(Debug)]
 pub enum WorkRuntimeError {
-    /// The provider is not yet supported in Work mode.
-    UnsupportedRuntime(RuntimeProviderKind),
     /// The agent identifier is unknown or not supported.
     UnsupportedAgent(String),
-    /// The provider is recognised but currently unavailable.
-    RuntimeUnavailable(RuntimeProviderKind, String),
     /// The provider-specific launch preparation failed.
     LaunchFailed(String),
 }
@@ -193,21 +181,12 @@ pub enum WorkRuntimeError {
 impl std::fmt::Display for WorkRuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnsupportedRuntime(p) => write!(
-                f,
-                "Work Runtime does not support provider '{}'. \
-                 No Work adapter is registered for this provider.",
-                p.as_str()
-            ),
             Self::UnsupportedAgent(a) => write!(
                 f,
                 "Work Runtime does not recognize agent '{}'. \
                  No Work adapter is registered for this agent.",
                 a
             ),
-            Self::RuntimeUnavailable(p, msg) => {
-                write!(f, "Work Runtime '{}' unavailable: {}", p.as_str(), msg)
-            }
             Self::LaunchFailed(msg) => write!(f, "Work Runtime launch failed: {}", msg),
         }
     }
@@ -219,7 +198,7 @@ impl From<WorkRuntimeError> for String {
     }
 }
 
-/// The contract that every Work Runtime Adapter must satisfy.
+/// Pi launch contract, also implemented by the launch-order test double.
 ///
 /// An adapter is responsible for the Work-harness → runtime bridge:
 /// - declaring provider identity + capabilities

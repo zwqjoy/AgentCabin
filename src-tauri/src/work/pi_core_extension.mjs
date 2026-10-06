@@ -38,10 +38,6 @@ const CONVERSATION_HTML_GUIDANCE = `
 `;
 const MAX_WRITE_BYTES = 4 * 1024 * 1024;
 const MAX_LIST_ENTRIES = 500;
-const MAX_GOAL_CHARS = 4000;
-const MAX_PLAN_STEPS = 100;
-const MAX_STEP_CHARS = 2000;
-const MAX_CHECKPOINT_CHARS = 12000;
 const MAX_COMMAND_ARGS = 64;
 const MAX_COMMAND_ARG_CHARS = 8192;
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
@@ -493,38 +489,6 @@ const CallAppSchema = Type.Object({
   account_id: Type.Optional(Type.String({ description: "Optional specific connected account ID. If omitted, uses default workspace account." })),
 });
 
-const TaskStatusSchema = Type.Union([
-  Type.Literal("pending"),
-  Type.Literal("in_progress"),
-  Type.Literal("completed"),
-]);
-
-const SetGoalSchema = Type.Object({
-  goal: Type.String({ minLength: 1, maxLength: MAX_GOAL_CHARS }),
-});
-
-const ReplacePlanSchema = Type.Object({
-  steps: Type.Array(
-    Type.Object({
-      id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-      text: Type.String({ minLength: 1, maxLength: MAX_STEP_CHARS }),
-      status: Type.Optional(TaskStatusSchema),
-    }),
-    { maxItems: MAX_PLAN_STEPS },
-  ),
-});
-
-const UpdateStepSchema = Type.Object({
-  id: Type.String({ minLength: 1, maxLength: 128 }),
-  status: TaskStatusSchema,
-  text: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_STEP_CHARS })),
-});
-
-const SaveCheckpointSchema = Type.Object({
-  summary: Type.String({ minLength: 1, maxLength: MAX_CHECKPOINT_CHARS }),
-  current_step_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-});
-
 function loadResourceCatalog() {
   const catalogPath = process.env.AGENTCABIN_WORK_RESOURCE_CATALOG;
   if (!catalogPath) return { resources: [], connectors: [] };
@@ -662,159 +626,10 @@ function diagnoseCommandFailure(rawErrorText, command) {
   return null;
 }
 
-function workRunDir() {
-  const raw = String(process.env.AGENTCABIN_WORK_RUN_DIR || "").trim();
-  if (!raw) throw new Error("AgentCabin Work Run directory is not configured");
-  const directory = path.resolve(raw);
-  fs.mkdirSync(directory, { recursive: true });
-  return directory;
-}
-
-function taskStatePath() {
-  return path.join(workRunDir(), "work-task-state.json");
-}
-
-function defaultTaskState() {
-  return {
-    version: 1,
-    revision: 0,
-    goal: null,
-    plan: [],
-    checkpoint: null,
-    pendingApproval: null,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function loadTaskState() {
-  const target = taskStatePath();
-  if (!fs.existsSync(target)) return defaultTaskState();
-  const state = JSON.parse(fs.readFileSync(target, "utf8"));
-  if (!state || typeof state !== "object" || Array.isArray(state) || state.version !== 1) {
-    throw new Error("Work Task state is invalid or unsupported");
-  }
-  if (!Array.isArray(state.plan)) throw new Error("Work Task plan is invalid");
-  return {
-    version: 1,
-    revision: Number.isSafeInteger(state.revision) && state.revision >= 0 ? state.revision : 0,
-    goal: typeof state.goal === "string" && state.goal.trim() ? state.goal.trim() : null,
-    plan: state.plan,
-    checkpoint: state.checkpoint && typeof state.checkpoint === "object" ? state.checkpoint : null,
-    pendingApproval:
-      state.pendingApproval && typeof state.pendingApproval === "object"
-        ? state.pendingApproval
-        : null,
-    updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : new Date().toISOString(),
-  };
-}
-
-function saveTaskState(state) {
-  if (!isWorkBridgeConfigured() && process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK !== "1") {
-    throw new Error("Direct task state writes are forbidden in production without bridge.");
-  }
-  const target = taskStatePath();
-  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temporary, target);
-  } catch (error) {
-    try {
-      fs.rmSync(temporary, { force: true });
-    } catch {
-      // Keep the original write error.
-    }
-    throw error;
-  }
-}
-
-let taskStateMutationQueue = Promise.resolve();
-
-function mutateTaskState(mutator) {
-  const operation = taskStateMutationQueue.then(() => {
-    const state = loadTaskState();
-    mutator(state);
-    state.revision += 1;
-    state.updatedAt = new Date().toISOString();
-    saveTaskState(state);
-    return state;
-  });
-  taskStateMutationQueue = operation.catch(() => undefined);
-  return operation;
-}
-
-function taskStateDetails(state) {
-  return { ok: true, work_task_state: state };
-}
-
 function isWorkBridgeConfigured() {
   const port = Number(process.env.AGENTCABIN_WORK_BRIDGE_PORT || 0);
   const token = String(process.env.AGENTCABIN_WORK_BRIDGE_TOKEN || "");
   return Number.isInteger(port) && port > 0 && Boolean(token);
-}
-
-async function requestTaskStateUpdate(payload) {
-  if (isWorkBridgeConfigured()) {
-    const data = await workBridgeRequest("/internal/work/task_state/update", payload);
-    return data?.work_task_state || data?.workTaskState;
-  }
-  if (process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK !== "1") {
-    throw new Error("Work bridge is required for task state updates in production.");
-  }
-  return mutateTaskState((draft) => {
-    if (payload.goal !== undefined) {
-      draft.goal = payload.goal;
-    }
-    if (payload.plan !== undefined) {
-      draft.plan = payload.plan;
-      if (
-        draft.checkpoint?.currentStepId &&
-        !payload.plan.some((step) => step.id === draft.checkpoint.currentStepId)
-      ) {
-        draft.checkpoint = { ...draft.checkpoint, currentStepId: null };
-      }
-      draft.pendingApproval = null;
-    }
-    if (payload.step) {
-      const target = draft.plan.find((step) => step.id === payload.step.id);
-      if (!target) throw new Error(`Work plan step not found: ${payload.step.id}`);
-      if (payload.step.text !== undefined && payload.step.text !== null) {
-        const text = String(payload.step.text).trim();
-        if (!text) throw new Error("Work plan step text cannot be empty");
-        target.text = text;
-      }
-      if (payload.step.status) {
-        if (!["pending", "in_progress", "completed"].includes(payload.step.status)) {
-          throw new Error(`Unsupported Work plan status: ${payload.step.status}`);
-        }
-        if (payload.step.status === "in_progress") {
-          for (const step of draft.plan) {
-            if (step.id !== payload.step.id && step.status === "in_progress") step.status = "pending";
-          }
-        }
-        target.status = payload.step.status;
-      }
-    }
-    if (payload.checkpoint !== undefined) {
-      draft.checkpoint = payload.checkpoint;
-    }
-  });
-}
-
-function normalizePlanSteps(steps) {
-  const ids = new Set();
-  return steps.map((step, index) => {
-    const text = String(step?.text || "").trim();
-    if (!text) throw new Error(`Work plan step ${index + 1} is empty`);
-    let id = String(step?.id || `step-${index + 1}`).trim();
-    if (!id) id = `step-${index + 1}`;
-    if (ids.has(id)) throw new Error(`Work plan step id is duplicated: ${id}`);
-    ids.add(id);
-    const status = step?.status || "pending";
-    if (!["pending", "in_progress", "completed"].includes(status)) {
-      throw new Error(`Unsupported Work plan status: ${status}`);
-    }
-    return { id, text, status };
-  });
 }
 
 function confirmWorkWrite(_ctx, target) {
@@ -1752,93 +1567,6 @@ export default function agentCabinWorkExtension(pi) {
         missing,
         activation_supported: canChangeActiveTools,
       });
-    },
-  });
-
-  registerWorkTool({
-    name: "work_set_goal",
-    label: "work_set_goal",
-    description: "Set the durable objective for the current Work Run.",
-    parameters: SetGoalSchema,
-    async execute(_toolCallId, params) {
-      try {
-        const goal = String(params?.goal || "").trim();
-        if (!goal) return fail("Work goal cannot be empty.");
-        const state = await requestTaskStateUpdate({ goal });
-        return result(`Work 目标已更新：${goal}`, taskStateDetails(state));
-      } catch (error) {
-        return fail(error instanceof Error ? error.message : String(error));
-      }
-    },
-  });
-
-  registerWorkTool({
-    name: "work_replace_plan",
-    label: "work_replace_plan",
-    description: "Replace the durable execution plan for the current Work Run.",
-    parameters: ReplacePlanSchema,
-    async execute(_toolCallId, params) {
-      try {
-        const steps = normalizePlanSteps(Array.isArray(params?.steps) ? params.steps : []);
-        const state = await requestTaskStateUpdate({ plan: steps });
-        return result(
-          `Work 计划已更新，共 ${steps.length} 个步骤，继续执行。`,
-          taskStateDetails(state),
-        );
-      } catch (error) {
-        return fail(error instanceof Error ? error.message : String(error));
-      }
-    },
-  });
-
-  registerWorkTool({
-    name: "work_update_step",
-    label: "work_update_step",
-    description: "Update one durable Work plan step.",
-    parameters: UpdateStepSchema,
-    async execute(_toolCallId, params) {
-      try {
-        const id = String(params?.id || "").trim();
-        const status = String(params?.status || "").trim();
-        if (!["pending", "in_progress", "completed"].includes(status)) {
-          return fail(`Unsupported Work plan status: ${status}`);
-        }
-        const text = params?.text !== undefined ? String(params.text).trim() : undefined;
-        if (text !== undefined && !text) {
-          return fail("Work plan step text cannot be empty");
-        }
-        const state = await requestTaskStateUpdate({
-          step: { id, status, text },
-        });
-        return result(`Work 步骤 ${id} 已更新为 ${status}。`, taskStateDetails(state));
-      } catch (error) {
-        return fail(error instanceof Error ? error.message : String(error));
-      }
-    },
-  });
-
-  registerWorkTool({
-    name: "work_save_checkpoint",
-    label: "work_save_checkpoint",
-    description: "Save a durable Work checkpoint for Resume and Continue.",
-    parameters: SaveCheckpointSchema,
-    async execute(_toolCallId, params) {
-      try {
-        const summary = String(params?.summary || "").trim();
-        if (!summary) return fail("Work checkpoint summary cannot be empty.");
-        const currentStepId = String(params?.current_step_id || "").trim() || null;
-        const now = new Date().toISOString();
-        const state = await requestTaskStateUpdate({
-          checkpoint: {
-            summary,
-            currentStepId,
-            createdAt: now,
-          },
-        });
-        return result("Work 检查点已保存。", taskStateDetails(state));
-      } catch (error) {
-        return fail(error instanceof Error ? error.message : String(error));
-      }
     },
   });
 
@@ -2804,7 +2532,7 @@ export default function agentCabinWorkExtension(pi) {
       ? " 当前权限为完全访问：后续文件读写和命令执行不受 Workspace 路径边界或 Work OS 沙箱限制；仍然保留 Work 运行记录、成果登记和 Workspace 知识库的显式确认规则。"
       : "";
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## AgentCabin Work tools\n除非用户明确要求其他语言，所有面向用户的说明、状态和结论都使用简体中文，避免使用英文开场白或泛化的状态句。对于复杂多步任务，先调用 work_set_goal 记录明确目标，再调用 work_replace_plan 制定具体执行步骤；在步骤开始和完成时调用 work_update_step，并在关键里程碑处保存简要的 work_save_checkpoint。简单单步问题无需形式化计划。这些 Work 状态工具为内部进度记录，无需用户审批，也不要在普通文本中请求“确认执行 / 修改计划 / 取消”。只有遇到真实的业务选择、外部副作用或 Work 工具明确发出的风险确认时，才等待用户输入；需要用户选择或补充事实时，调用 Pi 的 ask_user_question 一次性提交结构化问题，不要把普通进度汇报伪装成提问。复杂多步任务使用 Pi 的 todo 工具跟踪步骤，Work 的 work_* 计划工具仍用于持久化运行进度与恢复。Todo 必须使用真实任务 ID 更新：开始一项前调用 todo(action=\"update\", id=<任务ID>, status=\"in_progress\")，完成后立即调用 todo(action=\"update\", id=<任务ID>, status=\"completed\")。所有工作和成果写入完成后、最终答复之前，必须调用 todo(action=\"list\") 读取任务和 ID，逐项将确已完成的任务更新为 completed，再调用 list 核对；不能只在文字中报告 Todo 已完成。未完成或受阻项保持 pending/in_progress 并说明原因；work_update_step 不会更新 Pi Todo。AgentCabin 能力与资源使用 work_discover_capabilities，可选 Work 工具使用 work_list_tools。已连接 MCP 的具体工具未出现在当前工具列表时，使用 Pi 原生 tool_search 按意图搜索，随后直接调用加载的 mcp__<server>__<tool>。不要读取 MCP 凭据或连接真实 MCP endpoint。从 input/ 读取源材料，并在相关时从 context/ 读取项目背景知识（这些工作区目录已可访问，切勿传入 work_request_directory_access；切勿直接修改 input/ 或 context/）。仅在需要访问 Workspace 外的主机绝对目录时调用 work_request_directory_access。当用户明确要求记住规则、决策或状态时，调用 work_propose_context_update 提交确认。在当前 Workspace 或已授权外部目录中写入草稿至 scratch/，最终成果写入 output/（写入 output/ 会自动登记为成果 Artifact）。${pathGuidance}${workPresetGuidance()}${codingGuidance}${fullAccessGuidance}${browserGuidance}${externalGuidance}${CONVERSATION_HTML_GUIDANCE}`,
+      systemPrompt: `${event.systemPrompt}\n\n## AgentCabin Work tools\n除非用户明确要求其他语言，所有面向用户的说明、状态和结论都使用简体中文，避免使用英文开场白或泛化的状态句。多步任务只使用 Pi 原生 todo 维护执行计划和可见进度，不要另建 Work Plan。AgentCabin Host 自动持久化工具结果、审批、成果和恢复事实；验收契约由 Host 管理，普通对话无需设置目标或保存检查点。只有遇到真实的业务选择、外部副作用或 Work 工具明确发出的风险确认时，才等待用户输入；需要用户选择或补充事实时，调用 Pi 的 ask_user_question 一次性提交结构化问题，不要把普通进度汇报伪装成提问。Todo 必须使用真实任务 ID 更新：开始一项前调用 todo(action=\"update\", id=<任务ID>, status=\"in_progress\")，完成后立即调用 todo(action=\"update\", id=<任务ID>, status=\"completed\")。所有工作和成果写入完成后、最终答复之前，必须调用 todo(action=\"list\") 读取任务和 ID，逐项将确已完成的任务更新为 completed，再调用 list 核对；不能只在文字中报告 Todo 已完成。未完成或受阻项保持 pending/in_progress 并说明原因。AgentCabin 能力与资源使用 work_discover_capabilities，可选 Work 工具使用 work_list_tools。已连接 MCP 的具体工具未出现在当前工具列表时，使用 Pi 原生 tool_search 按意图搜索，随后直接调用加载的 mcp__<server>__<tool>。不要读取 MCP 凭据或连接真实 MCP endpoint。从 input/ 读取源材料，并在相关时从 context/ 读取项目背景知识（这些工作区目录已可访问，切勿传入 work_request_directory_access；切勿直接修改 input/ 或 context/）。仅在需要访问 Workspace 外的主机绝对目录时调用 work_request_directory_access。当用户明确要求记住规则、决策或状态时，调用 work_propose_context_update 提交确认。在当前 Workspace 或已授权外部目录中写入草稿至 scratch/，最终成果写入 output/（写入 output/ 会自动登记为成果 Artifact）。${pathGuidance}${workPresetGuidance()}${codingGuidance}${fullAccessGuidance}${browserGuidance}${externalGuidance}${CONVERSATION_HTML_GUIDANCE}`,
     };
   });
 }

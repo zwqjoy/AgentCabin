@@ -107,7 +107,7 @@ pub(crate) async fn pi_launch_context(
         prompt.push_str("\n\n");
         prompt.push_str(display_guidance);
         prompt.push_str(
-            "\n\n## Todo 完成状态\n多步任务使用 Pi 的 todo 工具维护可见进度。创建任务后立即开始第一项：调用 todo(action=\"update\", id=<任务ID>, status=\"in_progress\")；每项工作完成后立即调用 todo(action=\"update\", id=<任务ID>, status=\"completed\")，再开始下一项。所有工作和成果写入完成后、发送最终答复之前，必须调用 todo(action=\"list\") 读取当前任务及 ID，再逐项把确已完成的任务更新为 completed，最后再次 list 核对；不要仅凭文字汇报完成。仍未完成或受阻的任务保持 pending/in_progress，并说明原因。不要把 Work 计划工具 work_update_step 当成 Pi Todo 状态更新。",
+            "\n\n## Todo 完成状态\n多步任务使用 Pi 的 todo 工具维护可见进度。创建任务后立即开始第一项：调用 todo(action=\"update\", id=<任务ID>, status=\"in_progress\")；每项工作完成后立即调用 todo(action=\"update\", id=<任务ID>, status=\"completed\")，再开始下一项。所有工作和成果写入完成后、发送最终答复之前，必须调用 todo(action=\"list\") 读取当前任务及 ID，再逐项把确已完成的任务更新为 completed，最后再次 list 核对；不要仅凭文字汇报完成。仍未完成或受阻的任务保持 pending/in_progress，并说明原因。Work 验收与恢复由 Host 管理，无需维护第二份计划或手动保存检查点。",
         );
         prompt.push_str(
             "\n\n## MCP 工具发现\nMCP 工具使用 Pi 原生延迟发现，已配置的服务器工具可能不会预先出现在当前工具列表中。当用户要求使用某个 MCP 服务器或工具，而目标工具未出现在当前列表时，先调用 Pi 原生 tool_search，按服务器名和工具用途搜索；找到后立即调用返回的 mcp__<server>__<tool> 工具。不能仅因当前列表里暂时没有 MCP 工具就回答未加载。只有 tool_search 明确找不到目标，或搜索/调用返回连接错误时，才说明该 MCP 工具当前不可用，并如实报告搜索或调用结果。",

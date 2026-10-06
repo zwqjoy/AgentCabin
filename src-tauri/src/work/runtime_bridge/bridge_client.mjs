@@ -1,9 +1,9 @@
 /**
- * Runtime-neutral Work bridge client.
+ * Authenticated Pi-to-Host Work transport.
  *
  * The client owns only authenticated transport and Inbox polling. It does not
  * know how a runtime registers tools or how Work persists authoritative state;
- * Pi, DSH, and test registrars can all call the same bridge contract.
+ * Pi tools and transport tests share this Host authority contract.
  */
 
 const DEFAULT_INBOX_TIMEOUT_MS = 600000;

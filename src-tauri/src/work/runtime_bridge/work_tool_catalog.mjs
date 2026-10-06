@@ -1,9 +1,8 @@
 /**
- * Runtime-neutral Work tool metadata.
+ * Host capability metadata for the Pi Work extension.
  *
- * A runtime registrar consumes this catalog and supplies the execute
- * functions. Keeping discovery/activation metadata here lets Pi, DSH, and
- * test registrars expose the same Work capability surface.
+ * Pi supplies tool registration; the Host retains execution authority.
+ * This catalog centralizes discovery and activation, not runtime selection.
  */
 
 const BASE_TOOL_CATALOG = [
@@ -12,10 +11,6 @@ const BASE_TOOL_CATALOG = [
   ["work_discover_capabilities", "Find active Work capabilities by the user's intent before loading or activating them.", "read", true],
   ["work_activate_tools", "Activate optional Work tools for the current session.", "read", true],
   ["ask_questions", "Ask the root user one or more structured questions and wait for their answers before continuing.", "user_input", true],
-  ["work_set_goal", "Set the durable objective for the current Work Run.", "harness_state", true],
-  ["work_replace_plan", "Replace the durable execution plan for the current Work Run.", "harness_state", true],
-  ["work_update_step", "Update one durable Work plan step.", "harness_state", true],
-  ["work_save_checkpoint", "Save a durable Work checkpoint for Resume and Continue.", "harness_state", true],
   ["work_read_file", "Read a UTF-8 file inside the Workspace, the read-only Work Profile skill tree, an authorized external directory, or any host path in FullAccess.", "read", true],
   ["work_list_files", "List files inside a Work Workspace area, the read-only Work Profile skill tree, an authorized external directory, or any host directory in FullAccess.", "read", true],
   ["work_propose_context_update", "Propose a Workspace knowledge update and save it only after explicit user confirmation.", "context_write", true],
@@ -82,4 +77,5 @@ export function createWorkToolDefinition(entry, execute, parameters, overrides =
   };
 }
 
+// Pi built-in names are confined aliases, not historical runtime shims.
 export const WORK_COMPAT_TOOL_NAMES = Object.freeze(["read", "write", "edit", "bash"]);

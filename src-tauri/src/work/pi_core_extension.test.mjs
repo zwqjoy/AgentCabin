@@ -65,34 +65,6 @@ async function loadExtension(tempRoot) {
 function mockPipelineFetch(workspaceRoot) {
   return async (url, init = {}) => {
     const u = String(url);
-    if (u.includes("/internal/work/task_state/update")) {
-      const body = JSON.parse(init.body || "{}");
-      const runDir = process.env.AGENTCABIN_WORK_RUN_DIR || workspaceRoot;
-      const stateFile = path.join(runDir, "work-task-state.json");
-      let state = { version: 1, revision: 0, goal: null, plan: [], checkpoint: null, pendingApproval: null, updatedAt: new Date().toISOString() };
-      try { state = JSON.parse(fs.readFileSync(stateFile, "utf8")); } catch (_) {}
-      if (body.goal !== undefined) state.goal = body.goal;
-      if (body.plan !== undefined) state.plan = body.plan;
-      if (body.checkpoint !== undefined) state.checkpoint = body.checkpoint;
-      if (body.step) {
-        const target = state.plan.find(s => s.id === body.step.id);
-        if (target) {
-          if (body.step.status) target.status = body.step.status;
-          if (body.step.text) target.text = body.step.text;
-        }
-      }
-      state.revision += 1;
-      state.updatedAt = new Date().toISOString();
-      fs.mkdirSync(path.dirname(stateFile), { recursive: true });
-      fs.writeFileSync(stateFile, JSON.stringify(state, null, 2), "utf8");
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return { ok: true, workTaskState: state, work_task_state: state };
-        },
-      };
-    }
     if (u.includes("/internal/work/tool_pipeline")) {
       const body = JSON.parse(init.body || "{}");
       if (body.toolName === "work_write_file") {
@@ -746,262 +718,50 @@ test("Workspace knowledge updates require confirmation and never touch internal 
   }
 });
 
-test("Work Harness tools persist goal, plan, step progress, and checkpoint in the current Run", async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-harness-"));
-  const workspaceRoot = path.join(temp, "workspace");
-  const runRoot = path.join(temp, "run");
-  fs.mkdirSync(path.join(workspaceRoot, "context"), { recursive: true });
-  fs.mkdirSync(runRoot, { recursive: true });
-  fs.writeFileSync(path.join(workspaceRoot, "manifest.json"), JSON.stringify({ accessRoots: [] }), "utf8");
-  const previous = {
-    workspaceRoot: process.env.AGENTCABIN_WORKSPACE_ROOT,
-    workspaceId: process.env.AGENTCABIN_WORKSPACE_ID,
-    runRoot: process.env.AGENTCABIN_WORK_RUN_DIR,
-    localFallback: process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK,
-  };
-  process.env.AGENTCABIN_WORKSPACE_ROOT = workspaceRoot;
-  process.env.AGENTCABIN_WORKSPACE_ID = "fixture";
-  process.env.AGENTCABIN_WORK_RUN_DIR = runRoot;
-  process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK = "1";
-  try {
-    const extension = await loadExtension(temp);
-    const tools = new Map();
-    extension({
-      registerTool(tool) { tools.set(tool.name, tool); },
-      setActiveTools() {},
-      on() {},
-    });
-
-    const goal = await tools.get("work_set_goal").execute("goal-1", { goal: "交付带引用的报告" });
-    assert.equal(goal.details.work_task_state.goal, "交付带引用的报告");
-    assert.equal(goal.details.work_task_state.revision, 1);
-
-    const plan = await tools.get("work_replace_plan").execute("plan-1", {
-      steps: [
-        { id: "research", text: "搜索官方来源" },
-        { id: "write", text: "撰写报告" },
-      ],
-    }, undefined, undefined, {
-      hasUI: true,
-      ui: { select: async () => { throw new Error("计划不应触发审批"); } },
-    });
-    assert.equal(plan.details.work_task_state.plan.length, 2);
-    assert.equal(plan.details.work_task_state.revision, 2);
-    assert.equal(plan.details.work_task_state.pendingApproval, null);
-
-    const step = await tools.get("work_update_step").execute("step-1", {
-      id: "research",
-      status: "in_progress",
-    });
-    assert.equal(step.details.work_task_state.plan[0].status, "in_progress");
-
-    const checkpoint = await tools.get("work_save_checkpoint").execute("checkpoint-1", {
-      summary: "已确定官方来源",
-      current_step_id: "research",
-    });
-    assert.equal(checkpoint.details.work_task_state.revision, 4);
-    assert.equal(checkpoint.details.work_task_state.checkpoint.currentStepId, "research");
-
-    const stored = JSON.parse(fs.readFileSync(path.join(runRoot, "work-task-state.json"), "utf8"));
-    assert.deepEqual(stored, checkpoint.details.work_task_state);
-  } finally {
-    if (previous.workspaceRoot === undefined) delete process.env.AGENTCABIN_WORKSPACE_ROOT; else process.env.AGENTCABIN_WORKSPACE_ROOT = previous.workspaceRoot;
-    if (previous.workspaceId === undefined) delete process.env.AGENTCABIN_WORKSPACE_ID; else process.env.AGENTCABIN_WORKSPACE_ID = previous.workspaceId;
-    if (previous.runRoot === undefined) delete process.env.AGENTCABIN_WORK_RUN_DIR; else process.env.AGENTCABIN_WORK_RUN_DIR = previous.runRoot;
-    if (previous.localFallback === undefined) delete process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK; else process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK = previous.localFallback;
-    fs.rmSync(temp, { recursive: true, force: true });
-  }
-});
-
-test("Work Harness tools delegate task state mutations to Work Bridge when configured", async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-bridge-task-state-"));
-  const workspaceRoot = path.join(temp, "workspace");
-  const runRoot = path.join(temp, "run");
-  fs.mkdirSync(path.join(workspaceRoot, "context"), { recursive: true });
-  fs.mkdirSync(runRoot, { recursive: true });
-  fs.writeFileSync(path.join(workspaceRoot, "manifest.json"), JSON.stringify({ accessRoots: [] }), "utf8");
-  const previous = {
-    workspaceRoot: process.env.AGENTCABIN_WORKSPACE_ROOT,
-    workspaceId: process.env.AGENTCABIN_WORKSPACE_ID,
-    runRoot: process.env.AGENTCABIN_WORK_RUN_DIR,
-    bridgePort: process.env.AGENTCABIN_WORK_BRIDGE_PORT,
-    bridgeToken: process.env.AGENTCABIN_WORK_BRIDGE_TOKEN,
-    fetch: globalThis.fetch,
-  };
-  process.env.AGENTCABIN_WORKSPACE_ROOT = workspaceRoot;
-  process.env.AGENTCABIN_WORKSPACE_ID = "fixture";
-  process.env.AGENTCABIN_WORK_RUN_DIR = runRoot;
-  process.env.AGENTCABIN_WORK_BRIDGE_PORT = "49321";
-  process.env.AGENTCABIN_WORK_BRIDGE_TOKEN = "test-token";
-  let bridgeUpdateCalled = 0;
-  const originalMock = mockPipelineFetch(workspaceRoot);
-  globalThis.fetch = async (url, init = {}) => {
-    if (String(url).includes("/internal/work/task_state/update")) {
-      bridgeUpdateCalled += 1;
-    }
-    return originalMock(url, init);
-  };
-  try {
-    const extension = await loadExtension(temp);
-    const tools = new Map();
-    extension({
-      registerTool(tool) { tools.set(tool.name, tool); },
-      setActiveTools() {},
-      on() {},
-    });
-
-    const goal = await tools.get("work_set_goal").execute("goal-1", { goal: "完成架构收敛" });
-    assert.equal(goal.details.work_task_state.goal, "完成架构收敛");
-    assert.equal(bridgeUpdateCalled, 1, "work_set_goal must call internal bridge");
-
-    const plan = await tools.get("work_replace_plan").execute("plan-1", {
-      steps: [
-        { id: "step-1", text: "清理冗余代码" },
-        { id: "step-2", text: "集成验证" },
-      ],
-    });
-    assert.equal(plan.details.work_task_state.plan.length, 2);
-    assert.equal(bridgeUpdateCalled, 2, "work_replace_plan must call internal bridge");
-
-    const step = await tools.get("work_update_step").execute("step-update-1", {
-      id: "step-1",
-      status: "in_progress",
-    });
-    assert.equal(step.details.work_task_state.plan[0].status, "in_progress");
-    assert.equal(bridgeUpdateCalled, 3, "work_update_step must call internal bridge");
-
-    const checkpoint = await tools.get("work_save_checkpoint").execute("cp-1", {
-      summary: "第一步执行中",
-      current_step_id: "step-1",
-    });
-    assert.equal(checkpoint.details.work_task_state.checkpoint.summary, "第一步执行中");
-    assert.equal(bridgeUpdateCalled, 4, "work_save_checkpoint must call internal bridge");
-  } finally {
-    if (previous.workspaceRoot === undefined) delete process.env.AGENTCABIN_WORKSPACE_ROOT; else process.env.AGENTCABIN_WORKSPACE_ROOT = previous.workspaceRoot;
-    if (previous.workspaceId === undefined) delete process.env.AGENTCABIN_WORKSPACE_ID; else process.env.AGENTCABIN_WORKSPACE_ID = previous.workspaceId;
-    if (previous.runRoot === undefined) delete process.env.AGENTCABIN_WORK_RUN_DIR; else process.env.AGENTCABIN_WORK_RUN_DIR = previous.runRoot;
-    if (previous.bridgePort === undefined) delete process.env.AGENTCABIN_WORK_BRIDGE_PORT; else process.env.AGENTCABIN_WORK_BRIDGE_PORT = previous.bridgePort;
-    if (previous.bridgeToken === undefined) delete process.env.AGENTCABIN_WORK_BRIDGE_TOKEN; else process.env.AGENTCABIN_WORK_BRIDGE_TOKEN = previous.bridgeToken;
-    globalThis.fetch = previous.fetch;
-    fs.rmSync(temp, { recursive: true, force: true });
-  }
-});
-
-test("Work plan replacement records the plan without opening an approval prompt", async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-plan-gate-"));
-  const workspaceRoot = path.join(temp, "workspace");
-  const runRoot = path.join(temp, "run");
-  fs.mkdirSync(path.join(workspaceRoot, "context"), { recursive: true });
-  fs.mkdirSync(runRoot, { recursive: true });
-  fs.writeFileSync(
-    path.join(workspaceRoot, "manifest.json"),
-    JSON.stringify({ accessRoots: [] }),
-    "utf8",
-  );
-  const previous = {
-    workspaceRoot: process.env.AGENTCABIN_WORKSPACE_ROOT,
-    workspaceId: process.env.AGENTCABIN_WORKSPACE_ID,
-    runRoot: process.env.AGENTCABIN_WORK_RUN_DIR,
-    localFallback: process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK,
-  };
-  process.env.AGENTCABIN_WORKSPACE_ROOT = workspaceRoot;
-  process.env.AGENTCABIN_WORKSPACE_ID = "fixture";
-  process.env.AGENTCABIN_WORK_RUN_DIR = runRoot;
-  process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK = "1";
+test("Pi alone owns progress; legacy harness tools cannot be discovered or activated", async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-boundary-"));
+  const previousRoot = process.env.AGENTCABIN_WORKSPACE_ROOT;
+  const previousRunDir = process.env.AGENTCABIN_WORK_RUN_DIR;
+  process.env.AGENTCABIN_WORKSPACE_ROOT = temp;
+  process.env.AGENTCABIN_WORK_RUN_DIR = temp;
+  fs.writeFileSync(path.join(temp, "manifest.json"), JSON.stringify({ accessRoots: [] }));
+  // Existing durable state remains Host-owned, even when a session resumes.
+  const statePath = path.join(temp, "work-task-state.json");
+  const historical = JSON.stringify({ version: 1, plan: [{ id: "old", text: "legacy", status: "in_progress" }], checkpoint: { summary: "old" } });
+  fs.writeFileSync(statePath, historical);
+  const retired = ["work_set_goal", "work_replace_plan", "work_update_step", "work_save_checkpoint",
+    "work_delegate", "work_agent_wait", "work_agent_status", "work_agent_steer", "work_agent_stop"];
   const tools = new Map();
+  const handlers = new Map();
+  let active = [];
   try {
     const extension = await loadExtension(temp);
     extension({
-      registerTool(tool) {
-        tools.set(tool.name, tool);
-      },
-      setActiveTools() {},
-      on() {},
+      registerTool(tool) { tools.set(tool.name, tool); },
+      setActiveTools(names) { active = names; },
+      on(event, handler) { handlers.set(event, handler); },
     });
-
-    let selectCalls = 0;
-    const plan = await tools.get("work_replace_plan").execute(
-      "plan-gate-1",
-      { steps: [{ id: "test", text: "运行测试" }] },
-      undefined,
-      undefined,
-      {
-        hasUI: true,
-        ui: {
-          select: async () => {
-            selectCalls += 1;
-            return "取消";
-          },
-        },
-      },
-    );
-
-    assert.equal(selectCalls, 0);
-    assert.equal(plan.details.work_task_state.pendingApproval, null);
-    assert.equal(plan.details.work_task_state.plan[0].text, "运行测试");
+    await handlers.get("session_start")({}, {});
+    const listed = await tools.get("work_list_tools").execute("list", {});
+    const activated = await tools.get("work_activate_tools").execute("activate", { names: retired, mode: "replace" });
+    assert.deepEqual(activated.details.accepted, []);
+    assert.deepEqual(activated.details.missing, retired);
+    for (const name of retired) {
+      assert.equal(tools.has(name), false, `${name} must not be registered`);
+      assert.equal(active.includes(name), false, `${name} must not be active`);
+      assert.equal(listed.details.tools.some((tool) => tool.name === name), false);
+    }
+    // Work does not register or shadow Pi's native Todo implementation.
+    assert.equal(tools.has("todo"), false);
+    const prompt = await handlers.get("before_agent_start")({ systemPrompt: "base" });
+    assert.match(prompt.systemPrompt, /只使用 Pi 原生 todo/);
+    for (const name of retired) assert.equal(prompt.systemPrompt.includes(name), false);
+    assert.equal(fs.readFileSync(statePath, "utf8"), historical);
   } finally {
-    if (previous.workspaceRoot === undefined) delete process.env.AGENTCABIN_WORKSPACE_ROOT;
-    else process.env.AGENTCABIN_WORKSPACE_ROOT = previous.workspaceRoot;
-    if (previous.workspaceId === undefined) delete process.env.AGENTCABIN_WORKSPACE_ID;
-    else process.env.AGENTCABIN_WORKSPACE_ID = previous.workspaceId;
-    if (previous.runRoot === undefined) delete process.env.AGENTCABIN_WORK_RUN_DIR;
-    else process.env.AGENTCABIN_WORK_RUN_DIR = previous.runRoot;
-    if (previous.localFallback === undefined) delete process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK;
-    else process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK = previous.localFallback;
-    fs.rmSync(temp, { recursive: true, force: true });
-  }
-});
-
-test("Work plan replacement does not leave a pending approval when UI is unavailable", async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentcabin-work-pending-approval-"));
-  const workspaceRoot = path.join(temp, "workspace");
-  const runRoot = path.join(temp, "run");
-  fs.mkdirSync(path.join(workspaceRoot, "context"), { recursive: true });
-  fs.mkdirSync(runRoot, { recursive: true });
-  fs.writeFileSync(
-    path.join(workspaceRoot, "manifest.json"),
-    JSON.stringify({ accessRoots: [] }),
-    "utf8",
-  );
-  const previous = {
-    workspaceRoot: process.env.AGENTCABIN_WORKSPACE_ROOT,
-    workspaceId: process.env.AGENTCABIN_WORKSPACE_ID,
-    runRoot: process.env.AGENTCABIN_WORK_RUN_DIR,
-    localFallback: process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK,
-  };
-  process.env.AGENTCABIN_WORKSPACE_ROOT = workspaceRoot;
-  process.env.AGENTCABIN_WORKSPACE_ID = "fixture";
-  process.env.AGENTCABIN_WORK_RUN_DIR = runRoot;
-  process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK = "1";
-  try {
-    const extension = await loadExtension(temp);
-    const tools = new Map();
-    extension({
-      registerTool(tool) {
-        tools.set(tool.name, tool);
-      },
-      setActiveTools() {},
-      on() {},
-    });
-
-    const plan = await tools.get("work_replace_plan").execute("pending-1", {
-      steps: [{ id: "test", text: "运行测试" }],
-    });
-    assert.equal(plan.details.work_task_state.pendingApproval, null);
-    assert.equal(plan.details.work_task_state.plan[0].text, "运行测试");
-
-    const stored = JSON.parse(fs.readFileSync(path.join(runRoot, "work-task-state.json"), "utf8"));
-    assert.equal(stored.pendingApproval, null);
-    assert.equal(stored.plan[0].text, "运行测试");
-  } finally {
-    if (previous.workspaceRoot === undefined) delete process.env.AGENTCABIN_WORKSPACE_ROOT;
-    else process.env.AGENTCABIN_WORKSPACE_ROOT = previous.workspaceRoot;
-    if (previous.workspaceId === undefined) delete process.env.AGENTCABIN_WORKSPACE_ID;
-    else process.env.AGENTCABIN_WORKSPACE_ID = previous.workspaceId;
-    if (previous.runRoot === undefined) delete process.env.AGENTCABIN_WORK_RUN_DIR;
-    else process.env.AGENTCABIN_WORK_RUN_DIR = previous.runRoot;
-    if (previous.localFallback === undefined) delete process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK;
-    else process.env.AGENTCABIN_WORK_TEST_LOCAL_FALLBACK = previous.localFallback;
+    if (previousRoot === undefined) delete process.env.AGENTCABIN_WORKSPACE_ROOT;
+    else process.env.AGENTCABIN_WORKSPACE_ROOT = previousRoot;
+    if (previousRunDir === undefined) delete process.env.AGENTCABIN_WORK_RUN_DIR;
+    else process.env.AGENTCABIN_WORK_RUN_DIR = previousRunDir;
     fs.rmSync(temp, { recursive: true, force: true });
   }
 });
