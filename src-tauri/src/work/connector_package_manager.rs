@@ -31,6 +31,8 @@ const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 const MAX_MCP_CONFIG_BYTES: u64 = 256 * 1024;
 const MAX_CLI_CONFIG_BYTES: u64 = 256 * 1024;
 const MAX_PACKAGE_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_DISCOVERY_ENTRIES: usize = 8192;
+const MAX_DISCOVERY_PACKAGES: usize = 2048;
 const STATE_VERSION: u32 = 1;
 const MAX_MCP_SERVERS_PER_PACKAGE: usize = 32;
 const MAX_MCP_ARGS: usize = 100;
@@ -89,6 +91,23 @@ struct ConnectorPackageSecretsFile {
     packages: BTreeMap<String, BTreeMap<String, String>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkBuddyDiscoveredConnector {
+    pub manifest: ConnectorPackageManifest,
+    pub path: String,
+    pub already_installed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkBuddyConnectorDiscoveryResult {
+    pub available: bool,
+    pub roots: Vec<String>,
+    pub packages: Vec<WorkBuddyDiscoveredConnector>,
+    pub warnings: Vec<String>,
+}
+
 fn default_state_version() -> u32 {
     STATE_VERSION
 }
@@ -135,6 +154,217 @@ pub fn list_with_paths(paths: &WorkPaths) -> Result<Vec<ConnectorPackageSummary>
             .then_with(|| left.manifest.id.cmp(&right.manifest.id))
     });
     Ok(summaries)
+}
+
+/// Discover WorkBuddy Connector Packages under the official marketplace
+/// locations or a user-selected directory. Discovery validates packages but
+/// never installs, trusts, enables, or executes them.
+pub fn discover_workbuddy_connectors(
+    selected_root: Option<&str>,
+) -> Result<WorkBuddyConnectorDiscoveryResult, String> {
+    let roots = if let Some(root) = selected_root {
+        let root = PathBuf::from(root.trim());
+        if root.as_os_str().is_empty() {
+            return Err("WorkBuddy connector directory cannot be empty".into());
+        }
+        vec![root]
+    } else {
+        let home = crate::storage::home_dir()
+            .map(PathBuf::from)
+            .ok_or_else(|| "Could not determine the user home directory".to_string())?;
+        vec![
+            home.join(
+                ".workbuddy/plugins/marketplaces/workbuddy-connector-plugins-official/connectors",
+            ),
+            home.join(".workbuddy/connectors-marketplace/connectors"),
+        ]
+    };
+    discover_workbuddy_connectors_at_roots(&WorkPaths::app(), roots, selected_root.is_none())
+}
+
+fn discover_workbuddy_connectors_at_roots(
+    app_paths: &WorkPaths,
+    roots: Vec<PathBuf>,
+    ignore_missing_roots: bool,
+) -> Result<WorkBuddyConnectorDiscoveryResult, String> {
+    let mut existing_roots = Vec::new();
+    let mut candidates = Vec::new();
+    let mut warnings = Vec::new();
+    for root in roots {
+        let metadata = match fs::symlink_metadata(&root) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && ignore_missing_roots => {
+                continue;
+            }
+            Err(error) => {
+                return Err(format!(
+                    "WorkBuddy connector directory is unavailable: {error}"
+                ));
+            }
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            warnings.push(format!(
+                "跳过非普通目录：{}",
+                root.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("WorkBuddy")
+            ));
+            continue;
+        }
+        let canonical = root
+            .canonicalize()
+            .map_err(|error| format!("WorkBuddy connector directory is unavailable: {error}"))?;
+        existing_roots.push(canonical.display().to_string());
+        collect_connector_candidates(&canonical, &mut candidates, &mut warnings)?;
+    }
+
+    let state = read_states(app_paths)?;
+    let installed_ids = state
+        .packages
+        .iter()
+        .filter(|package| package.installed)
+        .map(|package| package.package_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let installed_dir = app_paths.work_connector_packages_dir();
+
+    let mut seen_ids = std::collections::BTreeSet::new();
+    let mut packages = Vec::new();
+    let mut skipped = 0usize;
+    for candidate in candidates {
+        if packages.len() >= MAX_DISCOVERY_PACKAGES {
+            warnings.push(format!(
+                "扫描结果达到 {} 个连接器上限，后续目录未扫描。",
+                MAX_DISCOVERY_PACKAGES
+            ));
+            break;
+        }
+        match validate_discovery_package(&candidate) {
+            Ok(manifest) => {
+                if !seen_ids.insert(manifest.id.clone()) {
+                    continue;
+                }
+                let already_installed = installed_ids.contains(&manifest.id)
+                    || path_exists_without_following_symlink(&installed_dir.join(&manifest.id))?;
+                packages.push(WorkBuddyDiscoveredConnector {
+                    manifest,
+                    path: candidate.display().to_string(),
+                    already_installed,
+                });
+            }
+            Err(_) => skipped += 1,
+        }
+    }
+    if skipped > 0 {
+        warnings.push(format!("已跳过 {skipped} 个无效或不安全的连接器目录。"));
+    }
+    packages.sort_by(|left, right| {
+        left.manifest
+            .display_name
+            .cmp(&right.manifest.display_name)
+            .then_with(|| left.manifest.id.cmp(&right.manifest.id))
+    });
+
+    Ok(WorkBuddyConnectorDiscoveryResult {
+        available: !existing_roots.is_empty(),
+        roots: existing_roots,
+        packages,
+        warnings,
+    })
+}
+
+fn collect_connector_candidates(
+    root: &Path,
+    candidates: &mut Vec<PathBuf>,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    if is_workbuddy_connector_package(root) {
+        candidates.push(root.to_path_buf());
+        return Ok(());
+    }
+
+    let mut frontier = vec![root.to_path_buf()];
+    for _ in 0..3 {
+        let mut next = Vec::new();
+        for parent in frontier {
+            let entries = match fs::read_dir(&parent) {
+                Ok(entries) => entries,
+                Err(_) => {
+                    warnings.push("部分 WorkBuddy 目录无法读取。".into());
+                    continue;
+                }
+            };
+            for entry in entries {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(_) => {
+                        warnings.push("部分 WorkBuddy 目录项无法读取。".into());
+                        continue;
+                    }
+                };
+                let path = entry.path();
+                let metadata = match fs::symlink_metadata(&path) {
+                    Ok(metadata) => metadata,
+                    Err(_) => continue,
+                };
+                if metadata.file_type().is_symlink() {
+                    warnings.push("已跳过包含符号链接的 WorkBuddy 连接器目录。".into());
+                    continue;
+                }
+                if !metadata.is_dir() {
+                    continue;
+                }
+                if is_workbuddy_connector_package(&path) {
+                    candidates.push(path);
+                } else {
+                    next.push(path);
+                }
+                if next.len() + candidates.len() > MAX_DISCOVERY_PACKAGES * 2 {
+                    warnings.push("WorkBuddy 目录项目过多，已限制扫描范围。".into());
+                    return Ok(());
+                }
+            }
+        }
+        frontier = next;
+    }
+    Ok(())
+}
+
+fn is_workbuddy_connector_package(root: &Path) -> bool {
+    ["connector-meta.json", "mcp.json", "cli.json"]
+        .iter()
+        .any(|name| {
+            fs::symlink_metadata(root.join(name))
+                .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+        })
+}
+
+fn validate_discovery_package(root: &Path) -> Result<ConnectorPackageManifest, String> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut entries = 0usize;
+    let mut bytes = 0u64;
+    while let Some(path) = pending.pop() {
+        let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+        if metadata.file_type().is_symlink() {
+            return Err("Connector Package cannot contain symlinks".into());
+        }
+        entries += 1;
+        if entries > MAX_DISCOVERY_ENTRIES {
+            return Err("Connector Package contains too many files".into());
+        }
+        if metadata.is_dir() {
+            for entry in fs::read_dir(&path).map_err(|error| error.to_string())? {
+                pending.push(entry.map_err(|error| error.to_string())?.path());
+            }
+        } else if metadata.is_file() {
+            bytes = bytes.saturating_add(metadata.len());
+            if bytes > MAX_PACKAGE_BYTES {
+                return Err("Connector Package exceeds the size limit".into());
+            }
+        } else {
+            return Err("Connector Package contains an unsupported filesystem entry".into());
+        }
+    }
+    validate_directory(root)
 }
 
 /// Provision the built-in Feishu package inside the current Work profile.
@@ -3118,6 +3348,92 @@ mod tests {
             }"#,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn workbuddy_discovery_finds_official_and_metadata_less_connectors_without_exposing_values() {
+        let temp = TempDir::new().unwrap();
+        let app_paths = WorkPaths::new(temp.path().join("agentcabin-data"));
+        let official_root = temp.path().join(
+            ".workbuddy/plugins/marketplaces/workbuddy-connector-plugins-official/connectors",
+        );
+        let legacy_root = temp
+            .path()
+            .join(".workbuddy/connectors-marketplace/connectors");
+        let official = official_root.join("official-package");
+        let legacy = legacy_root.join("legacy-mcp");
+        fs::create_dir_all(&official).unwrap();
+        fs::create_dir_all(&legacy).unwrap();
+        write_source_package(&official);
+        fs::write(
+            legacy.join("mcp.json"),
+            r#"{"mcpServers":{"legacy":{"type":"stdio","command":"printf","env":{"API_KEY":"SENSITIVE_FIXTURE_VALUE"}}}}"#,
+        )
+        .unwrap();
+
+        let result = discover_workbuddy_connectors_at_roots(
+            &app_paths,
+            vec![official_root, legacy_root],
+            false,
+        )
+        .unwrap();
+        assert!(result.available);
+        assert_eq!(result.roots.len(), 2);
+        assert_eq!(result.packages.len(), 2);
+        assert!(result
+            .packages
+            .iter()
+            .any(|item| item.manifest.id == "example.connector"));
+        assert!(result
+            .packages
+            .iter()
+            .any(|item| item.manifest.id == "legacy-mcp"));
+        assert!(result.packages.iter().all(|item| !item.already_installed));
+        assert!(!serde_json::to_string(&result)
+            .unwrap()
+            .contains("SENSITIVE_FIXTURE_VALUE"));
+        assert!(!app_paths.data_root().exists());
+    }
+
+    #[test]
+    fn workbuddy_discovery_skips_symlinked_packages_and_marks_installed_ids() {
+        let temp = TempDir::new().unwrap();
+        let app_paths = WorkPaths::new(temp.path().join("agentcabin-data"));
+        let root = temp.path().join("connectors");
+        let package = root.join("local-token");
+        fs::create_dir_all(&package).unwrap();
+        write_token_source_package(&package);
+        let linked = root.join("linked-package");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&package, &linked).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&package, &linked).unwrap();
+
+        let before =
+            discover_workbuddy_connectors_at_roots(&app_paths, vec![root.clone()], false).unwrap();
+        assert_eq!(before.packages.len(), 1);
+        assert_eq!(before.warnings.len(), 1);
+
+        fs::create_dir_all(app_paths.work_profile_dir()).unwrap();
+        write_states(
+            &app_paths,
+            &ConnectorPackageStateFile {
+                version: STATE_VERSION,
+                packages: vec![ConnectorPackageState {
+                    package_id: "token.connector".into(),
+                    version: "1.0.0".into(),
+                    installed: true,
+                    trusted: false,
+                    enabled: false,
+                    auth_status: ConnectorAuthStatus::NotAuthenticated,
+                    runtime_status: ConnectorRuntimeStatus::NotReady,
+                    last_error: None,
+                }],
+            },
+        )
+        .unwrap();
+        let after = discover_workbuddy_connectors_at_roots(&app_paths, vec![root], false).unwrap();
+        assert!(after.packages[0].already_installed);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConnectorPackageSummary } from "$lib/types/work";
+  import WorkBuddyConnectorImportDialog from "$lib/components/work/WorkBuddyConnectorImportDialog.svelte";
 
   type CatalogSource = "discover" | "enabled";
 
@@ -32,6 +33,7 @@
   let error = $state("");
   let editingTokenId = $state("");
   let tokenValues = $state<Record<string, Record<string, string>>>({});
+  let workBuddyImportOpen = $state(false);
 
   let visiblePackages = $derived(
     source === "enabled" && !showAll ? packages.filter((item) => item.state.enabled) : packages,
@@ -157,14 +159,24 @@
       </p>
     </div>
     {#if source === "discover"}
-      <button
-        type="button"
-        class="min-h-9 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-        disabled={Boolean(busyId)}
-        onclick={() => void choosePackage()}
-      >
-        导入 WorkBuddy 连接器
-      </button>
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="min-h-9 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          disabled={Boolean(busyId)}
+          onclick={() => (workBuddyImportOpen = true)}
+        >
+          从 WorkBuddy 导入
+        </button>
+        <button
+          type="button"
+          class="min-h-9 rounded-lg border border-border px-3 text-[11px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          disabled={Boolean(busyId)}
+          onclick={() => void choosePackage()}
+        >
+          从目录导入…
+        </button>
+      </div>
     {/if}
   </div>
 
@@ -336,3 +348,5 @@
     只看到声明的工具和技能。
   </p>
 </section>
+
+<WorkBuddyConnectorImportDialog bind:open={workBuddyImportOpen} onImport={onInstall} />

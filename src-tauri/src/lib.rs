@@ -271,6 +271,7 @@ pub fn run() {
             commands::work::work_toggle_connector,
             commands::work::work_remove_connector,
             commands::work::work_list_connector_packages,
+            commands::work::work_discover_workbuddy_connectors,
             commands::work::work_list_connector_catalog,
             commands::work::work_validate_connector_package,
             commands::work::work_install_connector_package,

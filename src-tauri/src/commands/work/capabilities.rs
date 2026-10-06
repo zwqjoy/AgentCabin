@@ -101,6 +101,18 @@ pub fn work_list_connector_packages(
 }
 
 #[tauri::command]
+pub async fn work_discover_workbuddy_connectors(
+    root: Option<String>,
+) -> Result<connector_package_manager::WorkBuddyConnectorDiscoveryResult, String> {
+    ensure_work_enabled()?;
+    tokio::task::spawn_blocking(move || {
+        connector_package_manager::discover_workbuddy_connectors(root.as_deref())
+    })
+    .await
+    .map_err(|error| format!("WorkBuddy connector discovery task failed: {error}"))?
+}
+
+#[tauri::command]
 pub fn work_list_connector_catalog() -> Result<Vec<connector_package::ConnectorCatalogItem>, String>
 {
     ensure_work_enabled()?;

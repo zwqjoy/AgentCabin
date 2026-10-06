@@ -13,6 +13,7 @@ import type {
   AuthorizeResponse,
   ConnectorPackageManifest,
   ConnectorPackageSummary,
+  WorkBuddyConnectorDiscoveryResult,
   ConnectorCatalogItem,
   ComposioProviderConfig,
   ConnectionStatus,
@@ -243,6 +244,14 @@ export function removeWorkConnector(name: string): Promise<void> {
 
 export function listWorkConnectorPackages(): Promise<ConnectorPackageSummary[]> {
   return invoke<ConnectorPackageSummary[]>("work_list_connector_packages");
+}
+
+export function discoverWorkBuddyConnectors(
+  root?: string,
+): Promise<WorkBuddyConnectorDiscoveryResult> {
+  return invoke<WorkBuddyConnectorDiscoveryResult>("work_discover_workbuddy_connectors", {
+    root: root ?? null,
+  });
 }
 
 export function listWorkConnectorCatalog(): Promise<ConnectorCatalogItem[]> {

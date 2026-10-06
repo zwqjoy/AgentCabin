@@ -231,6 +231,19 @@ export interface ConnectorPackageSummary {
   state: ConnectorPackageState;
 }
 
+export interface WorkBuddyDiscoveredConnector {
+  manifest: ConnectorPackageManifest;
+  path: string;
+  alreadyInstalled: boolean;
+}
+
+export interface WorkBuddyConnectorDiscoveryResult {
+  available: boolean;
+  roots: string[];
+  packages: WorkBuddyDiscoveredConnector[];
+  warnings: string[];
+}
+
 /** Built-in Connector catalog item shown in the Work Marketplace. */
 export interface ConnectorCatalogItem {
   packageId: string;

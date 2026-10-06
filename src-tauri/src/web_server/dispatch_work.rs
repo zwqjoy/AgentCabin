@@ -243,6 +243,7 @@ async fn work_dispatch(
         params,
         // capabilities (commands/work/capabilities.rs, async half)
         "work_install_community_skill" => crate::commands::work::capabilities::work_install_community_skill(source: String, skill_id: String),
+        "work_discover_workbuddy_connectors" => crate::commands::work::capabilities::work_discover_workbuddy_connectors(root: Option<String>),
         "work_import_skill_zip" => crate::commands::work::capabilities::work_import_skill_zip(zip_path: String, slug: String),
         "work_test_connector" => crate::commands::work::capabilities::work_test_connector(name: String),
         "work_test_browser" => crate::commands::work::capabilities::work_test_browser(),
