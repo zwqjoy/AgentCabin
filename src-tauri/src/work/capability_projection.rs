@@ -504,7 +504,10 @@ fn project_apps(paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
 
     catalog
         .into_iter()
-        .filter(|item| !item.app_id.eq_ignore_ascii_case("feishu"))
+        .filter(|item| {
+            !item.app_id.eq_ignore_ascii_case("feishu")
+                && !item.app_id.eq_ignore_ascii_case("notion")
+        })
         .map(|item| {
             let conn = connections.iter().find(|c| c.app_id == item.app_id);
             if let Some(conn) = conn {
@@ -628,6 +631,9 @@ fn project_connectors(paths: &WorkPaths) -> Vec<CapabilityCenterItem> {
     let packages = connector_package_manager::list_with_paths(paths).unwrap_or_default();
     for pkg in packages {
         let manifest = &pkg.manifest;
+        if manifest.id.eq_ignore_ascii_case("feishu") {
+            continue;
+        }
         let state = &pkg.state;
 
         let (readiness, reason, actions) = if !state.installed {

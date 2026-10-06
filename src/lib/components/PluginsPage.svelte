@@ -119,11 +119,10 @@
   import AgentPluginsPanel from "$lib/components/AgentPluginsPanel.svelte";
   import CodeGlobalRulesPanel from "$lib/components/CodeGlobalRulesPanel.svelte";
   import CapabilityCenterIcon from "$lib/components/CapabilityCenterIcon.svelte";
-  import CapabilityOverview from "$lib/components/capabilities/CapabilityOverview.svelte";
   import CapabilityItemCard from "$lib/components/capabilities/CapabilityItemCard.svelte";
   import CapabilityDetailDrawer from "$lib/components/capabilities/CapabilityDetailDrawer.svelte";
-  import { getCapabilityCenterProjection, searchCapabilities } from "$lib/api/work";
-  import type { CapabilityCenterProjection, CapabilityCenterItem } from "$lib/types/work";
+  import { searchCapabilities } from "$lib/api/work";
+  import type { CapabilityCenterItem } from "$lib/types/work";
   import { t } from "$lib/i18n/index.svelte";
   import { getTransport } from "$lib/transport";
 
@@ -245,13 +244,10 @@
   }
 
   // ── Capability Center 2.0 States & Actions ──
-  let capabilityProjection = $state<CapabilityCenterProjection | null>(null);
-  let loadingCapabilityProjection = $state(false);
   let selectedCapabilityItem = $state<CapabilityCenterItem | null>(null);
   let intentSearchQuery = $state("");
   let intentSearchResults = $state<CapabilityCenterItem[]>([]);
   let searchingIntent = $state(false);
-  let readinessFilter = $state<string | null>(null);
 
   const CAPABILITY_LOAD_TIMEOUT_MS = 8_000;
   function withLoadTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
@@ -261,18 +257,6 @@
         setTimeout(() => resolve(fallback), CAPABILITY_LOAD_TIMEOUT_MS);
       }),
     ]);
-  }
-
-  async function loadCapabilityProjection(scope: CapabilityScope = capabilityScope) {
-    loadingCapabilityProjection = true;
-    try {
-      const target = scope === "all" ? undefined : scope;
-      capabilityProjection = await withLoadTimeout(getCapabilityCenterProjection(target), null);
-    } catch (e) {
-      console.error("Failed to load capability projection:", e);
-    } finally {
-      loadingCapabilityProjection = false;
-    }
   }
 
   let intentSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -302,10 +286,6 @@
   function clearIntentSearch() {
     intentSearchQuery = "";
     intentSearchResults = [];
-  }
-
-  function handleFilterReadiness(r: string | null) {
-    readinessFilter = r;
   }
 
   async function handleCapabilityAction(actionType: string, item: CapabilityCenterItem) {
@@ -348,7 +328,7 @@
           showToast("已安装连接器", "success");
         }
       }
-      await loadCapabilityProjection();
+      if (intentSearchQuery.trim()) await executeIntentSearch();
     } catch (err: any) {
       showToast(err?.message || "操作失败", "error");
     }
@@ -1173,11 +1153,7 @@
       // as an otherwise empty, indefinite spinner; each section owns its
       // loading/error state below.
       loading = false;
-      void Promise.allSettled([
-        loadCapabilityProjection(),
-        loadWorkPluginData(),
-        loadConnectorData(),
-      ]).then((results) => {
+      void Promise.allSettled([loadWorkPluginData(), loadConnectorData()]).then((results) => {
         for (const result of results) {
           if (result.status === "rejected") {
             dbgWarn("plugins", "capability center load error", result.reason);
@@ -1185,10 +1161,6 @@
         }
       });
       return;
-    }
-
-    if (isPiProfileScope() || pluginScope === "work") {
-      void loadCapabilityProjection();
     }
 
     if (pluginScope === "work" || pluginScope === "pi-code") {
@@ -2894,15 +2866,6 @@
   {:else}
     {#if isPiProfileScope() || isCapabilityCenterPage || pluginScope === "work"}
       <div class="mb-6 space-y-4">
-        <CapabilityOverview
-          projection={capabilityProjection}
-          loading={loadingCapabilityProjection}
-          onAction={handleCapabilityAction}
-          onSelectItem={(item) => (selectedCapabilityItem = item)}
-          onFilterReadiness={handleFilterReadiness}
-          activeFilter={readinessFilter}
-        />
-
         <!-- Intent Search Input -->
         <div
           class="flex items-center gap-2.5 rounded-xl border border-border/70 bg-card/60 px-3.5 py-2.5 shadow-sm"
@@ -2963,46 +2926,6 @@
             class="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground"
           >
             未找到与 "{intentSearchQuery}" 匹配的能力
-          </div>
-        {/if}
-
-        <!-- Readiness Filtered Results (when clicking Ready / Needs Setup / etc.) -->
-        {#if readinessFilter && capabilityProjection}
-          {@const filteredItems = capabilityProjection.items.filter((item) => {
-            if (readinessFilter === "ready") return item.readiness === "ready";
-            if (readinessFilter === "needs_auth") return item.readiness === "needs_auth";
-            if (readinessFilter === "needs_setup")
-              return (
-                item.readiness === "missing_dependency" ||
-                item.readiness === "incompatible" ||
-                item.readiness === "not_installed"
-              );
-            if (readinessFilter === "unavailable")
-              return item.readiness === "disabled" || item.readiness === "unhealthy";
-            return true;
-          })}
-          <div class="rounded-xl border border-border/70 bg-card/40 p-4">
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-xs font-semibold text-foreground">
-                筛选状态: <span class="capitalize font-mono text-primary">{readinessFilter}</span>
-              </span>
-              <button
-                type="button"
-                class="text-xs text-muted-foreground hover:text-foreground"
-                onclick={() => (readinessFilter = null)}
-              >
-                重置筛选
-              </button>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {#each filteredItems as item (item.id)}
-                <CapabilityItemCard
-                  {item}
-                  onAction={handleCapabilityAction}
-                  onSelect={(i) => (selectedCapabilityItem = i)}
-                />
-              {/each}
-            </div>
           </div>
         {/if}
       </div>

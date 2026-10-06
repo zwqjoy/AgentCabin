@@ -274,7 +274,6 @@ fn requires_credential_auth(manifest: &ConnectorPackageManifest) -> bool {
 pub fn list_builtin_catalog_with_paths(
     paths: &WorkPaths,
 ) -> Result<Vec<ConnectorCatalogItem>, String> {
-    let feishu_package = ensure_builtin_feishu_package(paths)?;
     let connections =
         crate::work::apps::storage::list_connections(paths).map_err(|error| error.to_string())?;
     let mut items = crate::work::apps::provider::default_six_apps_catalog()
@@ -294,37 +293,23 @@ pub fn list_builtin_catalog_with_paths(
                 ConnectionStatus::Disconnected => ConnectorAuthStatus::NotAuthenticated,
             };
 
-            let (runtimes, auth_kind, trusted, enabled, installed) = if app.app_id == "feishu" {
-                (
-                    feishu_package.manifest.runtimes.clone(),
-                    feishu_package.manifest.auth.kind,
-                    feishu_package.state.trusted,
-                    feishu_package.state.enabled,
-                    feishu_package.state.installed,
-                )
-            } else {
-                let auth_kind = match app.auth_type {
-                    crate::work::apps::models::AppAuthType::ApiKey => ConnectorAuthKind::ApiKey,
-                    crate::work::apps::models::AppAuthType::OAuth2 => ConnectorAuthKind::OAuth2,
-                };
-                let enabled = if auth_status == ConnectorAuthStatus::Authenticated {
-                    crate::storage::profile_bindings::global_capability_override_with_root(
-                        paths.data_root(),
-                        crate::storage::profile_bindings::CAPABILITY_KIND_CONNECTOR,
-                        &app.app_id,
-                    )
-                    .unwrap_or(true)
-                } else {
-                    false
-                };
-                (
-                    vec![ConnectorRuntimeKind::Mcp],
-                    auth_kind,
-                    true,
-                    enabled,
-                    true,
-                )
+            let auth_kind = match app.auth_type {
+                crate::work::apps::models::AppAuthType::ApiKey => ConnectorAuthKind::ApiKey,
+                crate::work::apps::models::AppAuthType::OAuth2 => ConnectorAuthKind::OAuth2,
             };
+            let enabled = if auth_status == ConnectorAuthStatus::Authenticated {
+                crate::storage::profile_bindings::global_capability_override_with_root(
+                    paths.data_root(),
+                    crate::storage::profile_bindings::CAPABILITY_KIND_CONNECTOR,
+                    &app.app_id,
+                )
+                .unwrap_or(true)
+            } else {
+                false
+            };
+            let runtimes = vec![ConnectorRuntimeKind::Mcp];
+            let trusted = true;
+            let installed = true;
 
             ConnectorCatalogItem {
                 package_id: app.app_id,
@@ -1091,7 +1076,6 @@ fn looks_like_secret_argument(value: &str) -> bool {
 /// generated catalog. The catalog is non-secret and is consumed only by the
 /// Work Host/tool boundary.
 pub fn sync_cli_runtime(paths: &WorkPaths) -> Result<ConnectorPackageCliRuntime, String> {
-    ensure_builtin_feishu_package(paths)?;
     let packages_dir = ensure_packages_dir(paths)?;
     let mut states = read_states(paths)?;
     let mut projected = Vec::new();
