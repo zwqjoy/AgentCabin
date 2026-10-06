@@ -10,6 +10,7 @@
     updateAgentPlugin,
   } from "$lib/api";
   import type { AgentPluginSummary } from "$lib/types";
+  import WorkBuddyImportDialog from "$lib/components/WorkBuddyImportDialog.svelte";
 
   interface Props {
     canManage?: boolean;
@@ -23,6 +24,7 @@
   let busyId = $state("");
   let error = $state("");
   let notice = $state("");
+  let workBuddyImportOpen = $state(false);
   let visiblePlugins = $derived(
     plugins.filter((item) =>
       expertKind
@@ -228,14 +230,26 @@
             {busyId === "install" ? "安装中…" : "安装"}
           </button>
         </div>
-        <button
-          type="button"
-          class="self-start text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          disabled={Boolean(busyId)}
-          onclick={() => void chooseLocal()}
-        >
-          选择本地插件包
-        </button>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <button
+            type="button"
+            class="self-start text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            disabled={Boolean(busyId)}
+            onclick={() => void chooseLocal()}
+          >
+            选择本地插件包
+          </button>
+          {#if expertKind}
+            <button
+              type="button"
+              class="self-start text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+              disabled={Boolean(busyId)}
+              onclick={() => (workBuddyImportOpen = true)}
+            >
+              从 WorkBuddy 导入
+            </button>
+          {/if}
+        </div>
       </div>
     {/if}
   </div>
@@ -581,3 +595,11 @@
     </div>
   {/if}
 </section>
+
+{#if expertKind}
+  <WorkBuddyImportDialog
+    bind:open={workBuddyImportOpen}
+    {expertKind}
+    onImported={() => void load()}
+  />
+{/if}

@@ -486,6 +486,7 @@ pub fn run() {
             commands::pi_extensions::update_pi_shared_extension,
             commands::pi_extensions::toggle_pi_shared_extension,
             commands::agent_plugins::list_agent_plugins,
+            commands::agent_plugins::discover_workbuddy_experts,
             commands::agent_plugins::install_agent_plugin,
             commands::agent_plugins::update_agent_plugin,
             commands::agent_plugins::uninstall_agent_plugin,
